@@ -1,0 +1,16 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  envDir: "../..", // root .env
+  clearScreen: false, // keep Tauri/turbo logs visible
+  server: {
+    port: 5173,
+    strictPort: true, // Tauri devUrl expects exactly this port
+    proxy: {
+      "/api": { target: "http://localhost:3001", rewrite: (p) => p.replace(/^\/api/, "") },
+      "/ws": { target: "ws://localhost:3002", ws: true },
+    },
+  },
+});

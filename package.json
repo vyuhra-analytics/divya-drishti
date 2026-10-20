@@ -1,0 +1,21 @@
+{
+  "name": "divya-drishti",
+  "private": true,
+  "packageManager": "bun@1.4.3",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "turbo run dev --filter=!drishti-desktop",
+    "desktop": "bun run --cwd apps/drishti-desktop dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "bun test",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "bun scripts/migrate.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.turbo/
+.env
+*.log
+apps/drishti-desktop/src-tauri/target/
+apps/drishti-desktop/src-tauri/gen/

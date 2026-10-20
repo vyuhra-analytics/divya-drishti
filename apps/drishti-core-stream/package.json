@@ -1,0 +1,14 @@
+{
+  "name": "drishti-core-stream",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@drishti/shared": "workspace:*",
+    "elysia": "^1.4.0"
+  }
+}
