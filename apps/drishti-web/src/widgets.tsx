@@ -4,7 +4,7 @@ import { Chart } from "./Chart";
 import { TvWidget } from "./TvWidget";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
-import { useFormat, useSettings } from "./settings";
+import { useClock, useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
 
 const SOURCE_LABEL: Record<Quote["source"], string> = { upstox: "UPSTOX", tradingview: "TV", yahoo: "YAHOO", demo: "DEMO" };
@@ -79,6 +79,7 @@ function QuoteWidget({ widget }: { widget: Widget }) {
   const inst = instrument(symbol);
   const { change, pct, dir } = useChange(symbol);
   const fmt = useFormat(symbol);
+  const clock = useClock();
   return (
     <div className="quote">
       <div className="quote-head">
@@ -109,7 +110,7 @@ function QuoteWidget({ widget }: { widget: Widget }) {
       </dl>
       <div className="quote-foot">
         <SourceBadge symbol={symbol} />
-        {q && <span className="muted">{new Date(q.time).toLocaleTimeString()}</span>}
+        {q && <span className="muted">{clock.time(q.time)}</span>}
       </div>
     </div>
   );

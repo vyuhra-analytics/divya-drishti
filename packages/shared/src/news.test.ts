@@ -29,7 +29,7 @@ test("parseRss handles Google source/suffix, CDATA, entities, zone-less dates, a
   const [et] = parseRss(ET, "Economic Times");
   expect(et.title).toBe("Oil Price Today: Crude nears $110 & MCX rises");
   expect(et.publishedAt).toBe(Date.UTC(2026, 9, 20, 3, 0));
-  expect(et.tags.sort()).toEqual(["crude", "india"]);
+  expect(et.tags.sort()).toEqual(["crude", "india", "oil"]);
 
   const op = parseRss(OILPRICE, "OilPrice");
   expect(op).toHaveLength(1);
@@ -38,11 +38,17 @@ test("parseRss handles Google source/suffix, CDATA, entities, zone-less dates, a
 
 test("tagNews keyword rules", () => {
   expect(tagNews("OPEC+ agrees output cut")).toEqual(["crude"]);
-  expect(tagNews("OIL prices jump as Hormuz tensions flare")).toEqual(["crude"]);
+  expect(tagNews("OIL prices jump as Hormuz tensions flare").sort()).toEqual(["crude", "oil"]); // Hormuz is crude-market
+  expect(tagNews("IEA ready to go if further oil stocks release needed")).toEqual(["oil"]);
+  expect(tagNews("Murphy Oil stock hits 52-week high")).toEqual(["oil"]);
+  expect(tagNews("ExxonMobil Hits a New All-Time High")).toEqual(["oil"]);
+  expect(tagNews("Inventories: Warning Sign in Decelerating Stock Draws")).toEqual(["oil"]);
+  expect(tagNews("U.S. Stocks Turn Higher, Setting Aside AI Jitters")).toEqual([]);
+  expect(tagNews("Brent crude slips below $110")).toEqual(["crude"]);
   expect(tagNews("Palm oil futures climb on export demand")).toEqual([]);
   expect(tagNews("India cuts edible oil import duty")).toEqual(["india"]);
   expect(tagNews("Brent rises while palm oil slips")).toEqual(["crude"]);
-  expect(tagNews("Palm oil prices in Malaysia rise to four-week high", ["crude"])).toEqual([]); // crude feed hint overridden
+  expect(tagNews("Palm oil prices in Malaysia rise to four-week high", ["oil"])).toEqual([]); // oil feed hint overridden
   expect(tagNews("Henry Hub futures slide on storage build")).toEqual(["natgas"]);
   expect(tagNews("Tech stocks rally")).toEqual([]);
   expect(tagNews("Tech stocks rally", ["india"])).toEqual(["india"]);
@@ -60,8 +66,29 @@ test("dedupeNews collapses the same story, keeps earliest time, unions tags, dro
   });
   const merged = dedupeNews([item("a", 10, ["crude"]), item("old", 60 * 49)], [item("a", 20, ["india"], "B"), item("b", 1)], now);
   expect(merged.map((n) => n.id)).toEqual(["b", "a"]);
-  expect(merged[1]).toMatchObject({ source: "A", publishedAt: now - 20 * 60_000 });
+  // earliest copy kept whole (B's source, url and time together), A listed as a later publisher
+  expect(merged[1]).toMatchObject({ source: "B", url: "https://x/a", publishedAt: now - 20 * 60_000 });
+  expect(merged[1].copies).toEqual([{ source: "A", url: "https://x/a", publishedAt: now - 10 * 60_000 }]);
   expect(merged[1].tags.sort()).toEqual(["crude", "india"]);
+});
+
+test("dedupeNews: wire story seen first from a late republisher is corrected when the earlier copy arrives", () => {
+  const now = Date.UTC(2026, 9, 20, 15);
+  const wire = (source: string, utcH: number, m: number): NewsItem => ({
+    id: "iea", title: "IEA ready to go if further oil stocks release needed, chief says", url: `https://${source}/x`,
+    source, publishedAt: Date.UTC(2026, 9, 20, utcH, m), tags: ["oil"],
+  });
+  const first = dedupeNews([], [wire("The Standard (HK)", 13, 52)], now);
+  const merged = dedupeNews(first, [wire("marketscreener.com", 10, 35), wire("Zawya", 11, 55)], now);
+  expect(merged).toHaveLength(1);
+  expect(merged[0]).toMatchObject({ source: "marketscreener.com", url: "https://marketscreener.com/x", publishedAt: Date.UTC(2026, 9, 20, 10, 35) });
+  // every outlet kept with its own link and time, oldest first
+  expect(merged[0].copies).toEqual([
+    { source: "Zawya", url: "https://Zawya/x", publishedAt: Date.UTC(2026, 9, 20, 11, 55) },
+    { source: "The Standard (HK)", url: "https://The Standard (HK)/x", publishedAt: Date.UTC(2026, 9, 20, 13, 52) },
+  ]);
+  // the same outlet arriving again from another feed doesn't add a duplicate copy
+  expect(dedupeNews(merged, [wire("Zawya", 11, 55)], now)[0].copies).toHaveLength(2);
 });
 
 test("parseDate and isSafeUrl", () => {

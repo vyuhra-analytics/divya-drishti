@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, createChart, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, createChart, TickMarkType, type Time, type UTCTimestamp } from "lightweight-charts";
 import { applyTick, instrument, quoteToTick, tzOffsetSec, TIMEFRAMES, type Bar, type Timeframe } from "@drishti/shared";
 import { useStore } from "./store";
-import { apiUrl, decimalsFor, makeFormat, useSettings } from "./settings";
+import { apiUrl, decimalsFor, formatStamp, makeFormat, useSettings } from "./settings";
 
 const toSeries = (b: Bar) => ({ ...b, time: b.time as UTCTimestamp });
 
@@ -14,6 +14,7 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
   const locale = useSettings((s) => s.locale);
   const decimals = useSettings((s) => s.decimals);
   const api = useSettings((s) => s.apiUrl);
+  const clock = useSettings((s) => s.clock);
 
   useEffect(() => {
     const digits = decimalsFor(symbol, decimals);
@@ -23,9 +24,25 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
       autoSize: true,
       layout: { background: { color: v("--panel") }, textColor: v("--muted"), fontFamily: css.fontFamily },
       grid: { vertLines: { color: v("--hover") }, horzLines: { color: v("--hover") } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: v("--line") },
+      // chart times are UTC seconds; label them in the viewer's time zone with the chosen 12/24h clock
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: v("--line"),
+        tickMarkFormatter: (time: Time, type: TickMarkType) => {
+          const ms = (time as number) * 1000;
+          if (type === TickMarkType.Year) return String(new Date(ms).getFullYear());
+          if (type === TickMarkType.Month) return new Intl.DateTimeFormat(locale, { month: "short" }).format(ms);
+          if (type === TickMarkType.DayOfMonth) return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(ms);
+          return formatStamp(ms, locale, clock, "time");
+        },
+      },
       rightPriceScale: { borderColor: v("--line") },
-      localization: { locale, priceFormatter: makeFormat(locale, digits).price },
+      localization: {
+        locale,
+        priceFormatter: makeFormat(locale, digits).price,
+        timeFormatter: (time: Time) => formatStamp((time as number) * 1000, locale, clock, "datetime"),
+      },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: v("--up"),
@@ -67,7 +84,7 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
       unsub();
       chart.remove();
     };
-  }, [symbol, tf, theme, colors, locale, decimals, api]);
+  }, [symbol, tf, theme, colors, locale, decimals, api, clock]);
 
   return <div ref={el} className="chart" />;
 }

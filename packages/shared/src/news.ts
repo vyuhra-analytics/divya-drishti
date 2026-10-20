@@ -1,4 +1,11 @@
-export type NewsTag = "crude" | "natgas" | "india";
+/**
+ * crude: crude-market words (crude, WTI, Brent, OPEC, barrels, refineries…).
+ * oil: any "oil" headline (oil prices, oil stocks, IEA oil reserves, oil majors) — what OpenTerminal's OIL search returns.
+ */
+export type NewsTag = "crude" | "oil" | "natgas" | "india";
+
+/** Tags a linked panel shows for an instrument's commodity. */
+export const TOPIC_TAGS: Record<"crude" | "natgas", NewsTag[]> = { crude: ["crude", "oil"], natgas: ["natgas"] };
 
 export interface NewsItem {
   /** normalized-title hash: the same story from several feeds collapses to one item */
@@ -9,9 +16,22 @@ export interface NewsItem {
   source: string;
   publishedAt: number;
   tags: NewsTag[];
+  /**
+   * Every later outlet that ran the identical headline, each with its own link and time, oldest first
+   * (wire stories: a Reuters headline on marketscreener, Zawya, The Standard…). The item itself is the first report.
+   */
+  copies?: NewsCopy[];
 }
 
-export const NEWS_MAX = 300;
+export interface NewsCopy {
+  source: string;
+  url: string;
+  publishedAt: number;
+}
+
+export const NEWS_MAX_COPIES = 30;
+
+export const NEWS_MAX = 600; // broad oil searches fill 300 well inside the 48 h window
 export const NEWS_MAX_AGE_MS = 48 * 3600_000;
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
@@ -54,11 +74,13 @@ function hash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-// "oil" alone also matches edible/industrial oils; those headlines are not crude news
+// "oil" alone also matches edible/industrial oils; those headlines are neither oil-market nor crude news
 const NOT_CRUDE_OIL = /\b(palm|edible|cooking|olive|vegetable|soy(bean)?|mustard|sunflower|coconut|essential|castor|groundnut)\s+oils?\b/i;
 
 const RULES: [NewsTag, RegExp][] = [
-  ["crude", /\b(crude|oils?|wti|brent|opec\+?|refiner(y|ies)|barrels?|petroleum|gasoline|diesel|shale|hormuz)\b/i],
+  ["crude", /\b(crude|wti|brent|opec\+?|refiner(y|ies)|barrels?|petroleum|gasoline|diesel|shale|hormuz)\b/i],
+  // oil-market vocabulary beyond the word itself: majors, inventories, rigs, the IEA
+  ["oil", /\b(oils?|exxon(mobil)?|chevron|aramco|conocophillips|occidental|petrobras|totalenergies|shell plc|bp plc|inventor(y|ies)|stockpiles?|rig counts?|iea)\b/i],
   ["natgas", /\b(natural gas|nat ?gas|lng|henry hub|gas storage|gas prices?|ttf|natgas(mini)?)\b/i],
   ["india", /\b(mcx|india|indian|rupee|ongc|reliance|nse|sebi)\b/i],
 ];
@@ -67,8 +89,11 @@ const RULES: [NewsTag, RegExp][] = [
 export function tagNews(title: string, feedTags: NewsTag[] = []): NewsTag[] {
   const tags = new Set(feedTags);
   for (const [tag, re] of RULES) if (re.test(title)) tags.add(tag);
-  // palm/edible oil stories aren't crude, even from a crude-oil search feed ("oil prices" matches them too)
-  if (NOT_CRUDE_OIL.test(title) && !/\b(crude|wti|brent|opec)\b/i.test(title)) tags.delete("crude");
+  // palm/edible oil stories aren't oil-market news, even from an "oil" search feed
+  if (NOT_CRUDE_OIL.test(title)) {
+    tags.delete("oil");
+    if (!/\b(crude|wti|brent|opec)\b/i.test(title)) tags.delete("crude");
+  }
   return [...tags];
 }
 
@@ -88,18 +113,36 @@ export function parseRss(xml: string, feedName: string, feedTags: NewsTag[] = []
   return out;
 }
 
+const asCopy = ({ source, url, publishedAt }: NewsItem | NewsCopy): NewsCopy => ({ source, url, publishedAt });
+
 /**
- * Merge new items into the list: one entry per story (first copy keeps its source/url, earliest time wins,
- * tags are unioned), newest first, max NEWS_MAX, nothing older than NEWS_MAX_AGE_MS.
+ * One story seen twice: the earliest copy stays the headline row (publisher, link and time belong together) and
+ * every copy is kept in `copies`, one per outlet (an outlet re-sent by another feed keeps its earliest time).
+ */
+function mergeCopies(a: NewsItem, b: NewsItem): NewsItem {
+  const byOutlet = new Map<string, NewsCopy>();
+  for (const c of [a, ...(a.copies ?? []), b, ...(b.copies ?? [])].map(asCopy)) {
+    const seen = byOutlet.get(c.source);
+    if (!seen || c.publishedAt < seen.publishedAt) byOutlet.set(c.source, c);
+  }
+  const [first, ...later] = [...byOutlet.values()].sort((x, y) => x.publishedAt - y.publishedAt);
+  return {
+    ...(first.publishedAt === a.publishedAt && first.source === a.source ? a : b),
+    ...first,
+    tags: [...new Set([...a.tags, ...b.tags])],
+    ...(later.length ? { copies: later.slice(0, NEWS_MAX_COPIES) } : { copies: undefined }),
+  };
+}
+
+/**
+ * Merge new items into the list: one entry per story (the earliest copy, every other outlet in `copies`, tags unioned),
+ * newest first, max NEWS_MAX, nothing older than NEWS_MAX_AGE_MS.
  */
 export function dedupeNews(existing: NewsItem[], incoming: NewsItem[], now = Date.now()): NewsItem[] {
   const byId = new Map(existing.map((n) => [n.id, n]));
   for (const n of incoming) {
     const old = byId.get(n.id);
-    byId.set(
-      n.id,
-      old ? { ...old, publishedAt: Math.min(old.publishedAt, n.publishedAt), tags: [...new Set([...old.tags, ...n.tags])] } : n,
-    );
+    byId.set(n.id, old ? mergeCopies(old, n) : n);
   }
   return [...byId.values()]
     .filter((n) => n.publishedAt > now - NEWS_MAX_AGE_MS && n.publishedAt < now + 5 * 60_000) // drop stale and bogus-future dates

@@ -180,6 +180,9 @@ export function SettingsDialog() {
             <Field label="Number format">
               <Select k="locale" options={[["en-IN", "Indian (12,34,567.89)"], ["en-US", "International (1,234,567.89)"]]} />
             </Field>
+            <Field label="Clock">
+              <Select k="clock" options={[["12h", "12-hour (10:42 pm)"], ["24h", "24-hour (22:42)"]]} />
+            </Field>
             <Field label="Price decimals">
               <Select
                 k="decimals"

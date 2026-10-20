@@ -1,15 +1,29 @@
 import type { RedisClient } from "bun";
-import { dedupeNews, parseRss, type NewsItem, type NewsTag } from "@drishti/shared";
+import { dedupeNews, parseRss, tagNews, type NewsItem, type NewsTag } from "@drishti/shared";
 import { newStats, poll, type ProviderStats } from "./providers/provider";
 
 // Energy news from free RSS feeds, polled here once and pushed to every client (not polled per panel).
-const google = (q: string) => `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-IN&gl=IN&ceid=IN:en`;
-// tags: topic hint added to every item. strict: keep only headlines that match an energy keyword themselves
-// (Yahoo's per-symbol feed for CL=F is mostly general market news).
+const EDITIONS = { IN: "hl=en-IN&gl=IN&ceid=IN:en", US: "hl=en-US&gl=US&ceid=US:en" };
+const google = (q: string, ed: keyof typeof EDITIONS = "IN") =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&${EDITIONS[ed]}`;
+// tags: topic hint added to every item (the tagger still removes "crude" from palm/edible-oil stories).
+// strict: keep only items whose headline itself has an energy keyword. Google matches article bodies, so broad
+// searches return off-topic headlines ("2027 season"); Yahoo's CL=F feed is mostly general market news.
+//
+// Google News search returns ≤100 results ranked by relevance, not time, and only matches what the query says
+// (a phrase list like "oil prices" missed "IEA … oil stocks release"). So: broad single-word queries, a
+// last-hour window polled often for freshness, and a last-day window less often for breadth, in two editions.
 const FEEDS: { name: string; url: string; tags: NewsTag[]; everyMs: number; strict?: boolean }[] = [
-  { name: "Google News", url: google('"crude oil" OR "oil prices" OR "oil price" OR "oil futures" OR WTI OR Brent OR OPEC when:1d'), tags: ["crude"], everyMs: 120_000 },
-  { name: "Google News", url: google('"natural gas" OR LNG OR "Henry Hub" when:1d'), tags: ["natgas"], everyMs: 120_000 },
-  { name: "Google News", url: google('"MCX crude" OR "MCX oil" OR "MCX natural gas" when:2d'), tags: ["india"], everyMs: 120_000 },
+  { name: "Google News", url: google("oil when:1h"), tags: ["oil"], everyMs: 90_000, strict: true },
+  { name: "Google News", url: google("oil when:1h", "US"), tags: ["oil"], everyMs: 90_000, strict: true },
+  { name: "Google News", url: google("oil OR crude OR WTI OR Brent when:1d", "US"), tags: [], everyMs: 180_000, strict: true },
+  { name: "Google News", url: google("IEA OR OPEC OR EIA oil when:1d"), tags: ["oil"], everyMs: 180_000, strict: true },
+  // OpenTerminal's exact OIL sources (its /api/news?symbol=OIL): Google "OIL stock" (US) + Yahoo headlines for OIL
+  { name: "Google News", url: google("OIL stock", "US"), tags: ["oil"], everyMs: 120_000, strict: true },
+  { name: "Yahoo Finance", url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=OIL&region=US&lang=en-US", tags: [], everyMs: 120_000, strict: true },
+  { name: "Google News", url: google('"natural gas" OR LNG OR "Henry Hub" when:1h', "US"), tags: ["natgas"], everyMs: 90_000 },
+  { name: "Google News", url: google('"natural gas" OR LNG OR "Henry Hub" when:1d'), tags: ["natgas"], everyMs: 180_000 },
+  { name: "Google News", url: google('"MCX crude" OR "MCX oil" OR "MCX natural gas" when:2d'), tags: ["india"], everyMs: 180_000 },
   { name: "OilPrice.com", url: "https://oilprice.com/rss/main", tags: [], everyMs: 60_000 },
   { name: "CNBC", url: "https://www.cnbc.com/id/19836768/device/rss/rss.html", tags: [], everyMs: 60_000 },
   { name: "Rigzone", url: "https://www.rigzone.com/news/rss/rigzone_latest.aspx", tags: [], everyMs: 60_000 },
@@ -41,7 +55,7 @@ export function startNews(redis: RedisClient, publish: (fresh: NewsItem[]) => vo
       stop = poll(feed.everyMs, stats, async () => {
         const res = await fetch(feed.url, { headers: UA, signal: AbortSignal.timeout(15_000) });
         if (!res.ok) throw new Error(`${res.status}`);
-        const parsed = parseRss(await res.text(), feed.name, feed.tags).filter((n) => !feed.strict || n.tags.length > 0);
+        const parsed = parseRss(await res.text(), feed.name, feed.tags).filter((n) => !feed.strict || tagNews(n.title).length > 0);
         const known = new Set(items.map((n) => n.id));
         items = dedupeNews(items, parsed);
         const fresh = items.filter((n) => !known.has(n.id));

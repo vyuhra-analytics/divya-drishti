@@ -17,6 +17,8 @@ export interface Settings {
   locale: "en-IN" | "en-US";
   /** -1 = auto: each instrument's own tick precision */
   decimals: number;
+  /** clock style for every time shown (news, quotes, chart axis) */
+  clock: "12h" | "24h";
   defaultTf: Timeframe;
   flash: boolean;
   // workspace
@@ -36,6 +38,7 @@ export const DEFAULTS: Settings = {
   colors: "green-red",
   locale: "en-IN",
   decimals: -1,
+  clock: "12h",
   defaultTf: "1m",
   flash: true,
   lockLayout: false,
@@ -124,6 +127,37 @@ function buildFormat(locale: string, decimals: number) {
   return {
     price: (n: number | undefined) => (n === undefined ? "—" : price.format(n)),
     volume: (n: number | undefined) => (n === undefined ? "—" : compact.format(n)),
+  };
+}
+
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+type StampParts = "datetime" | "time" | "date";
+
+/** Viewer-local date/time text: "20 Oct 2026, 10:42 pm IST" (12h) or "20 Oct 2026, 22:42 IST" (24h). Formatters cached. */
+export function formatStamp(t: number, locale: string, clock: Settings["clock"], parts: StampParts = "datetime", timeZone?: string) {
+  const key = `${locale}|${clock}|${parts}|${timeZone ?? ""}`;
+  let f = dateFormats.get(key);
+  if (!f) {
+    const date: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short", year: "numeric" };
+    const time: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: clock === "12h" ? "h12" : "h23" };
+    f = new Intl.DateTimeFormat(locale, {
+      ...(parts !== "time" ? date : {}),
+      ...(parts !== "date" ? time : {}),
+      ...(parts === "datetime" ? { timeZoneName: "short" } : {}),
+      timeZone,
+    });
+    dateFormats.set(key, f);
+  }
+  return f.format(t);
+}
+
+/** Time formatters bound to the user's number format + 12/24h setting. */
+export function useClock() {
+  const locale = useSettings((s) => s.locale);
+  const clock = useSettings((s) => s.clock);
+  return {
+    stamp: (t: number) => formatStamp(t, locale, clock, "datetime"),
+    time: (t: number) => formatStamp(t, locale, clock, "time"),
   };
 }
 

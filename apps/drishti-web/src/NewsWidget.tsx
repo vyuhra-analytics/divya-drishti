@@ -1,45 +1,25 @@
 import { useEffect, useState } from "react";
-import { instrument, isSafeUrl, type NewsItem, type NewsTag } from "@drishti/shared";
+import { instrument, isSafeUrl, TOPIC_TAGS, type NewsItem, type NewsTag } from "@drishti/shared";
 import { useStore } from "./store";
-import { useSettings } from "./settings";
+import { useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 type Filter = "linked" | "all" | NewsTag;
 const FILTERS: [Filter, string][] = [
   ["linked", "Linked"],
   ["all", "All"],
-  ["crude", "Crude / Oil"],
+  ["crude", "Crude"],
+  ["oil", "Oil"],
   ["natgas", "Nat Gas"],
   ["india", "India"],
 ];
-const TAG_LABEL: Record<NewsTag, string> = { crude: "OIL", natgas: "NAT GAS", india: "INDIA" };
+const TAG_LABEL: Record<NewsTag, string> = { crude: "CRUDE", oil: "OIL", natgas: "NAT GAS", india: "INDIA" };
 const NEW_MS = 2 * 60_000;
 
 const ago = (t: number, now: number) => {
   const m = Math.max(0, Math.round((now - t) / 60_000));
   return m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
 };
-
-const stamps = new Map<string, Intl.DateTimeFormat>();
-/** Exact publish time in the viewer's time zone: "20 Oct 2026, 22:42 IST" (number style follows Settings). */
-export function newsStamp(t: number, locale: string, timeZone?: string) {
-  const key = `${locale}|${timeZone ?? ""}`;
-  let f = stamps.get(key);
-  if (!f) {
-    f = new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-      timeZoneName: "short",
-      timeZone,
-    });
-    stamps.set(key, f);
-  }
-  return f.format(t);
-}
 
 /** Re-render every 30 s so "3m ago" and NEW markers stay honest without new items arriving. */
 function useNow() {
@@ -51,27 +31,28 @@ function useNow() {
   return now;
 }
 
-function Row({ n, now, flash, locale }: { n: NewsItem; now: number; flash: boolean; locale: string }) {
-  const stamp = newsStamp(n.publishedAt, locale);
+const CHIPS_SHOWN = 4;
+
+function Row({ n, now, flash, stampOf }: { n: NewsItem; now: number; flash: boolean; stampOf: (t: number) => string }) {
+  const [all, setAll] = useState(false);
+  const stamp = stampOf(n.publishedAt);
   const fresh = now - n.publishedAt < NEW_MS;
+  // parseRss already drops non-http(s) links; checked again because this is where a click happens
+  const link = (url: string) => (isSafeUrl(url) ? url : undefined);
+  // every outlet that ran this headline, first report first; one chip each, pick where to read
+  const outlets = n.copies?.length ? [{ source: n.source, url: n.url, publishedAt: n.publishedAt }, ...n.copies] : [];
+  const shown = all ? outlets : outlets.slice(0, CHIPS_SHOWN);
   return (
-    <a
-      className={`news-row${fresh && flash ? " news-fresh" : ""}`}
-      // parseRss already drops non-http(s) links; checked again because this is where a click happens
-      href={isSafeUrl(n.url) ? n.url : undefined}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`${n.title}
-${n.source} · ${stamp}`}
-    >
+    <div className={`news-row${fresh && flash ? " news-fresh" : ""}`}>
       <span className="news-time">{ago(n.publishedAt, now)}</span>
       <span className="news-body">
-        <span className="news-title">
+        <a className="news-title" href={link(n.url)} target="_blank" rel="noopener noreferrer" title={`${n.title}
+${n.source} · ${stamp}`}>
           {fresh && <span className="news-new">NEW</span>}
           {n.title}
-        </span>
+        </a>
         <span className="news-meta">
-          <span>{n.source}</span>
+          {outlets.length === 0 && <span>{n.source}</span>}
           <time dateTime={new Date(n.publishedAt).toISOString()}>{stamp}</time>
           {n.tags.map((t) => (
             <span key={t} className={`news-tag tag-${t}`}>
@@ -79,8 +60,29 @@ ${n.source} · ${stamp}`}
             </span>
           ))}
         </span>
+        {outlets.length > 0 && (
+          <span className="news-outlets" aria-label={`Published by ${outlets.length} outlets`}>
+            {shown.map((o, i) => (
+              <a
+                key={o.source}
+                className={i === 0 ? "outlet first" : "outlet"}
+                href={link(o.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${o.source} · ${stampOf(o.publishedAt)}${i === 0 ? " · first report" : ` · +${ago(n.publishedAt, o.publishedAt)} after first`}`}
+              >
+                {o.source}
+              </a>
+            ))}
+            {outlets.length > CHIPS_SHOWN && (
+              <button className="outlet more" onClick={() => setAll(!all)} aria-expanded={all}>
+                {all ? "less" : `+${outlets.length - CHIPS_SHOWN}`}
+              </button>
+            )}
+          </span>
+        )}
       </span>
-    </a>
+    </div>
   );
 }
 
@@ -88,13 +90,14 @@ export function NewsWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const news = useStore((s) => s.news);
   const flash = useSettings((s) => s.flash);
-  const locale = useSettings((s) => s.locale);
+  const clock = useClock();
   const [filter, setFilter] = useState<Filter>("linked");
   const now = useNow();
   const topic = instrument(symbol)?.topic;
+  const linkedTags = topic ? TOPIC_TAGS[topic] : [];
 
   const shown = news.filter((n) =>
-    filter === "all" ? true : filter === "linked" ? !topic || n.tags.includes(topic) : n.tags.includes(filter),
+    filter === "all" ? true : filter === "linked" ? !topic || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter),
   );
 
   return (
@@ -102,7 +105,7 @@ export function NewsWidget({ widget }: { widget: Widget }) {
       <div className="toolbar no-drag">
         {FILTERS.map(([f, label]) => (
           <button key={f} className={f === filter ? "tf active" : "tf"} onClick={() => setFilter(f)}>
-            {f === "linked" && topic ? `${label}: ${topic === "crude" ? "Crude / Oil" : "Nat Gas"}` : label}
+            {f === "linked" && topic ? `${label}: ${topic === "crude" ? "Crude + Oil" : "Nat Gas"}` : label}
           </button>
         ))}
         <span className="news-count muted">{shown.length}</span>
@@ -111,7 +114,7 @@ export function NewsWidget({ widget }: { widget: Widget }) {
         {shown.length === 0 ? (
           <p className="empty muted">{news.length ? "No headlines for this filter yet." : "Loading headlines…"}</p>
         ) : (
-          shown.map((n) => <Row key={n.id} n={n} now={now} flash={flash} locale={locale} />)
+          shown.map((n) => <Row key={n.id} n={n} now={now} flash={flash} stampOf={clock.stamp} />)
         )}
       </div>
     </div>

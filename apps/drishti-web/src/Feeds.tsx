@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { instrument } from "@drishti/shared";
-import { apiUrl, streamHttpUrl } from "./settings";
+import { apiUrl, streamHttpUrl, useClock } from "./settings";
 
 interface Health {
   feed: "live" | "demo";
@@ -39,6 +39,7 @@ const ago = (t: number | null) => (t ? `${Math.max(0, Math.round((Date.now() - t
 export function Feeds() {
   const upstox = usePoll<UpstoxStatus>(`${apiUrl()}/auth/upstox/status`, 10_000);
   const health = usePoll<Health>(streamHttpUrl("/health"), 3_000);
+  const clock = useClock();
 
   return (
     <>
@@ -51,7 +52,7 @@ export function Feeds() {
               : !upstox.configured
                 ? "add UPSTOX_API_KEY / SECRET / REDIRECT_URI to .env"
                 : upstox.connected
-                  ? `connected until ${new Date(upstox.expiresAt!).toLocaleTimeString()}`
+                  ? `connected until ${clock.time(upstox.expiresAt!)}`
                   : "not connected: MCX uses TradingView fallback"}
           </small>
         </span>
