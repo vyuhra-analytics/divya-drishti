@@ -4,7 +4,8 @@ import { SYMBOLS, type ClientMessage, type Tick } from "@drishti/shared";
 import { nextTick } from "./feed";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
-const TICK_MS = 200;
+const TICK_MS = 500;
+const TICK_CHANCE = 0.5; // each symbol ticks ~1/s at irregular intervals, like a real feed
 const FLUSH_MS = 1000;
 
 const sql = new SQL(process.env.DATABASE_URL!, { connectionTimeout: 2 });
@@ -35,6 +36,7 @@ const app = new Elysia()
 setInterval(() => {
   const now = Date.now();
   for (const prev of last.values()) {
+    if (Math.random() > TICK_CHANCE) continue;
     const tick = nextTick(prev, now);
     last.set(tick.symbol, tick);
     buffer.push(tick);

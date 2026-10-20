@@ -1,26 +1,40 @@
-import { SYMBOLS, TIMEFRAMES, type Timeframe } from "@drishti/shared";
-import { Chart } from "./Chart";
+import { useEffect } from "react";
+import { SYMBOLS } from "@drishti/shared";
+import { Palette } from "./Palette";
+import { SettingsDialog } from "./SettingsDialog";
+import { useSettings } from "./settings";
 import { useStore } from "./store";
-
-function Price({ symbol }: { symbol: string }) {
-  const tick = useStore((s) => s.quotes[symbol]);
-  const prev = useStore((s) => s.prev[symbol]);
-  if (!tick) return <span className="muted">—</span>;
-  const dir = tick.price > prev ? "up" : tick.price < prev ? "down" : "";
-  return <span className={dir}>{tick.price.toFixed(2)}</span>;
-}
+import { Price, WIDGETS } from "./widgets";
+import { Workspace } from "./Grid";
+import { useWorkspace, type WidgetType } from "./workspace";
 
 export function App() {
   const status = useStore((s) => s.status);
-  const active = useStore((s) => s.active);
-  const tf = useStore((s) => s.tf);
-  const setActive = useStore((s) => s.setActive);
-  const setTf = useStore((s) => s.setTf);
+  const paletteOpen = useWorkspace((s) => s.paletteOpen);
+  const { setPaletteOpen, addWidget } = useWorkspace.getState();
+  const setSettingsOpen = useSettings((s) => s.setOpen);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setPaletteOpen, setSettingsOpen]);
 
   return (
     <div className="shell">
-      <header>
+      <header className="topbar">
         <strong className="brand">DIVYA DRISHTI</strong>
+        <button className="cmd" onClick={() => setPaletteOpen(true)}>
+          <span className="muted">Command…</span> <kbd>Ctrl K</kbd>
+        </button>
         <div className="ticker">
           {SYMBOLS.map((s) => (
             <span key={s}>
@@ -28,27 +42,19 @@ export function App() {
             </span>
           ))}
         </div>
-        <span className={`status ${status}`}>● {status}</span>
-      </header>
-      <aside>
-        {SYMBOLS.map((s) => (
-          <button key={s} className={s === active ? "row active" : "row"} onClick={() => setActive(s)}>
-            <span>{s}</span>
-            <Price symbol={s} />
+        {(Object.keys(WIDGETS) as WidgetType[]).map((t) => (
+          <button key={t} className="tf" onClick={() => addWidget(t)}>
+            + {WIDGETS[t].title}
           </button>
         ))}
-      </aside>
-      <main>
-        <div className="toolbar">
-          <strong>{active}</strong>
-          {(Object.keys(TIMEFRAMES) as Timeframe[]).map((t) => (
-            <button key={t} className={t === tf ? "tf active" : "tf"} onClick={() => setTf(t)}>
-              {t}
-            </button>
-          ))}
-        </div>
-        <Chart symbol={active} tf={tf} />
-      </main>
+        <span className={`status ${status}`}>● {status}</span>
+        <button className="gear" title="Settings (Ctrl+,)" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          ⚙
+        </button>
+      </header>
+      <Workspace />
+      {paletteOpen && <Palette />}
+      <SettingsDialog />
     </div>
   );
 }
