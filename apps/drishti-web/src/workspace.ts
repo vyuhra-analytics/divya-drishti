@@ -15,6 +15,8 @@ export interface Widget {
   group: Group | null;
   symbol: string;
   tf: Timeframe;
+  /** tv widgets: selected stream URL */
+  channel?: string;
 }
 
 interface WorkspaceState {
@@ -29,6 +31,7 @@ interface WorkspaceState {
   cycleGroup: (id: string) => void;
   loadSymbol: (id: string, symbol: string) => void;
   setTf: (id: string, tf: Timeframe) => void;
+  setChannel: (id: string, channel: string) => void;
   focus: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   reset: () => void;
@@ -121,6 +124,7 @@ export const useWorkspace = create<WorkspaceState>()(
         }),
 
       setTf: (id, tf) => set((s) => ({ widgets: patch(s.widgets, id, { tf }) })),
+      setChannel: (id, channel) => set((s) => ({ widgets: patch(s.widgets, id, { channel }) })),
       focus: (focusedId) => set({ focusedId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       reset: () => set(defaults()),

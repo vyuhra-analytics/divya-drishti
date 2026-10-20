@@ -21,7 +21,7 @@ export interface Settings {
   // workspace
   lockLayout: boolean;
   confirmClose: boolean;
-  // live TV: HLS (.m3u8) streams; only add official broadcaster links
+  // live TV: user-added HLS (.m3u8) streams on top of the built-in list in TvWidget.tsx
   tvChannels: TvChannel[];
   // connection ("" = use env / dev proxy default)
   apiUrl: string;
@@ -39,8 +39,7 @@ export const DEFAULTS: Settings = {
   flash: true,
   lockLayout: false,
   confirmClose: false,
-  // NDTV Profit's own CDN (Akamai), not a re-stream
-  tvChannels: [{ name: "NDTV Profit", url: "https://ndtvprofit.akamaized.net/hls/live/2107404/ndtvprofit/master_1.m3u8" }],
+  tvChannels: [],
   apiUrl: "",
   streamUrl: "",
 };

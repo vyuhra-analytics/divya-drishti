@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TIMEFRAMES, type Timeframe } from "@drishti/shared";
 import { reconnect, useStore } from "./store";
 import { DEFAULTS, useSettings, validateUrl, type Settings } from "./settings";
+import { BUILTIN_CHANNELS } from "./TvWidget";
 
 function TvChannels() {
   const channels = useSettings((s) => s.tvChannels);
@@ -9,11 +10,12 @@ function TvChannels() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const urlErr = validateUrl(url, ["https:", "http:"]);
-  const dupe = channels.some((c) => c.url === url.trim());
+  const dupe = [...BUILTIN_CHANNELS, ...channels].some((c) => c.url === url.trim());
   const canAdd = name.trim() && url.trim() && !urlErr && !dupe;
 
   return (
     <>
+      <p className="muted hint">Built in: {BUILTIN_CHANNELS.map((c) => c.name).join(", ")}.</p>
       {channels.map((c) => (
         <div className="field" key={c.url}>
           <span>
@@ -42,7 +44,7 @@ function TvChannels() {
         </button>
       </form>
       {(urlErr || dupe) && <p className="field-error">{urlErr ?? "channel already added"}</p>}
-      <p className="muted hint">Use official broadcaster streams only (HLS .m3u8).</p>
+      <p className="muted hint">Add your own channels: official broadcaster streams only (HLS .m3u8).</p>
     </>
   );
 }
