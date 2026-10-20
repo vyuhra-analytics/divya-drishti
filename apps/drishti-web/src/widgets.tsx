@@ -2,6 +2,7 @@ import { instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@dr
 import type { ComponentType } from "react";
 import { Chart } from "./Chart";
 import { TvWidget } from "./TvWidget";
+import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
 import { useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
@@ -155,4 +156,5 @@ export const WIDGETS: Record<
   quote: { title: "Quote", component: QuoteWidget, linked: true, showSymbol: true },
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },
+  news: { title: "News", component: NewsWidget, linked: true, showSymbol: false },
 };

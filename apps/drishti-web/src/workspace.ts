@@ -4,7 +4,7 @@ import type { LayoutItem } from "react-grid-layout";
 import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -42,6 +42,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   quote: { w: 4, h: 9 },
   watchlist: { w: 4, h: 7 },
   tv: { w: 5, h: 9 },
+  news: { w: 5, h: 10 },
 };
 
 const defaults = () => ({

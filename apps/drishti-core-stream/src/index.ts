@@ -18,6 +18,7 @@ import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
+import { currentNews, newsStats, startNews } from "./news";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
 const DEMO = process.env.FEED === "demo";
@@ -107,6 +108,7 @@ const app = new Elysia()
       providers: stats,
       active: Object.fromEntries(active),
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
+      news: { items: currentNews().length, feeds: newsStats },
     };
   })
   .ws("/ws", {
@@ -114,6 +116,11 @@ const app = new Elysia()
       const msg = (typeof raw === "string" ? JSON.parse(raw) : raw) as ClientMessage;
       if ("subscribe" in msg) {
         for (const s of msg.subscribe) {
+          if (s === "news") {
+            ws.subscribe("news");
+            ws.send(JSON.stringify({ type: "news", items: currentNews() }));
+            continue;
+          }
           ws.subscribe(`quotes:${s}`);
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
@@ -136,6 +143,8 @@ if (DEMO) {
     stats.yahoo!,
   );
 }
+
+startNews(redis, (fresh) => app.server?.publish("news", JSON.stringify({ type: "news", items: fresh })));
 
 setInterval(async () => {
   if (!buffer.length) return;

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SYMBOLS, type Quote } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type NewsItem, type Quote } from "@drishti/shared";
 import { streamUrl } from "./settings";
 
 /** Live market data. UI/layout state lives in workspace.ts. */
@@ -9,12 +9,15 @@ interface MarketState {
   quotes: Record<string, Quote>;
   /** previous price per symbol, for tick-direction colouring */
   prev: Record<string, number>;
+  /** energy headlines, newest first (pushed by the stream service) */
+  news: NewsItem[];
 }
 
 export const useStore = create<MarketState>()(() => ({
   status: "connecting",
   quotes: {},
   prev: {},
+  news: [],
 }));
 
 let ws: WebSocket | undefined;
@@ -25,10 +28,15 @@ export function connectStream() {
   ws = sock;
   sock.onopen = () => {
     useStore.setState({ status: "open" });
-    sock.send(JSON.stringify({ subscribe: SYMBOLS }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news"] }));
   };
   sock.onmessage = (e) => {
-    const q: Quote = JSON.parse(e.data);
+    const msg: Quote | { type: "news"; items: NewsItem[] } = JSON.parse(e.data);
+    if ("type" in msg) {
+      useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
+      return;
+    }
+    const q = msg;
     useStore.setState((s) => ({
       quotes: { ...s.quotes, [q.symbol]: q },
       prev: { ...s.prev, [q.symbol]: s.quotes[q.symbol]?.price ?? q.price },

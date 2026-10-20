@@ -9,6 +9,8 @@ export interface Instrument {
   /** exchange time zone: candles (1h, 1d) start on its hours/midnight, like the providers' history */
   timeZone: "Asia/Kolkata" | "America/New_York";
   decimals: number;
+  /** commodity, for news filtering in linked panels */
+  topic: "crude" | "natgas";
   /** contract size, display only */
   lot: string;
   /** seconds the free feed lags the exchange (CME rule: 10 min) */
@@ -24,12 +26,12 @@ export interface Instrument {
 }
 
 export const INSTRUMENTS: Instrument[] = [
-  { symbol: "MCX:CRUDEOIL", name: "Crude Oil", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "100 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOIL", tv: "MCX:CRUDEOIL" },
-  { symbol: "MCX:CRUDEOILM", name: "Crude Oil Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "10 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOILM", tv: "MCX:CRUDEOILM" },
-  { symbol: "MCX:NATURALGAS", name: "Natural Gas", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "1250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATURALGAS", tv: "MCX:NATURALGAS" },
-  { symbol: "MCX:NATGASMINI", name: "Natural Gas Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATGASMINI", tv: "MCX:NATGASMINI" },
-  { symbol: "NYMEX:CL", name: "WTI Crude Oil", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 2, lot: "1000 bbl", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "CL=F", tv: "NYMEX:CL1!" },
-  { symbol: "NYMEX:NG", name: "Henry Hub Natural Gas", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 3, lot: "10000 mmBtu", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "NG=F", tv: "NYMEX:NG1!" },
+  { symbol: "MCX:CRUDEOIL", topic: "crude", name: "Crude Oil", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "100 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOIL", tv: "MCX:CRUDEOIL" },
+  { symbol: "MCX:CRUDEOILM", topic: "crude", name: "Crude Oil Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "10 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOILM", tv: "MCX:CRUDEOILM" },
+  { symbol: "MCX:NATURALGAS", topic: "natgas", name: "Natural Gas", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "1250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATURALGAS", tv: "MCX:NATURALGAS" },
+  { symbol: "MCX:NATGASMINI", topic: "natgas", name: "Natural Gas Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATGASMINI", tv: "MCX:NATGASMINI" },
+  { symbol: "NYMEX:CL", topic: "crude", name: "WTI Crude Oil", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 2, lot: "1000 bbl", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "CL=F", tv: "NYMEX:CL1!" },
+  { symbol: "NYMEX:NG", topic: "natgas", name: "Henry Hub Natural Gas", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 3, lot: "10000 mmBtu", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "NG=F", tv: "NYMEX:NG1!" },
 ];
 
 export const SYMBOLS = INSTRUMENTS.map((i) => i.symbol);
@@ -227,3 +229,5 @@ export function mergeBars(...lists: Bar[][]): Bar[] {
 }
 
 export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] };
+
+export * from "./news";

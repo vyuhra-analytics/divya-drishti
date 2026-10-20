@@ -33,6 +33,10 @@ Energy futures, each as a continuous front-month contract (the actual contract, 
 - `FEED=demo` in `.env` swaps all sources for a simulated random walk (weekends, offline work).
 - Market hours: MCX energy roughly 09:00–23:30 IST (23:55 when the US is on winter time), Monday to Friday; NYMEX almost 24 h, Sunday evening to Friday (US time).
 
+### News
+
+The **News** panel (`+ News` or `N` in the command palette) streams energy headlines from about ten free RSS feeds: Google News searches for crude, natural gas and MCX, plus OilPrice.com, CNBC energy, Rigzone, Yahoo Finance (CL=F / NG=F), Economic Times commodities and EIA. The stream service polls them every 1–2 minutes, merges duplicates of the same story, tags each headline Crude / Nat Gas / India, and pushes new ones to the app as they appear. "Linked" shows the topic of the panel's linked symbol.
+
 ### Upstox setup (MCX real-time)
 
 1. Create an app at [account.upstox.com/developer/apps](https://account.upstox.com/developer/apps) with redirect URL `http://localhost:3001/auth/upstox/callback`.

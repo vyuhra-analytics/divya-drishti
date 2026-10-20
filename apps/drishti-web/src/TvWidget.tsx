@@ -10,6 +10,8 @@ export const BUILTIN_CHANNELS: (TvChannel & { group: string })[] = [
   { group: "Bloomberg", name: "Bloomberg TV Europe", url: "https://www.bloomberg.com/media-manifest/streams/eu.m3u8" },
   { group: "Bloomberg", name: "Bloomberg TV Asia", url: "https://www.bloomberg.com/media-manifest/streams/asia.m3u8" },
   { group: "Bloomberg", name: "Bloomberg Originals", url: "https://www.bloomberg.com/media-manifest/streams/qt.m3u8" },
+  // Network18 (CNBC-TV18's owner) syndication CDN
+  { group: "India", name: "CNBC-TV18", url: "https://n18syndication.akamaized.net/bpk-tv/CNBC_TV18_NW18_MOB/output01/index.m3u8" },
   { group: "India", name: "NDTV Profit", url: "https://ndtvprofit.akamaized.net/hls/live/2107404/ndtvprofit/master_1.m3u8" },
 ];
 
