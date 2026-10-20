@@ -20,3 +20,10 @@ test("suggest ranks prefix before substring", () => {
   expect(suggest("n", SYMS)).toEqual(["NIFTY", "BANKNIFTY", "INFY"]);
   expect(suggest("zz", SYMS)).toEqual([]);
 });
+
+test("parse accepts exchange-less short codes", () => {
+  const syms = ["MCX:CRUDEOIL", "MCX:CRUDEOILM", "NYMEX:CL", "NYMEX:NG"];
+  expect(parse("crudeoil", syms)).toEqual({ ok: true, cmd: { symbol: "MCX:CRUDEOIL" } });
+  expect(parse("CL GP", syms)).toEqual({ ok: true, cmd: { symbol: "NYMEX:CL", open: "chart" } });
+  expect(parse("nymex:ng", syms)).toEqual({ ok: true, cmd: { symbol: "NYMEX:NG" } });
+});

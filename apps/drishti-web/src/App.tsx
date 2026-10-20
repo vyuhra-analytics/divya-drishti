@@ -38,7 +38,7 @@ export function App() {
         <div className="ticker">
           {SYMBOLS.map((s) => (
             <span key={s}>
-              {s} <Price symbol={s} />
+              {s.split(":")[1]} <Price symbol={s} />
             </span>
           ))}
         </div>

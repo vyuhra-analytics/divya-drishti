@@ -16,15 +16,39 @@ A personal market terminal, built step by step.
 | Time-series DB | PostgreSQL 17 + TimescaleDB | `infra/sql` |
 | Cache / pub-sub | Redis (or Memurai on Windows) | — |
 
-## Data flow (step 1)
+## Instruments and data sources
+
+Energy futures, each as a continuous front-month contract (the actual contract, e.g. `CRUDEOIL FUT 19 NOV 26`, is shown in the quote panel):
+
+| Symbol | Instrument | Live source (fallback) | Chart history | Freshness |
+|---|---|---|---|---|
+| `MCX:CRUDEOIL`, `MCX:CRUDEOILM` | Crude Oil, Crude Oil Mini | Upstox market feed (TradingView scanner) | Upstox | real-time |
+| `MCX:NATURALGAS`, `MCX:NATGASMINI` | Natural Gas, Natural Gas Mini | Upstox market feed (TradingView scanner) | Upstox | real-time |
+| `NYMEX:CL` | WTI Crude Oil | Yahoo Finance (TradingView scanner) | Yahoo | 10 min delayed |
+| `NYMEX:NG` | Henry Hub Natural Gas | Yahoo Finance (TradingView scanner) | Yahoo | 10 min delayed |
+
+- A source that goes quiet for 15 s hands over to the next one; Settings → Data feeds shows which source serves each symbol.
+- Without an Upstox login MCX prices still stream (TradingView), but MCX charts only show candles built since you opened them (plus anything stored in TimescaleDB).
+- Yahoo and the TradingView scanner are unofficial endpoints: free, no key, but they can change without notice.
+- `FEED=demo` in `.env` swaps all sources for a simulated random walk (weekends, offline work).
+- Market hours: MCX energy roughly 09:00–23:30 IST (23:55 when the US is on winter time), Monday to Friday; NYMEX almost 24 h, Sunday evening to Friday (US time).
+
+### Upstox setup (MCX real-time)
+
+1. Create an app at [account.upstox.com/developer/apps](https://account.upstox.com/developer/apps) with redirect URL `http://localhost:3001/auth/upstox/callback`.
+2. Put its key and secret in `.env` as `UPSTOX_API_KEY` / `UPSTOX_API_SECRET` and restart the API.
+3. Each trading day: Settings (⚙ or Ctrl+,) → Data feeds → **Connect Upstox**, log in on upstox.com. Tokens expire at 03:30 IST. Needs Redis running.
+
+## Data flow
 
 ```
-mock random-walk feed ─▶ drishti-core-stream ──WS /ws──▶ drishti-web (live candles)
-                              │  │
-                              │  └─ Redis: PUBLISH ticks:{sym}, SET quote:{sym}
-                              └──── TimescaleDB: ticks hypertable ─▶ bars_1m continuous aggregate
-                                                                        │
-drishti-web ◀── GET /bars, /quotes, /symbols ── drishti-core-api ◀──────┘
+Upstox WS / TradingView / Yahoo ─▶ drishti-core-stream ──WS /ws (quotes)──▶ drishti-web (live candles)
+                                        │  │
+                                        │  └─ Redis: PUBLISH quotes:{sym}, SET quote:{sym}, fronts
+                                        └──── TimescaleDB: ticks hypertable ─▶ bars_1m continuous aggregate
+
+drishti-web ◀── GET /bars ── drishti-core-api ── Yahoo / Upstox history ─▶ TimescaleDB candles (write-through)
+            ◀── Upstox login ─┘                        (falls back to candles + bars_1m when a provider can't answer)
 ```
 
 | Service | Port |

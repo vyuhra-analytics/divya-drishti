@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Timeframe } from "@drishti/shared";
+import { instrument, type Timeframe } from "@drishti/shared";
 
 export interface TvChannel {
   name: string;
@@ -15,6 +15,7 @@ export interface Settings {
   colors: "green-red" | "red-green" | "blue-orange";
   // data & formatting
   locale: "en-IN" | "en-US";
+  /** -1 = auto: each instrument's own tick precision */
   decimals: number;
   defaultTf: Timeframe;
   flash: boolean;
@@ -34,7 +35,7 @@ export const DEFAULTS: Settings = {
   fontSize: 13,
   colors: "green-red",
   locale: "en-IN",
-  decimals: 2,
+  decimals: -1,
   defaultTf: "1m",
   flash: true,
   lockLayout: false,
@@ -62,7 +63,9 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: "drishti-settings",
-      version: 1,
+      version: 2,
+      // v2: real instruments have their own precision (NG 3 dp, MCX crude 0 dp), so reset decimals to auto
+      migrate: (saved, version) => (version < 2 ? { ...(saved as object), decimals: -1 } : saved) as Settings,
       partialize: ({ open, set, setOpen, reset, ...rest }) => rest,
       // fill in settings added after the user's copy was saved
       merge: (saved, current) => ({ ...current, ...(saved as Partial<Settings>) }),
@@ -86,6 +89,16 @@ export const streamUrl = () =>
   useSettings.getState().streamUrl ||
   import.meta.env.VITE_STREAM_URL ||
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+
+/** Plain-HTTP endpoint on the stream service (e.g. /health). Dev default goes through the Vite `/stream` proxy. */
+export function streamHttpUrl(path: string) {
+  const custom = useSettings.getState().streamUrl || import.meta.env.VITE_STREAM_URL;
+  if (!custom) return `/stream${path}`;
+  const url = new URL(custom);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = path;
+  return url.toString();
+}
 
 /** Theme, density, font size and up/down colours are CSS-driven via attributes on <html>. */
 export function applyToDocument(s: Settings) {
@@ -114,8 +127,12 @@ function buildFormat(locale: string, decimals: number) {
   };
 }
 
-export function useFormat() {
+export const decimalsFor = (symbol: string | undefined, setting: number) =>
+  setting >= 0 ? setting : (instrument(symbol ?? "")?.decimals ?? 2);
+
+/** Formatters for a symbol: price precision follows the instrument unless the user fixed decimals. */
+export function useFormat(symbol?: string) {
   const locale = useSettings((s) => s.locale);
   const decimals = useSettings((s) => s.decimals);
-  return makeFormat(locale, decimals);
+  return makeFormat(locale, decimalsFor(symbol, decimals));
 }

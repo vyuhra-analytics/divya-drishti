@@ -1,23 +1,20 @@
 import { create } from "zustand";
-import { applyTick, SYMBOLS, type Bar, type Tick } from "@drishti/shared";
+import { SYMBOLS, type Quote } from "@drishti/shared";
 import { streamUrl } from "./settings";
-
-const DAY = 86400;
 
 /** Live market data. UI/layout state lives in workspace.ts. */
 interface MarketState {
   status: "connecting" | "open" | "closed";
-  quotes: Record<string, Tick>;
+  /** latest provider snapshot per symbol (price, day OHLC, volume, contract, source) */
+  quotes: Record<string, Quote>;
+  /** previous price per symbol, for tick-direction colouring */
   prev: Record<string, number>;
-  /** Session OHLCV per symbol, built from ticks seen since load. */
-  day: Record<string, Bar>;
 }
 
 export const useStore = create<MarketState>()(() => ({
   status: "connecting",
   quotes: {},
   prev: {},
-  day: {},
 }));
 
 let ws: WebSocket | undefined;
@@ -31,11 +28,10 @@ export function connectStream() {
     sock.send(JSON.stringify({ subscribe: SYMBOLS }));
   };
   sock.onmessage = (e) => {
-    const tick: Tick = JSON.parse(e.data);
+    const q: Quote = JSON.parse(e.data);
     useStore.setState((s) => ({
-      quotes: { ...s.quotes, [tick.symbol]: tick },
-      prev: { ...s.prev, [tick.symbol]: s.quotes[tick.symbol]?.price ?? tick.price },
-      day: { ...s.day, [tick.symbol]: applyTick(s.day[tick.symbol], tick, DAY) },
+      quotes: { ...s.quotes, [q.symbol]: q },
+      prev: { ...s.prev, [q.symbol]: s.quotes[q.symbol]?.price ?? q.price },
     }));
   };
   sock.onclose = () => {

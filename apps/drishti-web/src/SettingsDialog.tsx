@@ -3,6 +3,7 @@ import { TIMEFRAMES, type Timeframe } from "@drishti/shared";
 import { reconnect, useStore } from "./store";
 import { DEFAULTS, useSettings, validateUrl, type Settings } from "./settings";
 import { BUILTIN_CHANNELS } from "./TvWidget";
+import { Feeds } from "./Feeds";
 
 function TvChannels() {
   const channels = useSettings((s) => s.tvChannels);
@@ -180,7 +181,10 @@ export function SettingsDialog() {
               <Select k="locale" options={[["en-IN", "Indian (12,34,567.89)"], ["en-US", "International (1,234,567.89)"]]} />
             </Field>
             <Field label="Price decimals">
-              <Select k="decimals" options={[0, 1, 2, 3, 4].map((n) => [n, String(n)] as [number, string])} />
+              <Select
+                k="decimals"
+                options={[[-1, "Auto (per instrument)"], ...[0, 1, 2, 3, 4].map((n) => [n, String(n)] as [number, string])]}
+              />
             </Field>
             <Field label="Default timeframe" hint="for new charts">
               <Select
@@ -215,6 +219,11 @@ export function SettingsDialog() {
           <section>
             <h3>Live TV</h3>
             <TvChannels />
+          </section>
+
+          <section>
+            <h3>Data feeds</h3>
+            <Feeds />
           </section>
 
           <section>

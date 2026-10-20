@@ -122,8 +122,19 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .quote dt { color: var(--muted); }
 .quote dd { margin: 0; text-align: right; }
 
-.row { display: grid; grid-template-columns: 1fr auto 72px; gap: 8px; width: 100%; padding: var(--pad) 10px; text-align: right; border-bottom: 1px solid var(--line); }
+.row { display: grid; grid-template-columns: 1fr auto 64px; align-items: center; gap: 8px; width: 100%; padding: var(--pad) 10px; text-align: right; border-bottom: 1px solid var(--line); }
 .row > :first-child { text-align: left; }
+.row-name { display: flex; flex-direction: column; line-height: 1.25; }
+.row-name small { font-size: 10px; font-weight: 400; }
+.badges { display: inline-flex; gap: 4px; margin-left: auto; }
+.badge { padding: 0 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; line-height: 16px; border-radius: 3px; color: var(--muted); border: 1px solid var(--line); }
+.badge.src-upstox { color: var(--up); border-color: color-mix(in srgb, var(--up) 50%, transparent); }
+.badge.src-demo { color: var(--down); border-color: color-mix(in srgb, var(--down) 50%, transparent); }
+.badge.delayed { color: var(--g-amber); border-color: color-mix(in srgb, var(--g-amber) 50%, transparent); }
+.quote-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 2px; font-weight: 600; }
+.quote-head .muted { font-weight: 400; font-size: 11px; }
+.quote-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; }
+.quote-foot .badges { margin-left: 0; }
 .row:hover { background: var(--hover); }
 .row.active { background: var(--hover); color: var(--accent); font-weight: 700; }
 

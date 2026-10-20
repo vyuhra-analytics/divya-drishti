@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: "http://localhost:3001", rewrite: (p) => p.replace(/^\/api/, "") },
       "/ws": { target: "ws://localhost:3002", ws: true },
+      "/stream": { target: "http://localhost:3002", rewrite: (p) => p.replace(/^\/stream/, "") },
     },
   },
 });

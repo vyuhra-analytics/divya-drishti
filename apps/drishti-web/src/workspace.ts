@@ -39,25 +39,27 @@ interface WorkspaceState {
 
 export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   chart: { w: 8, h: 12 },
-  quote: { w: 4, h: 5 },
+  quote: { w: 4, h: 9 },
   watchlist: { w: 4, h: 7 },
   tv: { w: 5, h: 9 },
 };
 
 const defaults = () => ({
   widgets: [
-    { id: "chart-1", type: "chart", group: "amber", symbol: "NIFTY", tf: "1m" },
-    { id: "quote-1", type: "quote", group: "amber", symbol: "NIFTY", tf: "1m" },
-    { id: "watch-1", type: "watchlist", group: "amber", symbol: "NIFTY", tf: "1m" },
-    { id: "chart-2", type: "chart", group: null, symbol: "BANKNIFTY", tf: "5m" },
+    { id: "chart-1", type: "chart", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
+    { id: "quote-1", type: "quote", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
+    { id: "watch-1", type: "watchlist", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
+    { id: "chart-2", type: "chart", group: "blue", symbol: "NYMEX:CL", tf: "5m" },
+    { id: "chart-3", type: "chart", group: null, symbol: "MCX:NATURALGAS", tf: "5m" },
   ] satisfies Widget[] as Widget[],
   layout: [
     { i: "chart-1", x: 0, y: 0, w: 8, h: 12 },
-    { i: "quote-1", x: 8, y: 0, w: 4, h: 5 },
-    { i: "watch-1", x: 8, y: 5, w: 4, h: 7 },
-    { i: "chart-2", x: 0, y: 12, w: 12, h: 9 },
+    { i: "quote-1", x: 8, y: 0, w: 4, h: 9 },
+    { i: "watch-1", x: 8, y: 9, w: 4, h: 9 },
+    { i: "chart-2", x: 0, y: 12, w: 4, h: 10 },
+    { i: "chart-3", x: 4, y: 12, w: 4, h: 10 },
   ],
-  groups: { amber: "NIFTY", blue: "RELIANCE", green: "TCS", red: "INFY" } as Record<Group, string>,
+  groups: { amber: "MCX:CRUDEOIL", blue: "NYMEX:CL", green: "MCX:NATURALGAS", red: "NYMEX:NG" } as Record<Group, string>,
   focusedId: "chart-1" as string | null,
 });
 
@@ -131,8 +133,8 @@ export const useWorkspace = create<WorkspaceState>()(
     }),
     {
       name: "drishti-workspace",
-      version: 1,
-      migrate: () => defaults(), // ponytail: any schema change resets the layout; write real migrations once layouts are worth keeping
+      version: 2,
+      migrate: () => defaults(), // ponytail: any schema change resets the layout (v2: equity mocks → energy futures); write real migrations once layouts are worth keeping
       partialize: ({ widgets, layout, groups, focusedId }) => ({ widgets, layout, groups, focusedId }),
     },
   ),

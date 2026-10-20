@@ -42,7 +42,7 @@ export function Palette() {
         <input
           autoFocus
           value={input}
-          placeholder="TCS · TCS GP · GP · Q · W"
+          placeholder="CRUDEOIL · CL GP · NG Q · TV"
           aria-label="Command"
           onChange={(e) => {
             setInput(e.target.value);

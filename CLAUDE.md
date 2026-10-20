@@ -13,17 +13,18 @@ Divya Drishti — personal Bloomberg-style market terminal, built incrementally.
 - Desktop (needs web dev server running): `bun run desktop`
 - Typecheck all: `bun run typecheck`
 - Tests (bun:test, whole repo): `bun test`
-- Single test file: `bun test packages/shared/src/candle.test.ts`
+- Single test file: `bun test packages/shared/src/markets.test.ts`
+- Simulated prices (offline/weekends): `FEED=demo` in `.env`
 - Infra via Docker: `bun run infra:up` / `bun run infra:down`
 - Schema (native Postgres, no psql needed): `bun run db:migrate`
 
 ## Architecture
 
-- `packages/shared` — `@drishti/shared`: `Tick`/`Bar` types, `SYMBOLS`, `TIMEFRAMES`, `applyTick` (tick→candle merge used by web). Consumed as TS source, no build step.
-- `apps/drishti-core-stream` — Elysia on Bun, port 3002. Mock random-walk feed (`src/feed.ts`) → WS topic `ticks:{symbol}` (client sends `{subscribe:[...]}`), Redis `PUBLISH ticks:{sym}` + `SET quote:{sym}`, batched insert into `ticks` every 1s. Uses Bun built-ins `SQL` and `RedisClient` (no pg/ioredis deps).
-- `apps/drishti-core-api` — NestJS running under Bun (Bun emits decorator metadata; no nest-cli). Port 3001. `GET /health, /symbols, /quotes/:symbol, /bars?symbol&tf&from&to`. Bars come from the `bars_1m` Timescale continuous aggregate rolled up with `time_bucket`.
+- `packages/shared` — `@drishti/shared`, consumed as TS source (no build step). `INSTRUMENTS` catalogue (6 energy futures: MCX crude/natgas standard+mini, NYMEX CL/NG; per-source codes, exchange `timeZone`, decimals, delay), `Quote` (stream message) / `Tick` / `Bar`, and pure helpers: `applyTick` + `bucketStart` (candles bucketed in exchange time via `tzOffsetSec`, matching provider history), `quoteToTick` (volume delta), `pickSource` (fallback rule), `frontMonth` / `tvContract`, history parsers + `normalizeBars`, `upstoxTokenExpiry`.
+- `apps/drishti-core-stream` — Elysia on Bun, port 3002. Providers in `src/providers/` (`upstox/` protobuf WS feed using the vendored `MarketDataFeed.proto`, `tradingview.ts` scanner poll, `yahoo.ts` chart poll, `demo.ts` for `FEED=demo`); every quote goes through `accept()` in `index.ts`, which publishes only the active source per symbol (`pickSource`, 15 s staleness) to WS topic `quotes:{symbol}` + Redis, sends the cached snapshot on subscribe, and batches ticks into Timescale. MCX front months come from Upstox's public instrument master (`contracts.ts`); TradingView MCX must use dated codes (`CRUDEOILX2026`) because its MCX `1!` rolls late. `/health` has per-provider stats.
+- `apps/drishti-core-api` — NestJS running under Bun (Bun emits decorator metadata; no nest-cli). Port 3001. `/bars?symbol&tf` = provider history (`history.ts`: Yahoo for NYMEX, Upstox for MCX) cached 30 s and written through to the `candles` hypertable; falls back to `candles` + `bars_1m` rollup when the provider can't answer. `upstox.controller.ts`: OAuth login → token in Redis `upstox:token` (expires 03:30 IST) which the stream polls; secrets only in `.env`, token never returned or logged.
 - `apps/drishti-web` — Vite React SPA, port 5173. Vite proxies `/api`→3001, `/ws`→3002; `VITE_API_URL`/`VITE_STREAM_URL` override for packaged Tauri.
-  - `src/store.ts` — market data only (WS connection, quotes, session `day` bars via `applyTick`).
+  - `src/store.ts` — market data only (WS connection, latest `Quote` per symbol). `Feeds.tsx` = Settings → Data feeds (Upstox connect + provider health via the `/stream` Vite proxy).
   - `src/workspace.ts` — persisted (localStorage) workspace: widgets, react-grid-layout layout, Bloomberg-style link groups (`group: null` = pinned to own symbol; `loadSymbol` on a grouped widget changes the whole group).
   - `src/Grid.tsx` — panel grid (react-grid-layout v2, `Responsive` + `useContainerWidth`). Named Grid, not Workspace, because `Workspace.tsx` and `workspace.ts` collide on case-insensitive filesystems.
   - `src/widgets.tsx` — widget registry `WIDGETS` (chart, quote, watchlist, tv; `linked`/`showSymbol` flags drive panel chrome). New widget = component + registry entry + `SIZE` and `WidgetType` in workspace.ts (+ optional mnemonic in command.ts).

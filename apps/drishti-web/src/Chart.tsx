@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { CandlestickSeries, createChart, type UTCTimestamp } from "lightweight-charts";
-import { applyTick, TIMEFRAMES, type Bar, type Timeframe } from "@drishti/shared";
+import { applyTick, instrument, quoteToTick, tzOffsetSec, TIMEFRAMES, type Bar, type Timeframe } from "@drishti/shared";
 import { useStore } from "./store";
-import { apiUrl, makeFormat, useSettings } from "./settings";
+import { apiUrl, decimalsFor, makeFormat, useSettings } from "./settings";
 
 const toSeries = (b: Bar) => ({ ...b, time: b.time as UTCTimestamp });
 
@@ -16,6 +16,7 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
   const api = useSettings((s) => s.apiUrl);
 
   useEffect(() => {
+    const digits = decimalsFor(symbol, decimals);
     const css = getComputedStyle(document.documentElement);
     const v = (name: string) => css.getPropertyValue(name).trim();
     const chart = createChart(el.current!, {
@@ -24,7 +25,7 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
       grid: { vertLines: { color: v("--hover") }, horzLines: { color: v("--hover") } },
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: v("--line") },
       rightPriceScale: { borderColor: v("--line") },
-      localization: { locale, priceFormatter: makeFormat(locale, decimals).price },
+      localization: { locale, priceFormatter: makeFormat(locale, digits).price },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: v("--up"),
@@ -32,6 +33,7 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
       wickUpColor: v("--up"),
       wickDownColor: v("--down"),
       borderVisible: false,
+      priceFormat: { type: "price", precision: digits, minMove: 10 ** -digits },
     });
 
     let last: Bar | undefined;
@@ -48,9 +50,14 @@ export function Chart({ symbol, tf }: { symbol: string; tf: Timeframe }) {
       });
 
     const unsub = useStore.subscribe((s, p) => {
-      const tick = s.quotes[symbol];
-      if (!loaded || !tick || tick === p.quotes[symbol]) return;
-      const bar = applyTick(last, tick, TIMEFRAMES[tf]);
+      const q = s.quotes[symbol];
+      const before = p.quotes[symbol];
+      if (!loaded || !q || q === before) return;
+      // volume delta only means something within one source
+      const tick = quoteToTick(before?.source === q.source ? before : undefined, q);
+      if (!tick) return;
+      const tz = instrument(symbol)?.timeZone;
+      const bar = applyTick(last, tick, TIMEFRAMES[tf], tz ? tzOffsetSec(tz, tick.time) : 0);
       if (bar !== last) series.update(toSeries(bar));
       last = bar;
     });

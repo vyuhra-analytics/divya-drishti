@@ -1,5 +1,57 @@
-export const SYMBOLS = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK"] as const;
-export type Symbol = (typeof SYMBOLS)[number];
+export type Source = "upstox" | "tradingview" | "yahoo" | "demo";
+
+export interface Instrument {
+  /** EXCHANGE:ROOT, always the continuous front-month contract */
+  symbol: string;
+  name: string;
+  exchange: "MCX" | "NYMEX";
+  currency: "INR" | "USD";
+  /** exchange time zone: candles (1h, 1d) start on its hours/midnight, like the providers' history */
+  timeZone: "Asia/Kolkata" | "America/New_York";
+  decimals: number;
+  /** contract size, display only */
+  lot: string;
+  /** seconds the free feed lags the exchange (CME rule: 10 min) */
+  delayedBy: number;
+  /** live sources in priority order; later ones are fallbacks */
+  sources: Source[];
+  /** Upstox instrument master `underlying_symbol` (MCX) */
+  upstox?: string;
+  /** TradingView root; MCX uses dated codes (CRUDEOILX2026) because MCX `1!` rolls late */
+  tv: string;
+  /** Yahoo chart symbol (NYMEX) */
+  yahoo?: string;
+}
+
+export const INSTRUMENTS: Instrument[] = [
+  { symbol: "MCX:CRUDEOIL", name: "Crude Oil", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "100 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOIL", tv: "MCX:CRUDEOIL" },
+  { symbol: "MCX:CRUDEOILM", name: "Crude Oil Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 0, lot: "10 bbl", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "CRUDEOILM", tv: "MCX:CRUDEOILM" },
+  { symbol: "MCX:NATURALGAS", name: "Natural Gas", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "1250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATURALGAS", tv: "MCX:NATURALGAS" },
+  { symbol: "MCX:NATGASMINI", name: "Natural Gas Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATGASMINI", tv: "MCX:NATGASMINI" },
+  { symbol: "NYMEX:CL", name: "WTI Crude Oil", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 2, lot: "1000 bbl", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "CL=F", tv: "NYMEX:CL1!" },
+  { symbol: "NYMEX:NG", name: "Henry Hub Natural Gas", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 3, lot: "10000 mmBtu", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "NG=F", tv: "NYMEX:NG1!" },
+];
+
+export const SYMBOLS = INSTRUMENTS.map((i) => i.symbol);
+const BY_SYMBOL = new Map(INSTRUMENTS.map((i) => [i.symbol, i]));
+export const instrument = (symbol: string) => BY_SYMBOL.get(symbol);
+
+/** Latest snapshot for a symbol as published by the stream. time = exchange trade time, epoch ms. */
+export interface Quote {
+  symbol: string;
+  price: number;
+  time: number;
+  prevClose?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  /** cumulative day volume */
+  volume?: number;
+  /** actual contract, e.g. "CRUDEOIL FUT 19 NOV 26" */
+  contract?: string;
+  source: Source;
+  delayedBy: number;
+}
 
 /** time = epoch ms */
 export interface Tick {
@@ -22,9 +74,57 @@ export interface Bar {
 export const TIMEFRAMES = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 } as const;
 export type Timeframe = keyof typeof TIMEFRAMES;
 
-/** Merge a tick into the current bar, or start a new bar when the tick crosses into the next bucket. */
-export function applyTick(bar: Bar | undefined, tick: Tick, tfSeconds: number): Bar {
-  const bucket = Math.floor(tick.time / 1000 / tfSeconds) * tfSeconds;
+/** Start (epoch s) of the tf bucket containing `sec`, with boundaries in exchange time. */
+export const bucketStart = (sec: number, tfSeconds: number, offsetSec = 0) =>
+  Math.floor((sec + offsetSec) / tfSeconds) * tfSeconds - offsetSec;
+
+/**
+ * Snap provider bars onto our bucket grid and round away float noise. Providers sometimes append a partial
+ * bar stamped at the quote time (Yahoo: 17:03:25); snapping folds it into its bucket (later bar wins).
+ */
+export function normalizeBars(bars: Bar[], tfSeconds: number, timeZone: string, decimals: number): Bar[] {
+  const r = (x: number) => Number(x.toFixed(decimals));
+  return mergeBars(
+    bars.map((b) => ({
+      time: bucketStart(b.time, tfSeconds, tzOffsetSec(timeZone, b.time * 1000)),
+      open: r(b.open),
+      high: r(b.high),
+      low: r(b.low),
+      close: r(b.close),
+      volume: b.volume,
+    })),
+  );
+}
+
+const tzFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** UTC offset of a time zone at an instant, in seconds (IST → 19800, New York → -14400 / -18000 with DST). */
+export function tzOffsetSec(timeZone: string, ms: number): number {
+  let f = tzFormats.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+    });
+    tzFormats.set(timeZone, f);
+  }
+  const p = Object.fromEntries(f.formatToParts(ms).map((x) => [x.type, Number(x.value)]));
+  const local = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return Math.round((local - Math.floor(ms / 1000) * 1000) / 1000);
+}
+
+/**
+ * Merge a tick into the current bar, or start a new bar when the tick crosses into the next bucket.
+ * offsetSec shifts bucket boundaries to exchange time (so 1d = exchange midnight, 1h = exchange hours).
+ */
+export function applyTick(bar: Bar | undefined, tick: Tick, tfSeconds: number, offsetSec = 0): Bar {
+  const bucket = bucketStart(tick.time / 1000, tfSeconds, offsetSec);
   if (!bar || bucket > bar.time) {
     return { time: bucket, open: tick.price, high: tick.price, low: tick.price, close: tick.price, volume: tick.size };
   }
@@ -36,6 +136,94 @@ export function applyTick(bar: Bar | undefined, tick: Tick, tfSeconds: number): 
     close: tick.price,
     volume: bar.volume + tick.size,
   };
+}
+
+/**
+ * Tick implied by moving from one quote to the next: size is the day-volume delta.
+ * null when nothing traded (same price, same volume), so heartbeats and re-sends don't fake trades.
+ * A volume drop (new session, or a different source's count) counts as size 0.
+ */
+export function quoteToTick(prev: Quote | undefined, q: Quote): Tick | null {
+  const size = prev?.volume !== undefined && q.volume !== undefined ? Math.max(0, q.volume - prev.volume) : 0;
+  if (prev && prev.price === q.price && size === 0) return null;
+  return { symbol: q.symbol, time: q.time, price: q.price, size };
+}
+
+/**
+ * Fallback rule: the first source (in priority order) heard from within `staleMs` wins.
+ * If every source is stale (market closed, network down) keep the most recently heard one.
+ */
+export function pickSource(
+  lastSeen: Partial<Record<Source, number>>,
+  priority: Source[],
+  now: number,
+  staleMs: number,
+): Source | undefined {
+  const fresh = priority.find((s) => (lastSeen[s] ?? -Infinity) > now - staleMs);
+  if (fresh) return fresh;
+  return priority.filter((s) => lastSeen[s] !== undefined).sort((a, b) => lastSeen[b]! - lastSeen[a]!)[0];
+}
+
+/** Upstox instrument master row (subset). expiry = epoch ms. */
+export interface MasterRow {
+  instrument_key: string;
+  trading_symbol: string;
+  instrument_type: string;
+  underlying_symbol?: string;
+  expiry?: number;
+  lot_size?: number;
+}
+
+/** Nearest unexpired future for an underlying. ponytail: rolls on expiry; MCX volume moves a few days earlier, switch to volume-based roll if that bites. */
+export function frontMonth(rows: MasterRow[], underlying: string, now: number): MasterRow | undefined {
+  return rows
+    .filter((r) => r.underlying_symbol === underlying && r.instrument_type === "FUT" && (r.expiry ?? 0) > now)
+    .sort((a, b) => a.expiry! - b.expiry!)[0];
+}
+
+const MONTH_CODES = "FGHJKMNQUVXZ";
+/** TradingView dated futures code: CRUDEOIL + expiry Nov 2026 → CRUDEOILX2026 */
+export function tvContract(root: string, expiryMs: number): string {
+  const d = new Date(expiryMs);
+  return `${root}${MONTH_CODES[d.getUTCMonth()]}${d.getUTCFullYear()}`;
+}
+
+/** Upstox access tokens die at 03:30 IST (UTC+5:30) the next morning, whenever they were issued. */
+export function upstoxTokenExpiry(now: number): number {
+  const IST = 5.5 * 3600_000;
+  const ist = new Date(now + IST);
+  const expiry = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 3, 30) - IST;
+  return expiry > now ? expiry : expiry + 86_400_000;
+}
+
+/** Yahoo chart response → bars (bucket start = Yahoo timestamp, already exchange-aligned). Null rows skipped. */
+export function parseYahooCandles(json: any): Bar[] {
+  const r = json?.chart?.result?.[0];
+  const q = r?.indicators?.quote?.[0];
+  if (!r?.timestamp || !q) return [];
+  const out: Bar[] = [];
+  r.timestamp.forEach((t: number, i: number) => {
+    const [open, high, low, close] = [q.open[i], q.high[i], q.low[i], q.close[i]];
+    if ([open, high, low, close].some((v) => typeof v !== "number")) return;
+    out.push({ time: t, open, high, low, close, volume: q.volume?.[i] ?? 0 });
+  });
+  return out;
+}
+
+/** Upstox candle response ([ts, o, h, l, c, vol, oi] newest first, ts in IST) → ascending bars. */
+export function parseUpstoxCandles(json: any): Bar[] {
+  const rows: any[][] = json?.data?.candles ?? [];
+  return rows
+    .map(([ts, open, high, low, close, volume]) => ({ time: Date.parse(ts) / 1000, open, high, low, close, volume: volume ?? 0 }))
+    .filter((b) => Number.isFinite(b.time))
+    .sort((a, b) => a.time - b.time);
+}
+
+/** Merge bar lists (later lists win on equal time), ascending. */
+export function mergeBars(...lists: Bar[][]): Bar[] {
+  const byTime = new Map<number, Bar>();
+  for (const list of lists) for (const b of list) byTime.set(b.time, b);
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
 export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] };

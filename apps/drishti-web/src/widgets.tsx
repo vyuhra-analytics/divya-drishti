@@ -1,4 +1,4 @@
-import { SYMBOLS, TIMEFRAMES, type Timeframe } from "@drishti/shared";
+import { instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
 import type { ComponentType } from "react";
 import { Chart } from "./Chart";
 import { TvWidget } from "./TvWidget";
@@ -6,12 +6,18 @@ import { useStore } from "./store";
 import { useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
 
+const SOURCE_LABEL: Record<Quote["source"], string> = { upstox: "UPSTOX", tradingview: "TV", yahoo: "YAHOO", demo: "DEMO" };
+
+/** "CRUDEOIL FUT 19 NOV 26" → "NOV 26" */
+export const contractMonth = (contract?: string) => contract?.match(/([A-Z]{3}) (\d{2})$/)?.slice(1).join(" ");
+
+/** Change vs previous close (the provider's), not since page load. */
 function useChange(symbol: string) {
   const last = useStore((s) => s.quotes[symbol]?.price);
-  const open = useStore((s) => s.day[symbol]?.open);
-  const change = last !== undefined && open !== undefined ? last - open : undefined;
-  const pct = change !== undefined && open ? (change / open) * 100 : undefined;
-  return { last, change, pct, dir: change === undefined || change === 0 ? "" : change > 0 ? "up" : "down" };
+  const prevClose = useStore((s) => s.quotes[symbol]?.prevClose);
+  const change = last !== undefined && prevClose ? last - prevClose : undefined;
+  const pct = change !== undefined && prevClose ? (change / prevClose) * 100 : undefined;
+  return { change, pct, dir: change === undefined || change === 0 ? "" : change > 0 ? "up" : "down" };
 }
 
 /** Tick-direction coloured price; with flash on, it re-mounts per tick (key) to replay the flash animation. */
@@ -19,12 +25,31 @@ export function Price({ symbol }: { symbol: string }) {
   const price = useStore((s) => s.quotes[symbol]?.price);
   const prev = useStore((s) => s.prev[symbol]);
   const flash = useSettings((s) => s.flash);
-  const fmt = useFormat();
+  const fmt = useFormat(symbol);
   if (price === undefined) return <span className="muted">—</span>;
   const dir = price > prev ? "up" : price < prev ? "down" : "";
   return (
     <span key={flash ? price : undefined} className={flash && dir ? `${dir} flash-${dir}` : dir}>
       {fmt.price(price)}
+    </span>
+  );
+}
+
+/** Source badge, plus a DELAYED tag when the feed lags the exchange. */
+export function SourceBadge({ symbol }: { symbol: string }) {
+  const source = useStore((s) => s.quotes[symbol]?.source);
+  const delayedBy = useStore((s) => s.quotes[symbol]?.delayedBy ?? 0);
+  if (!source) return null;
+  return (
+    <span className="badges">
+      <span className={`badge src-${source}`} title={`Source: ${source}`}>
+        {SOURCE_LABEL[source]}
+      </span>
+      {delayedBy > 0 && (
+        <span className="badge delayed" title={`Exchange data delayed ${delayedBy / 60} minutes`}>
+          DELAYED {delayedBy / 60}m
+        </span>
+      )}
     </span>
   );
 }
@@ -40,6 +65,7 @@ function ChartWidget({ widget }: { widget: Widget }) {
             {t}
           </button>
         ))}
+        <SourceBadge symbol={symbol} />
       </div>
       <Chart symbol={symbol} tf={widget.tf} />
     </>
@@ -48,39 +74,62 @@ function ChartWidget({ widget }: { widget: Widget }) {
 
 function QuoteWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
-  const day = useStore((s) => s.day[symbol]);
+  const q = useStore((s) => s.quotes[symbol]);
+  const inst = instrument(symbol);
   const { change, pct, dir } = useChange(symbol);
-  const fmt = useFormat();
+  const fmt = useFormat(symbol);
   return (
     <div className="quote">
+      <div className="quote-head">
+        <span>{inst?.name ?? symbol}</span>
+        <span className="muted">{q?.contract ?? ""}</span>
+      </div>
       <div className="quote-last">
         <Price symbol={symbol} />
+        <span className="muted">{inst?.currency}</span>
         <span className={dir}>
           {change !== undefined && change > 0 ? "+" : ""}
-          {fmt.price(change)} ({pct?.toFixed(2) ?? "—"}%)
+          {fmt.price(change)} ({pct !== undefined ? `${pct > 0 ? "+" : ""}${pct.toFixed(2)}` : "—"}%)
         </span>
       </div>
       <dl>
         <dt>Open</dt>
-        <dd>{fmt.price(day?.open)}</dd>
+        <dd>{fmt.price(q?.open)}</dd>
         <dt>High</dt>
-        <dd>{fmt.price(day?.high)}</dd>
+        <dd>{fmt.price(q?.high)}</dd>
         <dt>Low</dt>
-        <dd>{fmt.price(day?.low)}</dd>
+        <dd>{fmt.price(q?.low)}</dd>
+        <dt>Prev close</dt>
+        <dd>{fmt.price(q?.prevClose)}</dd>
         <dt>Volume</dt>
-        <dd>{fmt.volume(day?.volume)}</dd>
+        <dd>{fmt.volume(q?.volume)}</dd>
+        <dt>Lot</dt>
+        <dd>{inst?.lot ?? "—"}</dd>
       </dl>
+      <div className="quote-foot">
+        <SourceBadge symbol={symbol} />
+        {q && <span className="muted">{new Date(q.time).toLocaleTimeString()}</span>}
+      </div>
     </div>
   );
 }
 
 function WatchRow({ symbol, active, onPick }: { symbol: string; active: boolean; onPick: () => void }) {
   const { pct, dir } = useChange(symbol);
+  const contract = useStore((s) => s.quotes[symbol]?.contract);
+  const delayed = useStore((s) => (s.quotes[symbol]?.delayedBy ?? 0) > 0);
+  const inst = instrument(symbol);
   return (
-    <button className={active ? "row active" : "row"} onClick={onPick}>
-      <span>{symbol}</span>
+    <button className={active ? "row active" : "row"} onClick={onPick} title={`${inst?.name} · ${symbol}`}>
+      <span className="row-name">
+        {symbol.split(":")[1]}
+        <small className="muted">
+          {contractMonth(contract) ?? inst?.exchange}
+          {delayed && " · 10m delay"}
+        </small>
+      </span>
       <Price symbol={symbol} />
-      <span className={dir}>{pct?.toFixed(2) ?? "—"}%</span>
+      <span className={dir}>{pct !== undefined ? `${pct > 0 ? "+" : ""}${pct.toFixed(2)}%` : "—"}</span>
     </button>
   );
 }

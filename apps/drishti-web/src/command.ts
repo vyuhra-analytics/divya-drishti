@@ -25,8 +25,10 @@ export function parse(input: string, symbols: readonly string[]): ParseResult {
 
   const cmd: Command = {};
   for (const tok of tokens) {
+    // full "MCX:CRUDEOIL" or just the part after the exchange ("CRUDEOIL", "CL")
+    const sym = symbols.find((s) => s === tok || s.split(":")[1] === tok);
     if (!cmd.open && tok in MNEMONICS) cmd.open = MNEMONICS[tok];
-    else if (!cmd.symbol && symbols.includes(tok)) cmd.symbol = tok;
+    else if (!cmd.symbol && sym) cmd.symbol = sym;
     else return { ok: false, error: `unknown "${tok}"`, suggestions: suggest(tok, symbols) };
   }
   return { ok: true, cmd };
