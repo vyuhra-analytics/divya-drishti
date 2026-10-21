@@ -9,7 +9,8 @@ import { InsiderController } from "./insider.controller";
 import { CalendarController } from "./calendar.controller";
 import { BriefingController } from "./briefing.controller";
 import { CotController } from "./cot.controller";
+import { ChokepointsController } from "./chokepoints.controller";
 import { PositionsController } from "./positions.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController], providers: [Db] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController], providers: [Db] })
 export class AppModule {}

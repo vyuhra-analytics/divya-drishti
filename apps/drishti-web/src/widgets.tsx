@@ -10,6 +10,7 @@ import { AlertsWidget } from "./AlertsPanel";
 import { AdvancedChartWidget } from "./AdvancedChart";
 import { BriefingWidget } from "./BriefingPanel";
 import { CotWidget } from "./CotPanel";
+import { ChokepointsWidget } from "./ChokepointsPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -295,4 +296,5 @@ export const WIDGETS: Record<
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
   briefing: { title: "AI Briefing", component: BriefingWidget, linked: true, showSymbol: true },
   cot: { title: "Positioning (COT)", component: CotWidget, linked: true, showSymbol: false },
+  chokepoints: { title: "Chokepoints", component: ChokepointsWidget, linked: false, showSymbol: false },
 };

@@ -474,3 +474,15 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .cot td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .cot th:first-child, .cot td:first-child { text-align: left; }
 .cot-note { margin-top: 8px; font-size: 11px; }
+.chk { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chk-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px 12px; font-size: 12px; }
+.chk table { width: 100%; border-collapse: collapse; }
+.chk th { text-align: right; font-weight: 600; font-size: 11px; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.chk td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.chk th:first-child, .chk td:first-child { text-align: left; }
+.chk tbody tr { cursor: pointer; }
+.chk tbody tr:hover, .chk tbody tr.active { background: var(--hover, rgba(127, 127, 127, .12)); }
+.chk .warn { color: var(--warn, #d9a441); }
+.chk-asof { margin: 10px 0 4px; font-size: 11px; }
+.chk-chart { width: 100%; height: 90px; display: block; }
+.chk-scale, .chk-note { margin: 4px 0 0; font-size: 11px; }
