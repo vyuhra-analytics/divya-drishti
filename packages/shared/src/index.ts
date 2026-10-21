@@ -310,3 +310,5 @@ export * from "./backtest";
 export * from "./paper";
 export * from "./bars";
 export * from "./concurrency";
+export * from "./fetcher";
+export * from "./fetchers";
