@@ -36,3 +36,33 @@ test("a closed market says closed in the provenance", () => {
   render(<SourceBadge symbol={SYM} />);
   expect(screen.getByText("UPSTOX").getAttribute("title")).toBe("upstox, closed, as of 60m ago");
 });
+
+import { SimulatedBanner } from "./SourceBadge";
+
+test("compact badge (watchlist rows) shows only the source, with the provenance in the tooltip and a mark when feeds disagree", () => {
+  useStore.setState({ quotes: { [SYM]: quote() } });
+  const { container } = render(<SourceBadge symbol={SYM} compact />);
+  expect(screen.getByText("UPSTOX").getAttribute("title")).toBe("upstox, live, as of 2s ago");
+  expect(container.querySelectorAll(".badge")).toHaveLength(1); // no STALE/CLOSED/DELAYED clutter in a row
+  cleanup();
+  useStore.setState({ quotes: { [SYM]: quote({ drift: { between: ["tradingview", "upstox"], pct: 0.3, ticks: 28 } }) } });
+  render(<SourceBadge symbol={SYM} compact />);
+  expect(screen.getByText("≠").getAttribute("title")).toContain("differ by 0.3%");
+});
+
+test("a demo quote is marked DEMO everywhere a badge shows", () => {
+  useStore.setState({ quotes: { [SYM]: quote({ source: "demo" }) } });
+  render(<SourceBadge symbol={SYM} />);
+  expect(screen.getByText("DEMO").className).toContain("src-demo");
+});
+
+test("the SIMULATED PRICES banner shows only while a quote comes from the demo feed", () => {
+  useStore.setState({ quotes: { [SYM]: quote() } });
+  const { container } = render(<SimulatedBanner />);
+  expect(container.textContent).toBe(""); // live feed: nothing
+  cleanup();
+  useStore.setState({ quotes: { [SYM]: quote(), "NYMEX:CL": { symbol: "NYMEX:CL", price: 99, time: Date.now(), delayedBy: 0, source: "demo" } as never } });
+  render(<SimulatedBanner />);
+  expect(screen.getByRole("alert").textContent).toContain("SIMULATED PRICES");
+  expect(screen.getByRole("alert").textContent).toContain("not market prices");
+});

@@ -81,6 +81,46 @@ test("the app loads with the default workspace and no script errors", async ({ p
   assert(errors.length === 0, `script errors: ${errors.join(" | ")}`);
 });
 
+test("the default chart and every watchlist row say where their price comes from; no simulated-prices banner on the live feed", async ({ page }) => {
+  await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 20_000 });
+  const rows = await page.locator(".watchlist .badge").allInnerTexts();
+  assert(rows.every((t) => ["UPSTOX", "TV", "YAHOO"].includes(t.trim())), `unexpected watchlist badges: ${rows.join(",")}`);
+  assert((await page.locator(".adv-replay .badge").count()) >= 1, "the default chart shows no feed badge");
+  assert((await page.locator(".sim-banner").count()) === 0, "the SIMULATED PRICES banner shows on the live feed");
+  await page.locator(".watchlist").first().screenshot({ path: join(SHOTS, "watchlist.png") });
+});
+
+test("demo feed: the SIMULATED PRICES banner and a DEMO badge on every chart, quote and watchlist row", async (_c, browser) => {
+  // a second stream in demo mode on its own port; Telegram is blanked so no stored server alert can message a real chat from simulated prices
+  const demo = Bun.spawn(["bun", "--env-file=../../.env", "src/index.ts"], {
+    cwd: join(import.meta.dir, "../apps/drishti-core-stream"),
+    env: { ...process.env, STREAM_PORT: "3012", FEED: "demo", UPSTOX_ACCESS_TOKEN: "", TELEGRAM_BOT_TOKEN: "", ALERT_WEBHOOK_URL: "" },
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  try {
+    for (let i = 0; i < 30 && !(await up("http://127.0.0.1:3012/health")); i++) await Bun.sleep(500);
+    assert(await up("http://127.0.0.1:3012/health"), "the demo stream did not start");
+    await ctx.addInitScript(() => localStorage.setItem("drishti-settings", JSON.stringify({ state: { streamUrl: "ws://127.0.0.1:3012/ws" }, version: 0 })));
+    const page = await ctx.newPage();
+    await page.goto(WEB);
+    await page.locator("h1").first().waitFor({ timeout: 20_000 });
+    await page.keyboard.press("Escape");
+    await page.locator(".sim-banner").waitFor({ timeout: 15_000 });
+    assert((await page.locator(".sim-banner").innerText()).includes("SIMULATED PRICES"), "banner text wrong");
+    await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 15_000 });
+    const rows = await page.locator(".watchlist .badge").allInnerTexts();
+    assert(rows.every((t) => t.trim() === "DEMO"), `watchlist badges: ${rows.join(",")}`);
+    assert((await page.locator(".adv-replay .badge").allInnerTexts()).every((t) => t.trim() === "DEMO"), "a chart is missing its DEMO badge");
+    assert((await page.locator(".quote-foot .badge").allInnerTexts()).includes("DEMO"), "the quote panel is missing its DEMO badge");
+    await page.screenshot({ path: join(SHOTS, "demo-feed.png") });
+  } finally {
+    await ctx.close();
+    demo.kill();
+  }
+});
+
 test("live prices reach the top bar", async ({ page }) => {
   await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+/.test(document.body.innerText), undefined, { timeout: 20_000 });
 });

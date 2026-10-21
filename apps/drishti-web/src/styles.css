@@ -583,3 +583,9 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .paper th:nth-child(2), .paper th:last-child { text-align: left; }
 .alert-server { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 12px; }
 .alert-server input { width: auto; flex: none; min-width: 0; margin: 0; }
+.sim-banner { background: var(--down); color: #fff; padding: 4px 12px; font-size: 12px; text-align: center; }
+.sim-banner strong { letter-spacing: .5px; margin-right: 6px; }
+.badges.mini { margin-left: 4px; display: inline-flex; vertical-align: middle; }
+.badges.mini .badge { font-size: 9px; line-height: 13px; padding: 0 4px; }
+.row-sub { display: flex; align-items: center; gap: 2px; white-space: nowrap; }
+.row-sub .badges.mini { margin-left: 2px; }

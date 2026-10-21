@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SourceBadge } from "./SourceBadge";
 import { instrument, type Bar } from "@drishti/shared";
 import type { Widget as OaWidget } from "openalgo-charts/widget";
 import type { ReplayController, ReplayState, TickMarkType } from "openalgo-charts";
@@ -211,6 +212,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           </>
         )}
         {replayNote && <span className="muted adv-replay-note">{replayNote}</span>}
+        <SourceBadge symbol={symbol} />
       </div>
       <div ref={host} className="adv-chart no-drag" />
     </div>

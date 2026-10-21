@@ -20,13 +20,13 @@ import { BacktestWidget } from "./BacktestPanel";
 import { PaperWidget } from "./PaperPanel";
 import { QualityWidget } from "./QualityPanel";
 import { useFreshness } from "./market";
+import { SourceBadge } from "./SourceBadge";
+export { SourceBadge };
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
 import { sparkPoints } from "./spark";
 import { useClock, useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
-
-const SOURCE_LABEL: Record<Quote["source"], string> = { upstox: "UPSTOX", tradingview: "TV", yahoo: "YAHOO", demo: "DEMO" };
 
 /** "CRUDEOIL FUT 19 NOV 26" → "NOV 26" */
 export const contractMonth = (contract?: string) => contract?.match(/([A-Z]{3}) (\d{2})$/)?.slice(1).join(" ");
@@ -53,43 +53,6 @@ export function Price({ symbol }: { symbol: string }) {
   return (
     <span key={flash ? price : undefined} className={cls} title={fresh === "live" ? undefined : fresh === "closed" ? "Market closed: last price" : "No update from the feed for over a minute"}>
       {fmt.price(price)}
-    </span>
-  );
-}
-
-/** Source badge, plus a DELAYED tag when the feed lags the exchange. */
-export function SourceBadge({ symbol }: { symbol: string }) {
-  const quote = useStore((s) => s.quotes[symbol]);
-  const source = quote?.source;
-  const delayedBy = quote?.delayedBy ?? 0;
-  const fresh = useFreshness(symbol);
-  if (!quote || !source) return null;
-  const provenance = describeProvenance(quoteProvenance(quote, fresh), Date.now());
-  return (
-    <span className="badges">
-      {quote.drift && (
-        <span className="badge disputed" title={`Two live feeds disagree: ${quote.drift.between.join(" and ")} differ by ${quote.drift.pct}% (${quote.drift.ticks} ticks). This price may be wrong.`}>
-          FEEDS DIFFER
-        </span>
-      )}
-      {fresh === "closed" && (
-        <span className="badge closed" title="Exchange closed: showing the last price">
-          CLOSED
-        </span>
-      )}
-      {fresh === "stale" && (
-        <span className="badge stale" title="Market open, but no update from the feed for over a minute">
-          STALE
-        </span>
-      )}
-      <span className={`badge src-${source}`} title={provenance}>
-        {SOURCE_LABEL[source]}
-      </span>
-      {delayedBy > 0 && (
-        <span className="badge delayed" title={`Exchange data delayed ${delayedBy / 60} minutes`}>
-          DELAYED {delayedBy / 60}m
-        </span>
-      )}
     </span>
   );
 }
@@ -266,10 +229,13 @@ function WatchRow({ symbol, active, onPick }: { symbol: string; active: boolean;
     <button className={active ? "row active" : "row"} onClick={onPick} title={`${inst?.name} · ${symbol}`}>
       <span className="row-name">
         {symbol.split(":")[1]}
-        <small className="muted">
-          {contractMonth(contract) ?? inst?.exchange}
-          {delayed && " · 10m delay"}
-        </small>
+        <span className="row-sub">
+          <small className="muted">
+            {contractMonth(contract) ?? inst?.exchange}
+            {delayed && " · 10m delay"}
+          </small>
+          <SourceBadge symbol={symbol} compact />
+        </span>
       </span>
       <svg className={`spark ${trail && trail[trail.length - 1] < trail[0] ? "down" : "up"}`} viewBox="0 0 56 18" aria-hidden="true">
         <polyline points={sparkPoints(trail ?? [], 56, 18)} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SimulatedBanner } from "./SourceBadge";
 import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
 import { startAlertEngine } from "./alertEngine";
@@ -76,6 +77,7 @@ export function App() {
 
   return (
     <div className="shell">
+      <SimulatedBanner />
       <header className="topbar">
         <button className="menu-btn" aria-label="Panels" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           ☰
