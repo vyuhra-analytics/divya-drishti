@@ -1,4 +1,4 @@
-import { mergeBars, normalizeBars, parseUpstoxCandles, parseYahooCandles, TIMEFRAMES, type Bar, type Instrument, type MasterRow, type Timeframe } from "@drishti/shared";
+import { mergeBars, normalizeBars, parseUpstoxCandles, validateBars, parseYahooCandles, TIMEFRAMES, type Bar, type Instrument, type MasterRow, type Timeframe } from "@drishti/shared";
 import type { RedisClient } from "bun";
 
 // Provider history for charts. Yahoo for NYMEX (no login, 10 min delayed), Upstox for MCX (needs today's token).
@@ -20,6 +20,13 @@ const UPSTOX: Record<Timeframe, { unit: string; interval: number; days: number }
   "1d": { unit: "days", interval: 1, days: 730 },
 };
 
+/** Drop bars that cannot be real (high under the low, a zero price...) and say so: bad provider data is never stored or drawn. */
+function clean(label: string, bars: Bar[]): Bar[] {
+  const { bars: kept, dropped } = validateBars(bars);
+  if (dropped.length) console.warn(`history ${label}: dropped ${dropped.length} impossible bar(s), e.g. ${dropped[0].reason} at ${new Date(dropped[0].time * 1000).toISOString()}`);
+  return kept;
+}
+
 async function getJson(url: string, headers: Record<string, string>) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
@@ -32,7 +39,7 @@ export async function yahooHistory(inst: Instrument, tf: Timeframe): Promise<Bar
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inst.yahoo!)}?interval=${interval}&range=${range}`,
     UA,
   );
-  return normalizeBars(parseYahooCandles(json), TIMEFRAMES[tf], inst.timeZone, inst.decimals);
+  return clean(`${inst.symbol} ${tf} (yahoo)`, normalizeBars(parseYahooCandles(json), TIMEFRAMES[tf], inst.timeZone, inst.decimals));
 }
 
 const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
@@ -68,5 +75,5 @@ export async function upstoxHistory(inst: Instrument, tf: Timeframe, redis: Redi
     getJson(`https://api.upstox.com/v3/historical-candle/intraday/${key}/${unit}/${interval}`, headers).catch(() => null),
   ]);
   // ponytail: front-month history only; after a roll the chart starts at the new contract's listing. Stitch expired contracts if continuity matters.
-  return normalizeBars(mergeBars(parseUpstoxCandles(past), parseUpstoxCandles(today)), TIMEFRAMES[tf], inst.timeZone, inst.decimals);
+  return clean(`${inst.symbol} ${tf} (upstox)`, normalizeBars(mergeBars(parseUpstoxCandles(past), parseUpstoxCandles(today)), TIMEFRAMES[tf], inst.timeZone, inst.decimals));
 }

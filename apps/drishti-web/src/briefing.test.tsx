@@ -45,6 +45,15 @@ test("gatherContext needs a live price, then packs indicators and headlines", as
   expect(c.technicals.timeframe).toBe("5m");
 });
 
+test("the bar still forming is left out of the facts", async () => {
+  const open5 = Math.floor(Date.now() / 1000 / 300) * 300; // the current 5m bar opened this second-ish ago and has not closed
+  const forming = { time: open5, open: 5000, high: 5001, low: 4999, close: 5000, volume: 1 };
+  globalThis.fetch = mock(async (url: string) => (String(url).includes("/bars") ? { ok: true, status: 200, json: async () => [...bars, forming] } : { ok: false, status: 404, json: async () => ({}) })) as never;
+  const c = await gatherContext("MCX:CRUDEOIL", "5m");
+  // the 5000 print of the forming bar would drag the 20-bar change far negative; the last completed close is 9061
+  expect(c.technicals.changeOverBars!.pct).toBeGreaterThan(0);
+});
+
 test("generating a briefing posts the context, shows both cases and journals it", async () => {
   render(<BriefingWidget widget={widget} />);
   fireEvent.click(screen.getByText(/Brief me on CRUDEOIL/));

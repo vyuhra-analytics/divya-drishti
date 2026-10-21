@@ -3,14 +3,17 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   buildContext,
+  completedBars,
   instrument,
   positionContext,
   scoreBriefing,
+  TIMEFRAMES,
   TOPIC_TAGS,
   type Bar,
   type BriefingResult,
   type CalEvent,
   type OpenPosition,
+  type Timeframe,
 } from "@drishti/shared";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
@@ -65,7 +68,8 @@ export async function gatherContext(symbol: string, tf: string, withPosition = f
   return buildContext({
     symbol,
     quote,
-    bars: (bars ?? []).slice(-200),
+    // only bars that have closed: the forming bar is not final, and the facts must not change while it fills
+    bars: completedBars(bars ?? [], TIMEFRAMES[tf as Timeframe] ?? 300, Date.now() / 1000).slice(-200),
     timeframe: tf,
     news: relevant,
     events: events ?? [],

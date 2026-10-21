@@ -11,6 +11,7 @@ import {
   instrument,
   pickSource,
   prioritize,
+  quoteProblem,
   quoteToTick,
   tvContract,
   type ClientMessage,
@@ -69,9 +70,19 @@ const heartbeat = () => {
 };
 let buffer: Tick[] = [];
 
+const rejected = { count: 0, last: undefined as undefined | { symbol: string; source: string; reason: string; at: number } };
+
 function accept(q: Quote) {
   const inst = instrument(q.symbol);
   if (!inst) return;
+  // never publish or store a quote we know is impossible (zero or negative price, high under low...): count it, and don't treat it as "heard from"
+  const bad = quoteProblem(q);
+  if (bad) {
+    rejected.count++;
+    if (!rejected.last || Date.now() - rejected.last.at > 60_000) console.warn(`rejected ${q.source} quote for ${q.symbol}: ${bad}`);
+    rejected.last = { symbol: q.symbol, source: q.source, reason: bad, at: Date.now() };
+    return;
+  }
   const now = Date.now();
   const seen = lastSeen.get(q.symbol) ?? {};
   seen[q.source] = now;
@@ -193,6 +204,7 @@ const app = new Elysia()
       redis: rd.status === "fulfilled",
       feed: DEMO ? "demo" : "live",
       providers: stats,
+      rejected,
       active: Object.fromEntries(active),
       mcxPrimary: mcxPrimary ?? "auto",
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),

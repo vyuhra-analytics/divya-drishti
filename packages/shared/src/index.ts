@@ -308,3 +308,4 @@ export * from "./costs";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";
+export * from "./bars";
