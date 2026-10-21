@@ -24,12 +24,13 @@ import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
 import { archiveStats, currentNews, newsStats, startNews } from "./news";
+import { currentUniverse, startUniverse, universeStats } from "./universe";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const TOPICS = new Set<string>([...SYMBOLS, "news"]);
+const TOPICS = new Set<string>([...SYMBOLS, "news", "universe"]);
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
 const DEMO = process.env.FEED === "demo";
@@ -144,6 +145,7 @@ const app = new Elysia()
       active: Object.fromEntries(active),
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
       news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
+      universe: { rows: currentUniverse().length, stats: universeStats },
     };
   })
   .ws("/ws", {
@@ -177,11 +179,16 @@ const app = new Elysia()
             ws.send(JSON.stringify({ type: "news", items: currentNews() }));
             continue;
           }
+          if (s === "universe") {
+            ws.subscribe("universe");
+            ws.send(JSON.stringify({ type: "universe", rows: currentUniverse() }));
+            continue;
+          }
           ws.subscribe(`quotes:${s}`);
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else topics.forEach((s) => ws.unsubscribe(s === "news" ? "news" : `quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" ? s : `quotes:${s}`));
     },
   })
   .listen({ port: PORT, hostname: HOST });
@@ -201,6 +208,14 @@ if (DEMO) {
     stats.yahoo!,
   );
 }
+
+// MCX roots → the traded dated contract (TradingView's MCX 1! rolls late), else the 1! fallback
+const mcxTicker = (root: string) => {
+  const inst = INSTRUMENTS.find((i) => i.tv === root);
+  const front = inst?.upstox ? fronts.get(inst.upstox) : undefined;
+  return front?.expiry ? tvContract(root, front.expiry) : `${root}1!`;
+};
+startUniverse(mcxTicker, (changed) => app.server?.publish("universe", JSON.stringify({ type: "universe", rows: changed })));
 
 startNews(redis, sql, (fresh) => app.server?.publish("news", JSON.stringify({ type: "news", items: fresh })));
 

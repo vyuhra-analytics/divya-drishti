@@ -139,6 +139,26 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
   .sidebar.mobile-open { display: flex; position: absolute; z-index: 20; top: 36px; bottom: 24px; left: 0; width: 200px; box-shadow: 4px 0 16px rgb(0 0 0 / 0.3); }
   .sidebar.mobile-open.collapsed { width: 200px; }
 }
+.heatmap { padding: 6px 8px; overflow-y: auto; }
+.heat-group h4 { margin: 8px 0 4px; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+.heat-tiles { display: flex; flex-wrap: wrap; gap: 3px; }
+.heat-tile { flex-basis: 96px; min-height: 52px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 6px; text-align: center; border-radius: 4px; border: 1px solid transparent; color: var(--text); }
+.heat-tile:hover { border-color: var(--text); }
+.heat-tile.ours { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.heat-tile .name { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat-tile .pct { font-size: 12px; }
+.screener { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.screener-scroll { flex: 1; min-height: 0; overflow: auto; }
+.screener table { width: 100%; border-collapse: collapse; }
+.screener th { position: sticky; top: 0; background: var(--panel); text-align: right; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--line); }
+.screener th:first-child, .screener td:first-child { text-align: left; }
+.screener th button { color: inherit; font-size: 11px; padding: 4px 8px; }
+.screener td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.screener tbody tr:hover { background: var(--hover); }
+.screener tr.ours { cursor: pointer; }
+.screener tr.ours td:first-child { color: var(--accent); }
+.range52 { position: relative; display: inline-block; width: 70px; height: 4px; border-radius: 2px; background: var(--line); vertical-align: middle; }
+.range52 span { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--text); }
 .statusbar { display: flex; align-items: center; gap: 14px; height: 24px; flex: none; padding: 0 12px; font-size: 11px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
 .statusbar b { font-weight: 600; color: var(--text); }
 .sb-item { flex: none; display: inline-flex; align-items: center; gap: 4px; }

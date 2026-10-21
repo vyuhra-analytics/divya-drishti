@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { dedupeNews, SYMBOLS, type NewsItem, type Quote } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
 import { streamUrl } from "./settings";
 
 /** Live market data. UI/layout state lives in workspace.ts. */
@@ -15,6 +15,8 @@ interface MarketState {
   epoch: number;
   /** per symbol: when the server last heard from its active source (heartbeat), for STALE detection */
   seen: Record<string, number>;
+  /** energy universe (heatmap/screener) by TradingView ticker, ~10 s fresh */
+  universe: Record<string, UniverseRow>;
 }
 
 export const useStore = create<MarketState>()(() => ({
@@ -24,6 +26,7 @@ export const useStore = create<MarketState>()(() => ({
   news: [],
   epoch: 0,
   seen: {},
+  universe: {},
 }));
 
 // The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
@@ -43,13 +46,15 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number> } = JSON.parse(e.data);
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } =
+      JSON.parse(e.data);
     if ("type" in msg) {
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
+      if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));
       return;
     }

@@ -2,6 +2,7 @@ import { daysToExpiry, instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timefra
 import type { ComponentType } from "react";
 import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
+import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -273,4 +274,6 @@ export const WIDGETS: Record<
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },
   news: { title: "News", component: NewsWidget, linked: true, showSymbol: false },
+  heatmap: { title: "Energy Heatmap", component: HeatmapWidget, linked: false, showSymbol: false },
+  screener: { title: "Energy Screener", component: ScreenerWidget, linked: false, showSymbol: false },
 };
