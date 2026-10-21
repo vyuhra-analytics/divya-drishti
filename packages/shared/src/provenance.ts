@@ -23,7 +23,7 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-/** How old data of each kind may be before it counts as outdated. Weekly reports get a day or two of slack past their cadence. */
+/** How old (by the date the data is FOR, not when it was published) each kind may be before it counts as outdated: its cadence plus publication lag plus a day or two of slack. */
 export const FRESHNESS_BUDGET_MS: Record<DataKind, number> = {
   quote: MIN, // the stream's own staleness rule
   bars: 2 * HOUR, // history refreshes with the chart; older than this and the chart is not following the market
@@ -31,9 +31,9 @@ export const FRESHNESS_BUDGET_MS: Record<DataKind, number> = {
   curve: 2 * MIN,
   calendar: 2 * HOUR,
   news: 6 * HOUR,
-  positioning: 9 * DAY, // COT: weekly, published Friday for the Tuesday before (up to 10 days old at the next release)
-  inventory: 9 * DAY, // EIA weekly
-  spot: 5 * DAY, // EIA daily spot prices: a long weekend plus EIA's own delay
+  positioning: 12 * DAY, // COT: reported for a Tuesday, published the Friday after: 10 days old on the next release day, plus slack
+  inventory: 14 * DAY, // EIA weekly: the week-ending Friday is 12 days old when the next report comes out on a Wednesday, plus slack
+  spot: 10 * DAY, // EIA spot prices are published weekly and run up to a week behind
   transits: 14 * DAY, // PortWatch: weekly, a few days behind
   balances: 270 * DAY, // JODI: countries report up to ~8 months late
 };

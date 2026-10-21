@@ -192,7 +192,7 @@ export function BacktestWidget({ widget }: { widget: Widget }) {
             {out.walk.length === 0 ? (
               <p className="muted">Not enough bars.</p>
             ) : (
-              <table>
+              <table className="bt-num">
                 <thead>
                   <tr>
                     <th>Window</th>

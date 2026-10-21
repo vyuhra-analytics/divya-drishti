@@ -12,10 +12,12 @@
     "infra:up": "docker compose up -d --wait && bun --env-file=.env scripts/migrate.ts",
     "infra:down": "docker compose down",
     "db:migrate": "bun scripts/migrate.ts",
-    "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts"
+    "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
+    "e2e": "bun e2e/run.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
+    "playwright-core": "^1.64.1",
     "turbo": "^2.5.0",
     "typescript": "^5.9.0"
   }

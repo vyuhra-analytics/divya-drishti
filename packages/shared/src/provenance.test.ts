@@ -22,10 +22,11 @@ test("freshness budgets: weekly reports tolerate their cadence, quotes do not", 
   expect(withinBudget("quote", NOW - 30_000, NOW)).toBe(true);
   expect(withinBudget("quote", NOW - 90_000, NOW)).toBe(false);
   const day = 86_400_000;
-  expect(withinBudget("positioning", NOW - 8 * day, NOW)).toBe(true); // Tuesday data, next Friday morning
-  expect(withinBudget("positioning", NOW - 11 * day, NOW)).toBe(false); // a missed release
+  expect(withinBudget("positioning", NOW - 10 * day, NOW)).toBe(true); // Tuesday data on the next Friday: due, not late
+  expect(withinBudget("positioning", NOW - 13 * day, NOW)).toBe(false); // a missed release
+  expect(withinBudget("inventory", NOW - 12 * day, NOW)).toBe(true); // week ending Friday 9 Oct, still the latest on release day 21 Oct
   expect(withinBudget("balances", NOW - 200 * day, NOW)).toBe(true); // India reports about 6 months late
-  expect(FRESHNESS_BUDGET_MS.inventory).toBe(9 * day);
+  expect(FRESHNESS_BUDGET_MS.inventory).toBe(14 * day);
 });
 
 test("describeProvenance reads in plain words", () => {
