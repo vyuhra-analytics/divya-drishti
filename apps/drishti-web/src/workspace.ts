@@ -6,7 +6,7 @@ import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "jodi";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -66,6 +66,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   cot: { w: 7, h: 17 },
   chokepoints: { w: 6, h: 16 },
   curve: { w: 6, h: 18 },
+  jodi: { w: 6, h: 14 },
 };
 
 const defaults = () => ({

@@ -301,3 +301,4 @@ export * from "./chokepoints";
 export * from "./stats";
 export * from "./curve";
 export * from "./continuous";
+export * from "./jodi";
