@@ -104,6 +104,12 @@ await check("options chain (needs Upstox/TradingView)", async () => {
   if (r.status !== 200) throw new Error(`SKIP: HTTP ${r.status}`);
   need(r.json.rows?.length > 0 || r.json.strikes?.length > 0 || Object.keys(r.json).length > 2, "empty chain");
 });
+await check("options chain: strikes outside 4..40 or not a number is a 400", async () => {
+  for (const s of ["3", "41", "abc", "1.5"]) {
+    const r = await get(`/options?underlying=CRUDEOIL&strikes=${s}`);
+    need(r.status === 400, `strikes=${s} → HTTP ${r.status}`);
+  }
+});
 await check("insider trades (needs SEC_EDGAR_CONTACT)", async () => {
   const r = await get("/insider?ticker=XOM");
   if (r.status === 503) throw new Error("SKIP: SEC_EDGAR_CONTACT not set");

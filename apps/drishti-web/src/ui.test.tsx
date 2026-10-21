@@ -209,3 +209,9 @@ test("CotWidget shows managed-money positioning, its change and rank, and switch
   await screen.findByText(/Managed money net/);
   expect(urls.some((u) => u.includes("market=natgas"))).toBe(true);
 });
+
+import { GRID_COLS, SIZE } from "./workspace";
+
+test("no panel is wider than the grid: react-grid-layout crashes the tab on a panel wider than its columns", () => {
+  for (const [type, { w }] of Object.entries(SIZE)) expect(w, `${type} is ${w} columns wide in a ${GRID_COLS}-column grid`).toBeLessThanOrEqual(GRID_COLS);
+});

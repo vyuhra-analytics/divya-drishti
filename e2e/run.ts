@@ -231,6 +231,29 @@ test("MCP -> UI: a paper order Claude places over MCP appears in the Paper panel
   });
 });
 
+test("Detailed option chain: every column of the Upstox-style chain, spot marker, load more, column chooser that persists", async ({ page }) => {
+  const root = await openPanel(page, "OCX", ".ocx");
+  await root.locator("tbody tr").nth(8).waitFor({ timeout: 30_000 });
+  const heads = (await root.locator("thead tr").nth(1).locator("th").allInnerTexts()).map((t) => t.trim());
+  for (const h of ["Volume", "IV", "Vega", "Gamma", "Theta", "Delta", "OI chg", "OI", "Bid", "Ask", "LTP", "Strike"]) assert(heads.includes(h), `column ${h} is missing: ${heads.join(",")}`);
+  assert((await root.locator("tr.ocx-spot").count()) === 1, "no spot marker row");
+  assert((await root.getByText("Build Strategy").count()) === 0, "the Build Strategy button should be omitted");
+  assert((await root.locator("td.ocx-strike small").first().innerText()).startsWith("PCR"), "PCR per strike is missing");
+  const before = await root.locator("tbody tr:not(.ocx-more):not(.ocx-spot)").count();
+  await root.getByRole("button", { name: /Load more strikes/ }).click();
+  await page.waitForFunction((n) => document.querySelectorAll(".ocx tbody tr:not(.ocx-more):not(.ocx-spot)").length > n, before, { timeout: 15_000 });
+  await root.locator("summary").click();
+  await root.getByLabel("Gamma").uncheck();
+  assert(!(await root.locator("thead tr").nth(1).locator("th").allInnerTexts()).map((t) => t.trim()).includes("Gamma"), "Gamma column did not hide");
+  await page.reload();
+  await page.locator("h1").first().waitFor();
+  await page.keyboard.press("Escape");
+  const again = await openPanel(page, "OCX", ".ocx");
+  await again.locator("tbody tr").nth(8).waitFor({ timeout: 30_000 });
+  assert(!(await again.locator("thead tr").nth(1).locator("th").allInnerTexts()).map((t) => t.trim()).includes("Gamma"), "the column choice did not survive a reload");
+  await shot(again, "option-chain-detailed");
+});
+
 test("Data quality: feed health, price agreement and source checks", async ({ page }) => {
   const root = await openPanel(page, "DQ", ".dq");
   await root.getByText("Live feeds").waitFor();

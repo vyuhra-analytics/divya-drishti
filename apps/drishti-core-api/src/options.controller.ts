@@ -1,13 +1,17 @@
 import { userAgentFor } from "@drishti/shared";
-import { BadRequestException, Controller, Get, HttpException, Query, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Controller, Get, HttpException, Query, ServiceUnavailableException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import {
+  applyOiBaseline,
   atmStrike,
   buildRows,
   buildTvChain,
+  chunk,
   expiriesOf,
   expiryDate,
   LruCache,
+  mapLimit,
   maxPain,
+  mcxSession,
   mergeChains,
   parseTvOptions,
   pcr,
@@ -20,6 +24,7 @@ import {
   type UpstoxQuote,
 } from "@drishti/shared";
 import { Db } from "./db";
+import { OiStore } from "./oi.store";
 
 const UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"];
 const SOURCES = ["auto", "combined", "upstox", "tradingview"] as const;
@@ -33,7 +38,9 @@ const TV_HEADERS = {
   Referer: "https://www.tradingview.com/",
   "User-Agent": userAgentFor("scanner.tradingview.com"),
 };
-const STRIKES_EACH_SIDE = 12; // 25 strikes → 50 option keys = Upstox's greeks limit per call
+const STRIKES_EACH_SIDE = 12; // the compact panel; the detailed one asks for more with ?strikes=
+const MAX_STRIKES_EACH_SIDE = 40;
+const GREEKS_PER_CALL = 50; // Upstox's limit per option-greek call: a wider chain is fetched in batches of this size
 const CHAIN_TTL_MS = 3000;
 const TV_CHAIN_TTL_MS = 1000; // TradingView's options are streaming: refresh the shared copy every second
 const TV_EXPIRIES_TTL_MS = 5 * 60_000;
@@ -82,34 +89,72 @@ const tvOptionQuery = (ticker: string, columns: readonly string[], extra: object
  * GET /options?underlying=CRUDEOIL&expiry=2026-11-17&source=auto (expiry optional: nearest)
  */
 @Controller("options")
-export class OptionsController {
-  constructor(private readonly db: Db) {}
+export class OptionsController implements OnModuleInit, OnModuleDestroy {
+  private readonly oi: OiStore;
+  private timer?: ReturnType<typeof setInterval>;
+
+  constructor(private readonly db: Db) {
+    this.oi = new OiStore(db.sql);
+  }
+
+  /**
+   * Keep the open-interest snapshots coming while MCX is open even with no panel open: every 10 minutes read the wide chain of the
+   * first two expiries of crude and natural gas (which stores the readings), so the next session has a baseline for "OI change".
+   * CANARIES-style opt-out: OI_RECORDER=off.
+   */
+  onModuleInit() {
+    if (process.env.OI_RECORDER?.trim().toLowerCase() === "off") return;
+    const run = async () => {
+      if (!mcxSession(Date.now()).open) return;
+      for (const underlying of ["CRUDEOIL", "NATURALGAS"]) {
+        const first = await this.chain(underlying, undefined, "upstox", String(MAX_STRIKES_EACH_SIDE)).catch(() => null);
+        const second = first?.expiries[1];
+        if (second) await this.chain(underlying, second, "upstox", String(MAX_STRIKES_EACH_SIDE)).catch(() => null);
+      }
+    };
+    setTimeout(() => void run(), 30_000);
+    this.timer = setInterval(() => void run(), 10 * 60_000);
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.timer);
+  }
 
   @Get()
-  async chain(@Query("underlying") underlying = "CRUDEOIL", @Query("expiry") expiryParam?: string, @Query("source") sourceParam: string = "auto"): Promise<Chain> {
+  async chain(@Query("underlying") underlying = "CRUDEOIL", @Query("expiry") expiryParam?: string, @Query("source") sourceParam: string = "auto", @Query("strikes") strikesParam?: string): Promise<Chain> {
     if (!UNDERLYINGS.includes(underlying)) throw new BadRequestException(`underlying must be one of ${UNDERLYINGS}`);
     if (!(SOURCES as readonly string[]).includes(sourceParam)) throw new BadRequestException(`source must be one of ${SOURCES}`);
     if (expiryParam !== undefined && !EXPIRY_FORMAT.test(expiryParam)) throw new BadRequestException("expiry must be YYYY-MM-DD");
+    const each = strikesParam === undefined ? STRIKES_EACH_SIDE : Number(strikesParam);
+    if (!Number.isInteger(each) || each < 4 || each > MAX_STRIKES_EACH_SIDE) throw new BadRequestException(`strikes must be a whole number from 4 to ${MAX_STRIKES_EACH_SIDE}`);
     const source = sourceParam as Source;
 
-    const key = `${source}|${underlying}|${expiryParam ?? ""}`;
+    const key = `${source}|${underlying}|${expiryParam ?? ""}|${each}`;
     const hit = chains.get(key);
     if (hit && Date.now() - hit.at < (hit.chain.source === "upstox" ? CHAIN_TTL_MS : TV_CHAIN_TTL_MS)) return hit.chain;
 
     let chain: Chain;
-    if (source === "tradingview") chain = await this.feed("tv", underlying, expiryParam);
-    else if (source === "upstox") chain = await this.feed("upstox", underlying, expiryParam);
-    else chain = await this.combined(underlying, expiryParam);
+    if (source === "tradingview") chain = await this.feed("tv", underlying, expiryParam, each);
+    else if (source === "upstox") chain = await this.feed("upstox", underlying, expiryParam, each);
+    else chain = await this.combined(underlying, expiryParam, each);
+    chain = await this.withOi(chain);
     chains.set(key, { at: Date.now(), chain });
     return chain;
   }
 
+  /** Add OI change from our own snapshots, and store this reading for tomorrow's baseline. */
+  private async withOi(chain: Chain): Promise<Chain> {
+    const base = await this.oi.baseline(chain);
+    void this.oi.record(chain);
+    return applyOiBaseline(chain, base);
+  }
+
   /** One feed's chain, cached on that feed's own clock (TradingView 1 s, Upstox 3 s). */
-  private async feed(which: "tv" | "upstox", underlying: string, expiryParam?: string): Promise<Chain> {
-    const key = `${which}|${underlying}|${expiryParam ?? ""}`;
+  private async feed(which: "tv" | "upstox", underlying: string, expiryParam: string | undefined, each: number): Promise<Chain> {
+    const key = `${which}|${underlying}|${expiryParam ?? ""}|${each}`;
     const hit = feedCache.get(key);
     if (hit && Date.now() - hit.at < (which === "tv" ? TV_CHAIN_TTL_MS : CHAIN_TTL_MS)) return hit.chain;
-    const chain = which === "tv" ? await this.tradingViewChain(underlying, expiryParam) : await this.upstoxChain(underlying, expiryParam);
+    const chain = which === "tv" ? await this.tradingViewChain(underlying, expiryParam, each) : await this.upstoxChain(underlying, expiryParam, each);
     feedCache.set(key, { at: Date.now(), chain });
     return chain;
   }
@@ -118,15 +163,15 @@ export class OptionsController {
    * TradingView's live prices and greeks with Upstox's last trade, open interest and volume. When only one feed answers, that
    * one is returned (`auto` and `combined` are the same).
    */
-  private async combined(underlying: string, expiryParam?: string): Promise<Chain> {
-    const [tv, up] = await Promise.allSettled([this.feed("tv", underlying, expiryParam), this.feed("upstox", underlying, expiryParam)]);
+  private async combined(underlying: string, expiryParam: string | undefined, each: number): Promise<Chain> {
+    const [tv, up] = await Promise.allSettled([this.feed("tv", underlying, expiryParam, each), this.feed("upstox", underlying, expiryParam, each)]);
     if (tv.status === "fulfilled" && up.status === "fulfilled" && tv.value.expiry === up.value.expiry) return mergeChains(tv.value, up.value);
     if (up.status === "fulfilled" && (tv.status === "rejected" || tv.value.expiry !== up.value.expiry)) return up.value; // TradingView does not list this expiry
     if (tv.status === "fulfilled") return tv.value; // Upstox not connected or down
     throw (up as PromiseRejectedResult).reason;
   }
 
-  private async tradingViewChain(underlying: string, expiryParam?: string): Promise<Chain> {
+  private async tradingViewChain(underlying: string, expiryParam: string | undefined, each: number): Promise<Chain> {
     // each option expiry sits on its own future: ask the next few dated futures which expiries they carry
     let known = tvExpiries.get(underlying);
     if (!known || Date.now() - known.at > TV_EXPIRIES_TTL_MS) {
@@ -154,12 +199,12 @@ export class OptionsController {
       expiries,
       expiry: pick.expiry,
       spot: typeof spot === "number" ? spot : undefined,
-      each: STRIKES_EACH_SIDE,
+      each,
       now: Date.now(),
     });
   }
 
-  private async upstoxChain(underlying: string, expiryParam?: string): Promise<Chain> {
+  private async upstoxChain(underlying: string, expiryParam: string | undefined, each: number): Promise<Chain> {
     const token = (await this.db.redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim();
     if (!token) throw new ServiceUnavailableException("Upstox not connected: set UPSTOX_ACCESS_TOKEN or log in from Settings → Data feeds");
     const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
@@ -180,14 +225,18 @@ export class OptionsController {
     const spotQuote = byToken<UpstoxQuote>((await get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodeURIComponent(futureKey)}`)).data);
     const spot = spotQuote.get(futureKey)?.last_price;
 
-    const strikes = pickStrikes(ofExpiry.map((c) => c.strike_price), spot ?? ofExpiry[Math.floor(ofExpiry.length / 2)].strike_price, STRIKES_EACH_SIDE);
+    const strikes = pickStrikes(ofExpiry.map((c) => c.strike_price), spot ?? ofExpiry[Math.floor(ofExpiry.length / 2)].strike_price, each);
     const wanted = ofExpiry.filter((c) => strikes.includes(c.strike_price));
-    const keys = encodeURIComponent(wanted.map((c) => c.instrument_key).join(","));
-    const [q, g] = await Promise.all([
-      get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${keys}`),
-      get(`https://api.upstox.com/v3/market-quote/option-greek?instrument_key=${keys}`).catch(() => ({ data: {} })), // greeks optional
+    const allKeys = wanted.map((c) => c.instrument_key);
+    const enc = (ks: string[]) => encodeURIComponent(ks.join(","));
+    // quotes take many keys at once; greeks take 50 per call, so a wide chain is several calls (3 at a time)
+    const [q, greekParts] = await Promise.all([
+      get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${enc(allKeys)}`),
+      mapLimit(chunk(allKeys, GREEKS_PER_CALL), 3, (ks) => get(`https://api.upstox.com/v3/market-quote/option-greek?instrument_key=${enc(ks)}`).catch(() => ({ data: {} }))), // greeks optional
     ]);
-    const rows = buildRows(wanted, byToken<UpstoxQuote>(q.data), byToken<UpstoxGreeks>(g.data));
+    const greeks = new Map<string, UpstoxGreeks>();
+    for (const part of greekParts) for (const [k, v] of byToken<UpstoxGreeks>(part.data)) greeks.set(k, v);
+    const rows = buildRows(wanted, byToken<UpstoxQuote>(q.data), greeks);
 
     return {
       underlying,

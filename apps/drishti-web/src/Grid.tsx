@@ -3,7 +3,7 @@ import "react-grid-layout/css/styles.css";
 import { PanelBoundary } from "./PanelBoundary";
 import { WIDGETS } from "./widgets";
 import { useSettings } from "./settings";
-import { useWidgetSymbol, useWorkspace, type Widget } from "./workspace";
+import { GRID_COLS, useWidgetSymbol, useWorkspace, type Widget } from "./workspace";
 
 function Panel({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
@@ -58,7 +58,7 @@ export function Workspace() {
           width={width}
           layouts={{ lg: layout }}
           breakpoints={{ lg: 640, xs: 0 }}
-          cols={{ lg: 12, xs: 1 }}
+          cols={{ lg: GRID_COLS, xs: 1 }}
           rowHeight={compact ? 30 : 36}
           margin={[4, 4]}
           dragConfig={{ enabled: !locked, handle: ".panel-title", cancel: ".no-drag" }}

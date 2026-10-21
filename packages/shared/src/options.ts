@@ -30,6 +30,9 @@ export interface OptionLeg {
   gamma?: number;
   /** model (theoretical) price, when the feed supplies one */
   theo?: number;
+  /** open interest at the baseline (see `Chain.oiBasis`) and the change since then, filled from our own stored snapshots: Upstox gives no previous OI for MCX options */
+  prevOi?: number;
+  oiChange?: number;
 }
 
 export interface ChainRow {
@@ -53,6 +56,53 @@ export interface Chain {
   source?: "upstox" | "tradingview" | "combined";
   /** seconds the feed lags the exchange */
   delayedBy?: number;
+  /** what `prevOi` / `oiChange` are measured against: the last snapshot of the previous session, or (until we have one) this session's first reading */
+  oiBasis?: OiBasis;
+}
+
+export type OiBasis = "previous-close" | "session-open";
+
+/** Stable key of one option leg across feeds and days (Upstox and TradingView name contracts differently). */
+export const optionKey = (underlying: string, expiry: string, strike: number, side: "CE" | "PE") => `${underlying}|${expiry}|${strike}|${side}`;
+
+/** Put open interest over call open interest at one strike; undefined without call OI. */
+export function rowPcr(row: ChainRow): number | undefined {
+  const c = row.ce?.oi ?? 0;
+  return c > 0 && row.pe?.oi !== undefined ? row.pe.oi / c : undefined;
+}
+
+export function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+export interface OiBaseline {
+  /** OI at the last snapshot of the previous session */
+  prev?: number;
+  /** OI at the first reading of this session */
+  first?: number;
+}
+
+/**
+ * Add `prevOi` and `oiChange` to every leg from stored snapshots (keyed by `optionKey`). The previous session's closing OI is the
+ * baseline when we have it; otherwise this session's first reading, and the chain says which (`oiBasis`) so the screen can label it.
+ * Returns a new chain; the cached one is left untouched.
+ */
+export function applyOiBaseline(chain: Chain, base: Map<string, OiBaseline>): Chain {
+  let usedPrev = 0;
+  let usedFirst = 0;
+  const leg = (l: OptionLeg | undefined, side: "CE" | "PE", strike: number): OptionLeg | undefined => {
+    if (!l || l.oi === undefined) return l;
+    const b = base.get(optionKey(chain.underlying, chain.expiry, strike, side));
+    const from = b?.prev ?? b?.first;
+    if (from === undefined) return l;
+    if (b?.prev !== undefined) usedPrev++;
+    else usedFirst++;
+    return { ...l, prevOi: from, oiChange: l.oi - from };
+  };
+  const rows = chain.rows.map((r) => ({ ...r, ce: leg(r.ce, "CE", r.strike), pe: leg(r.pe, "PE", r.strike) }));
+  return { ...chain, rows, oiBasis: usedPrev >= usedFirst && usedPrev > 0 ? "previous-close" : usedFirst > 0 ? "session-open" : undefined };
 }
 
 export const expiryDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -109,6 +159,7 @@ export interface UpstoxGreeks {
   delta?: number;
   theta?: number;
   vega?: number;
+  gamma?: number;
 }
 
 const bestPrice = (side?: { price: number }[]) => (side?.[0]?.price ? side[0].price : undefined);
@@ -135,6 +186,7 @@ export function buildRows(
       delta: g?.delta,
       theta: g?.theta,
       vega: g?.vega,
+      gamma: g?.gamma,
     };
     const row = byStrike.get(c.strike_price) ?? { strike: c.strike_price };
     row[c.instrument_type === "CE" ? "ce" : "pe"] = leg;
@@ -164,6 +216,7 @@ export function mergeChains(tv: Chain, up: Chain): Chain {
       delta: a.delta ?? b.delta,
       theta: a.theta ?? b.theta,
       vega: a.vega ?? b.vega,
+      gamma: a.gamma ?? b.gamma,
       bid: a.bid ?? b.bid,
       ask: a.ask ?? b.ask,
     };

@@ -6,7 +6,7 @@ import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "jodi" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "jodi" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -49,6 +49,9 @@ interface WorkspaceState {
   reset: () => void;
 }
 
+/** Columns of the panel grid (Grid.tsx). A panel wider than this sends react-grid-layout into a render loop that crashes the tab. */
+export const GRID_COLS = 12;
+
 export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   chart: { w: 8, h: 12 },
   quote: { w: 4, h: 9 },
@@ -73,6 +76,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   backtest: { w: 7, h: 26 },
   paper: { w: 7, h: 26 },
   quality: { w: 7, h: 26 },
+  optionchain: { w: 12, h: 26 }, // the full grid width: the detailed chain needs it
 };
 
 const defaults = () => ({
@@ -150,7 +154,7 @@ export const useWorkspace = create<WorkspaceState>()(
           const bottom = s.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
           return {
             widgets: [...s.widgets, widget],
-            layout: [...s.layout, { i: id, x: 0, y: bottom, ...SIZE[type] }],
+            layout: [...s.layout, { i: id, x: 0, y: bottom, ...SIZE[type], w: Math.min(SIZE[type].w, GRID_COLS) }],
             focusedId: id,
           };
         }),

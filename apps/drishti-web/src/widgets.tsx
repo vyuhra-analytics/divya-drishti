@@ -19,6 +19,7 @@ import { CostsWidget } from "./CostsPanel";
 import { BacktestWidget } from "./BacktestPanel";
 import { PaperWidget } from "./PaperPanel";
 import { QualityWidget } from "./QualityPanel";
+import { OptionChainWidget } from "./OptionChainPanel";
 import { useFreshness } from "./market";
 import { SourceBadge } from "./SourceBadge";
 export { SourceBadge };
@@ -286,4 +287,5 @@ export const WIDGETS: Record<
   backtest: { title: "Strategy tester", component: BacktestWidget, linked: true, showSymbol: true },
   paper: { title: "Paper trading", component: PaperWidget, linked: true, showSymbol: true },
   quality: { title: "Data quality", component: QualityWidget, linked: false, showSymbol: false },
+  optionchain: { title: "Option chain (detailed)", component: OptionChainWidget, linked: true, showSymbol: true },
 };
