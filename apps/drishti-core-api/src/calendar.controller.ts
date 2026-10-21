@@ -22,6 +22,8 @@ const TTL_PENDING_MS = 60_000; // while a release is due or just out, look again
 const UA = { "User-Agent": "Mozilla/5.0" };
 const FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 const FF_TTL_MS = 30 * 60_000;
+const FF_RETRY_MS = 5 * 60_000; // after a failed or throttled request, leave the feed alone this long (hammering it keeps the throttle on)
+let ffNextTry = 0;
 let ffCache: { at: number; rows: FFRow[] } | null = null;
 let cache: { at: number; days: number; events: CalEvent[]; ttl: number } | null = null;
 
@@ -98,6 +100,7 @@ export class CalendarController {
       const rows = saved ? (JSON.parse(saved) as FFRow[]) : null;
       if (Array.isArray(rows) && rows.length) ffCache = { at: Date.now() - FF_TTL_MS + 60_000, rows }; // stale: refresh soon, serve now
     }
+    if (Date.now() < ffNextTry) return ffCache?.rows ?? [];
     try {
       const res = await fetch(FF_URL, { headers: UA, signal: AbortSignal.timeout(10_000) });
       const rows = res.ok ? ((await res.json()) as FFRow[]) : null;
@@ -109,7 +112,8 @@ export class CalendarController {
     } catch {
       /* fall through to the stale copy */
     }
-    if (ffCache) ffCache = { ...ffCache, at: Date.now() - FF_TTL_MS + 60_000 }; // retry in a minute, serving the old copy meanwhile
+    ffNextTry = Date.now() + FF_RETRY_MS;
+    if (ffCache) ffCache = { ...ffCache, at: Date.now() - FF_TTL_MS + FF_RETRY_MS }; // serve the old copy, look again after the pause
     return ffCache?.rows ?? [];
   }
 
