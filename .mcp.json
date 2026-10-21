@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "divya-drishti": {
+      "command": "bun",
+      "args": ["run", "--cwd", "apps/drishti-mcp", "start"],
+      "env": { "MCP_PAPER_WRITE": "1", "MCP_PAPER_ACCOUNT": "main" }
+    }
+  }
+}

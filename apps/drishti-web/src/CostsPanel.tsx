@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fixedRiskLots, instrument, lotUnits, roundTrip, UPSTOX_MCX_RATES, type CostRates, type Side } from "@drishti/shared";
+import { paperCall } from "./paperClient";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -44,6 +45,16 @@ export function CostsWidget({ widget }: { widget: Widget }) {
   const [exit, setExit] = useState<number | "">("");
   const [stop, setStop] = useState<number | "">("");
 
+  // the server charges paper trades with these rates: send a change there (not the untouched defaults on first render)
+  const firstRates = useRef(true);
+  useEffect(() => {
+    if (firstRates.current) {
+      firstRates.current = false;
+      return;
+    }
+    const id = setTimeout(() => void paperCall("/rates", "PUT", saved.rates), 800);
+    return () => clearTimeout(id);
+  }, [saved.rates]);
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify(saved));

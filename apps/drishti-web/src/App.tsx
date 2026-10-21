@@ -3,7 +3,7 @@ import { SimulatedBanner } from "./SourceBadge";
 import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
 import { startAlertEngine } from "./alertEngine";
-import { startPaperEngine } from "./paperStore";
+import { syncRatesToServer } from "./paperClient";
 import { Toasts } from "./AlertsPanel";
 import { HelpDialog } from "./HelpDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -43,7 +43,7 @@ export function App() {
   const [helpOpen, setHelpOpen] = useState(!helpSeen); // first run shows the welcome sheet once
 
   useEffect(() => startAlertEngine(), []);
-  useEffect(() => startPaperEngine(), []);
+  useEffect(() => void syncRatesToServer(), []); // cost rates edited in the Costs panel are also what the server charges paper trades
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

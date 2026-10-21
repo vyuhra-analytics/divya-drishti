@@ -17,6 +17,10 @@ class FakeStore implements PaperStore {
   async saveAccount(a: AccountRow) {
     this.accounts.set(a.id, a);
   }
+  async deleteAccount(id: string) {
+    this.accounts.delete(id);
+    await this.reset(id);
+  }
   async positions(account: string) {
     return [...this.pos.values()].filter((x) => x.account === account).map((x) => x.position);
   }
@@ -266,4 +270,17 @@ test("slippage is in ticks: one tick is 1 rupee on crude and 0.1 on natural gas,
   expect(gas.entry).toBeCloseTo(269.9 - 0.1, 9); // sold at the bid 269.9, one tick (0.1) worse, not a full rupee
   const crude = ((await engine.place("main", order(), "ui")) as any).position;
   expect(crude.entry).toBe(9402); // the ask 9401 plus one tick (1)
+});
+
+test("an account can be deleted with its contents, but never main", async () => {
+  const { engine, store } = setup();
+  await engine.createAccount("claude", 100_000, 1, "ui");
+  await engine.place("claude", order(), "ui");
+  await engine.refresh();
+  expect(await engine.deleteAccount("main", "ui")).toMatchObject({ ok: false, status: 409 });
+  expect(await engine.deleteAccount("nope", "ui")).toMatchObject({ ok: false, status: 404 });
+  expect(await engine.deleteAccount("claude", "ui")).toEqual({ ok: true });
+  expect(await store.getAccount("claude")).toBeUndefined();
+  expect((await store.positions("claude")).length).toBe(0);
+  expect(await engine.place("claude", order(), "ui")).toMatchObject({ ok: false, status: 404 });
 });

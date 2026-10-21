@@ -101,6 +101,8 @@ export interface PaperStore {
   listAccounts(): Promise<AccountRow[]>;
   getAccount(id: string): Promise<AccountRow | undefined>;
   saveAccount(a: AccountRow): Promise<void>;
+  /** removes the account with its positions and trades */
+  deleteAccount(id: string): Promise<void>;
   positions(account: string): Promise<PaperPosition[]>;
   allPositions(): Promise<{ account: string; position: PaperPosition }[]>;
   savePosition(account: string, p: PaperPosition): Promise<void>;
@@ -179,6 +181,19 @@ export class PaperEngine {
     await this.d.store.saveAccount(account);
     await this.audit(actor, "create_account", id, { capital, slippage }, { ok: true });
     return { ok: true, account };
+  }
+
+  /** Delete an account and everything in it. The default `main` account is never deleted (reset it instead). */
+  deleteAccount(id: string, actor: string): Promise<Result<object>> {
+    return this.serial(async () => {
+      if (id === "main") return fail(409, "the main account cannot be deleted: reset it instead");
+      if (!(await this.d.store.getAccount(id))) return fail(404, "no such account");
+      await this.d.store.deleteAccount(id);
+      for (const [pid, x] of this.open) if (x.account === id) this.open.delete(pid);
+      await this.audit(actor, "delete_account", id, {}, { ok: true });
+      this.d.publish({ account: id, event: "reset", actor, text: `Account ${id} deleted` });
+      return { ok: true };
+    });
   }
 
   async updateAccount(id: string, patch: { capital?: number; slippage?: number }, actor: string): Promise<Result<{ account: AccountRow }>> {

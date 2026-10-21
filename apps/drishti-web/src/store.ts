@@ -21,6 +21,8 @@ interface MarketState {
   seen: Record<string, number>;
   /** energy universe (heatmap/screener) by TradingView ticker, ~10 s fresh */
   universe: Record<string, UniverseRow>;
+  /** +1 whenever the server says a paper account changed (a trade from any client, an agent over MCP, a stop firing): the Paper panel re-reads */
+  paperRev: number;
 }
 
 export const useStore = create<MarketState>()(() => ({
@@ -32,6 +34,7 @@ export const useStore = create<MarketState>()(() => ({
   epoch: 0,
   seen: {},
   universe: {},
+  paperRev: 0,
 }));
 
 // The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
@@ -51,15 +54,20 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
       if (msg.type === "alert") useAlerts.getState().push(msg.id, msg.message);
+      // a paper account changed on the server: the panel re-reads; changes this tab did not make itself (an agent over MCP, a stop firing) also get a notice
+      if (msg.type === "paper") {
+        useStore.setState((s) => ({ paperRev: s.paperRev + 1 }));
+        if (msg.actor !== "ui") useAlerts.getState().push("paper", msg.text);
+      }
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));

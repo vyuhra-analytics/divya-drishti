@@ -47,7 +47,7 @@ export function paperRoutes(opts: {
       const origin = request.headers.get("origin");
       if (origin && isAllowedOrigin(origin, opts.origins)) {
         set.headers["access-control-allow-origin"] = origin;
-        set.headers["access-control-allow-methods"] = "GET,POST,PATCH,PUT";
+        set.headers["access-control-allow-methods"] = "GET,POST,PATCH,PUT,DELETE";
         set.headers["access-control-allow-headers"] = "content-type,x-drishti-actor";
       }
       set.status = 204;
@@ -62,6 +62,7 @@ export function paperRoutes(opts: {
       const b = (body ?? {}) as { capital?: number; slippage?: number };
       return reply(set, await engine.updateAccount(params.id, { ...(b.capital !== undefined ? { capital: Number(b.capital) } : {}), ...(b.slippage !== undefined ? { slippage: Number(b.slippage) } : {}) }, actorOf(request)));
     })
+    .delete("/accounts/:id", async ({ request, params, set }) => reply(set, await engine.deleteAccount(params.id, actorOf(request))))
     .post("/accounts/:id/orders", async ({ request, params, body, set }) => {
       const r = await engine.place(params.id, body, actorOf(request));
       if (!r.ok) return reply(set, r);

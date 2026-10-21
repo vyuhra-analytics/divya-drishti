@@ -3,6 +3,8 @@
 // Each test gets a fresh browser context (empty localStorage). Screenshots of every panel are saved to e2e/screenshots/ so a human can look.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 
 const WEB = process.env.E2E_WEB ?? "http://localhost:5173";
@@ -143,18 +145,90 @@ test("Strategy tester: runs on real history and shows the doubts and the validat
   await shot(root, "backtest");
 });
 
-test("Paper trading: buy at market, see the position, close it, find it in the journal", async ({ page }) => {
-  const root = await openPanel(page, "PT", ".paper");
-  const buy = root.getByRole("button", { name: /^Buy 1 lot/ });
-  await buy.waitFor({ timeout: 10_000 });
-  if (await root.getByText(/market (closed|stale)/).count()) skip("the market is closed or the feed is quiet: paper orders wait for a live price");
-  await buy.click();
-  await root.getByRole("cell", { name: "Long", exact: true }).waitFor({ timeout: 5000 }); // the position row (not the "Buy (long)" option)
-  await shot(root, "paper-open");
-  await root.getByRole("button", { name: "Close", exact: true }).first().click();
-  await root.getByText("Closed by hand").waitFor({ timeout: 5000 });
-  await root.getByLabel(/^Note for the/).first().fill("e2e check");
-  await shot(root, "paper-journal");
+/** A throwaway paper account for a test: the user's real account is never touched. Deleted afterwards. */
+const PAPER = `${STREAM}/paper`;
+async function withPaperAccount<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const made = await fetch(`${PAPER}/accounts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, capital: 500000, slippage: 1 }) });
+  assert(made.ok || made.status === 409, `could not create the ${id} paper account: HTTP ${made.status} (is the database migrated? bun run db:migrate)`);
+  try {
+    return await fn();
+  } finally {
+    const open = (await (await fetch(`${PAPER}/accounts/${id}`)).json().catch(() => null))?.state?.positions ?? [];
+    for (const p of open) await fetch(`${PAPER}/accounts/${id}/positions/${p.id}/close`, { method: "POST" });
+    await fetch(`${PAPER}/accounts/${id}`, { method: "DELETE" });
+  }
+}
+const useAccount = (ctx: BrowserContext, id: string) => ctx.addInitScript((a) => localStorage.setItem("drishti-paper-account", a), id);
+
+test("Paper trading (server account): buy at market, see the position, close it, find it in the journal", async ({ page, context }) => {
+  await withPaperAccount("e2e", async () => {
+    await useAccount(context, "e2e");
+    await page.reload();
+    await page.locator("h1").first().waitFor();
+    await page.keyboard.press("Escape");
+    const root = await openPanel(page, "PT", ".paper");
+    const buy = root.getByRole("button", { name: /^Buy 1 lot/ });
+    await buy.waitFor({ timeout: 10_000 });
+    if (await root.getByText(/market (closed|stale)/).count()) skip("the market is closed or the feed is quiet: paper orders wait for a live price");
+    await buy.click();
+    await root.getByRole("cell", { name: "Long", exact: true }).waitFor({ timeout: 5000 }); // the position row (not the "Buy (long)" option)
+    await shot(root, "paper-open");
+    await root.getByRole("button", { name: "Close", exact: true }).first().click();
+    await root.getByText("Closed by hand").waitFor({ timeout: 5000 });
+    const note = root.getByLabel(/^Note for the/).first();
+    await note.fill("e2e check");
+    await note.blur();
+    await page.waitForTimeout(500);
+    await page.reload(); // the account is on the server: it survives a reload and shows the note
+    await page.locator("h1").first().waitFor();
+    await page.keyboard.press("Escape");
+    const again = await openPanel(page, "PT", ".paper");
+    assert((await again.getByLabel(/^Note for the/).first().inputValue()) === "e2e check", "the journal note did not survive a reload");
+    await shot(again, "paper-journal");
+  });
+});
+
+test("MCP -> UI: a paper order Claude places over MCP appears in the Paper panel, and closing it over MCP updates the journal", async ({ page, context }) => {
+  await withPaperAccount("e2e", async () => {
+    await useAccount(context, "e2e");
+    await page.reload();
+    await page.locator("h1").first().waitFor();
+    await page.keyboard.press("Escape");
+    const root = await openPanel(page, "PT", ".paper");
+    await root.getByText("None.").first().waitFor({ timeout: 10_000 });
+    if (await root.getByText(/market (closed|stale)/).count()) skip("the market is closed or the feed is quiet: paper orders wait for a live price");
+
+    // a real MCP client talking to the real MCP server over stdio, exactly as Claude Code or Claude Desktop would
+    const transport = new StdioClientTransport({
+      command: "bun",
+      args: ["src/index.ts"],
+      cwd: join(import.meta.dir, "../apps/drishti-mcp"),
+      env: { ...(process.env as Record<string, string>), MCP_PAPER_WRITE: "1", MCP_PAPER_ACCOUNT: "e2e", TELEGRAM_BOT_TOKEN: "" },
+      stderr: "ignore",
+    });
+    const mcp = new Client({ name: "e2e", version: "1" });
+    await mcp.connect(transport);
+    try {
+      const tools = (await mcp.listTools()).tools.map((t) => t.name);
+      assert(tools.includes("place_paper_order"), `the MCP server did not offer place_paper_order: ${tools.join(", ")}`);
+      const placed: any = await mcp.callTool({ name: "place_paper_order", arguments: { symbol: "MCX:CRUDEOIL", side: "buy", lots: 1 } });
+      assert(!placed.isError, `MCP order refused: ${placed.content?.[0]?.text}`);
+      // ... and the browser shows it without any click or reload
+      await root.getByRole("cell", { name: "Long", exact: true }).waitFor({ timeout: 6000 });
+      await root.getByText("Claude (MCP)").first().waitFor({ timeout: 2000 });
+      await page.getByText(/Claude opened 1 lot MCX:CRUDEOIL long/).first().waitFor({ timeout: 3000 }); // the toast
+      await shot(root, "mcp-order-in-ui");
+
+      const id = JSON.parse(placed.content[0].text).filled.id;
+      const closed: any = await mcp.callTool({ name: "close_paper_position", arguments: { position_id: id } });
+      assert(!closed.isError, `MCP close refused: ${closed.content?.[0]?.text}`);
+      await root.getByText("closed by Claude").waitFor({ timeout: 6000 });
+      assert((await root.getByRole("cell", { name: "Long", exact: true }).count()) === 0, "the position is still shown as open after Claude closed it");
+      await shot(root, "mcp-close-in-ui");
+    } finally {
+      await mcp.close();
+    }
+  });
 });
 
 test("Data quality: feed health, price agreement and source checks", async ({ page }) => {

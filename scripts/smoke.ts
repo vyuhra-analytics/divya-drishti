@@ -202,6 +202,44 @@ await check("ignores: unknown and internal topic names (no data, connection surv
   need(seen.open, "the connection was dropped instead of the topics being ignored");
 });
 
+// ---- paper trading API (simulated): a throwaway account, so nothing of yours is touched
+const paper = async (path: string, method = "GET", body?: unknown, headers: Record<string, string> = {}) => {
+  const res = await fetch(`${STREAM}/paper${path}`, { method, headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...headers }, body: body !== undefined ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20_000) });
+  return { status: res.status, json: (await res.json().catch(() => ({}))) as any };
+};
+await check("paper API: account state, agent caps, refusals, cleanup (throwaway account)", async () => {
+  const made = await paper("/accounts", "POST", { id: "smoke", capital: 100000, slippage: 1 });
+  if (made.status === 503 || made.status === 500) throw new Error("SKIP: paper tables missing (bun run db:migrate)");
+  need(made.status === 200 || made.status === 409, `create account → HTTP ${made.status}`);
+  try {
+    const st = await paper("/accounts/smoke");
+    need(st.status === 200 && st.json.state.limits.maxLots === 100, "state missing the UI limits");
+    const agentState = await paper("/accounts/smoke", "GET", undefined, { "x-drishti-actor": "mcp" });
+    need(agentState.json.state.limits.maxLots === 2, "the agent does not get its tighter caps");
+    for (const [name, order, status] of [
+      ["bad symbol", { symbol: "DOGE", side: "buy", lots: 1 }, 400],
+      ["NYMEX (no cost model)", { symbol: "NYMEX:CL", side: "buy", lots: 1 }, 400],
+      ["fractional lots", { symbol: "MCX:CRUDEOIL", side: "buy", lots: 1.5 }, 400],
+    ] as const) {
+      const r = await paper("/accounts/smoke/orders", "POST", order);
+      need(r.status === status, `${name} → HTTP ${r.status}, expected ${status}`);
+    }
+    const big = await paper("/accounts/smoke/orders", "POST", { symbol: "MCX:CRUDEOIL", side: "buy", lots: 3 }, { "x-drishti-actor": "mcp" });
+    need(big.status === 422 && /at most 2 lots/.test(big.json.error), `agent 3 lots → HTTP ${big.status} ${big.json.error}`);
+    need((await paper("/accounts/nope")).status === 404, "unknown account is not a 404");
+    need((await paper("/accounts/main", "DELETE")).status === 409, "the main account can be deleted");
+  } finally {
+    await paper("/accounts/smoke", "DELETE");
+  }
+  need((await paper("/accounts/smoke")).status === 404, "the throwaway account was not removed");
+});
+await check("refuses: a foreign website using the paper API", async () => {
+  const r = await fetch(`${STREAM}/paper/accounts`, { headers: { Origin: "https://evil.example" } });
+  need(r.status === 403, `a foreign origin got HTTP ${r.status}`);
+  const mine = await fetch(`${STREAM}/paper/accounts`, { headers: { Origin: WEB_ORIGIN } });
+  need(mine.status === 200 && mine.headers.get("access-control-allow-origin") === WEB_ORIGIN, "our own origin is not allowed");
+});
+
 console.log(results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped`);
 process.exit(fail ? 1 : 0);

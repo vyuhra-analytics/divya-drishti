@@ -589,3 +589,9 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .badges.mini .badge { font-size: 9px; line-height: 13px; padding: 0 4px; }
 .row-sub { display: flex; align-items: center; gap: 2px; white-space: nowrap; }
 .row-sub .badges.mini { margin-left: 2px; }
+.paper-top { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.paper-top label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+.paper-top select { font: inherit; font-size: 12px; padding: 3px 6px; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+.paper-agent { color: var(--accent); }
+.paper td { white-space: nowrap; }
+.paper td:nth-child(2) { white-space: normal; }

@@ -18,6 +18,10 @@ export class PgPaperStore implements PaperStore {
     await this.sql`INSERT INTO paper_accounts (id, capital, slippage) VALUES (${a.id}, ${a.capital}, ${a.slippage}) ON CONFLICT (id) DO UPDATE SET capital = EXCLUDED.capital, slippage = EXCLUDED.slippage`;
   }
 
+  async deleteAccount(id: string) {
+    await this.sql`DELETE FROM paper_accounts WHERE id = ${id}`; // positions and trades go with it (ON DELETE CASCADE)
+  }
+
   async positions(account: string) {
     return ((await this.sql`SELECT data FROM paper_positions WHERE account = ${account} ORDER BY opened_at`) as { data: PaperPosition }[]).map((r) => r.data);
   }
