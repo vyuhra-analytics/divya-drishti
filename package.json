@@ -11,7 +11,8 @@
     "test": "bun test",
     "infra:up": "docker compose up -d --wait && bun --env-file=.env scripts/migrate.ts",
     "infra:down": "docker compose down",
-    "db:migrate": "bun scripts/migrate.ts"
+    "db:migrate": "bun scripts/migrate.ts",
+    "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
