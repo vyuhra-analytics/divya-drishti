@@ -15,7 +15,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
   const [expiry, setExpiry] = useState<string>("");
   const [feed, setFeed] = useState<"auto" | "upstox" | "tradingview">("auto");
   const [chain, setChain] = useState<Chain | null>(null);
-  const tv = chain?.source === "tradingview";
+  const tv = chain?.source === "tradingview" || chain?.source === "combined"; // both refresh from TradingView every second
   const [error, setError] = useState<string | null>(null);
 
   // a different underlying has different expiries: forget the chosen one
@@ -61,6 +61,9 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
       <td key="oi" className={`oi${tint}`} style={{ ["--oi" as string]: `${Math.round(((l?.oi ?? 0) / maxOi) * 100)}%` }}>
         {l?.oi === undefined ? "—" : compact(l.oi)}
       </td>,
+      <td key="vol" className={tint.trim()} title="Contracts traded today">
+        {l?.volume === undefined ? "—" : compact(l.volume)}
+      </td>,
       <td key="iv" className={tint.trim()}>
         {l?.iv === undefined ? "—" : l.iv.toFixed(1)}
       </td>,
@@ -93,16 +96,22 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
           ))}
         </select>
         <select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as typeof feed)} title="Where the chain comes from">
-          <option value="auto">Feed: auto</option>
+          <option value="auto">Feed: TradingView + Upstox</option>
           <option value="upstox">Upstox</option>
           <option value="tradingview">TradingView</option>
         </select>
         {chain.source && (
           <span
             className={`badge src-${chain.source}`}
-            title={chain.source === "tradingview" ? "TradingView: live bid/ask, theoretical price, IV and greeks. No open interest or volume, so PCR and max pain need Upstox." : "Upstox: quotes with open interest and volume"}
+            title={
+              chain.source === "combined"
+                ? "TradingView live bid/ask, IV and greeks (every second) with Upstox last trade, open interest and volume (every 3 s)"
+                : chain.source === "tradingview"
+                  ? "TradingView: live bid/ask, theoretical price, IV and greeks. No open interest or volume, so PCR and max pain need Upstox."
+                  : "Upstox: quotes with open interest and volume"
+            }
           >
-            {chain.source === "tradingview" ? "TV" : "UPSTOX"}
+            {chain.source === "combined" ? "TV + UPSTOX" : chain.source === "tradingview" ? "TV" : "UPSTOX"}
             {chain.delayedBy ? ` ${Math.round(chain.delayedBy / 60)}m delay` : ""}
           </span>
         )}
@@ -121,12 +130,13 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
         <table>
           <thead>
             <tr>
-              <th colSpan={4}>CALLS</th>
+              <th colSpan={5}>CALLS</th>
               <th />
-              <th colSpan={4}>PUTS</th>
+              <th colSpan={5}>PUTS</th>
             </tr>
             <tr>
               <th>OI</th>
+              <th>Vol</th>
               <th>IV</th>
               <th>Δ</th>
               <th>LTP</th>
@@ -134,6 +144,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
               <th>LTP</th>
               <th>Δ</th>
               <th>IV</th>
+              <th>Vol</th>
               <th>OI</th>
             </tr>
           </thead>

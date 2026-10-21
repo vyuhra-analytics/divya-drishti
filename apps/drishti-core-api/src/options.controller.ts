@@ -7,6 +7,7 @@ import {
   expiryDate,
   LruCache,
   maxPain,
+  mergeChains,
   parseTvOptions,
   pcr,
   pickStrikes,
@@ -20,7 +21,7 @@ import {
 import { Db } from "./db";
 
 const UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"];
-const SOURCES = ["auto", "upstox", "tradingview"] as const;
+const SOURCES = ["auto", "combined", "upstox", "tradingview"] as const;
 type Source = (typeof SOURCES)[number];
 const MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/MCX.json.gz";
 const TV_OPTIONS_URL = "https://scanner.tradingview.com/options/scan2?label-product=symbols-options";
@@ -41,6 +42,8 @@ const EXPIRY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 let master: { at: number; contracts: OptionContract[] } | null = null;
 // Keys are built from caller input, so every cache is capped (4 underlyings × 3 feeds × a few expiries is the real working set).
 const chains = new LruCache<{ at: number; chain: Chain }>(64);
+// each feed is cached on its own clock so a combined chain refreshes TradingView every second but asks Upstox every 3 s
+const feedCache = new LruCache<{ at: number; chain: Chain }>(64);
 const tvExpiries = new LruCache<{ at: number; list: { expiry: number; ticker: string }[] }>(16);
 
 async function loadContracts(): Promise<OptionContract[]> {
@@ -72,7 +75,8 @@ const tvOptionQuery = (ticker: string, columns: readonly string[], extra: object
 /**
  * Live MCX options chain, from Upstox (contracts from the public instrument master, quotes with open interest, greeks)
  * or from TradingView's public options scanner (live bid/ask, theoretical price, IV and greeks, no open interest or volume).
- * `source=auto` (default) tries Upstox and falls back to TradingView when Upstox is not connected or fails.
+ * `source=auto` (default) and `combined` merge both: TradingView's live prices, IV and greeks with Upstox's last trade, open interest
+ * and volume per strike; whichever feed is missing is left out (Upstox down: TradingView alone; an expiry TradingView does not list: Upstox alone).
  * Cached 3 s (1 s for TradingView) so several open panels share a fetch.
  * GET /options?underlying=CRUDEOIL&expiry=2026-11-17&source=auto (expiry optional: nearest)
  */
@@ -89,21 +93,36 @@ export class OptionsController {
 
     const key = `${source}|${underlying}|${expiryParam ?? ""}`;
     const hit = chains.get(key);
-    if (hit && Date.now() - hit.at < (hit.chain.source === "tradingview" ? TV_CHAIN_TTL_MS : CHAIN_TTL_MS)) return hit.chain;
+    if (hit && Date.now() - hit.at < (hit.chain.source === "upstox" ? CHAIN_TTL_MS : TV_CHAIN_TTL_MS)) return hit.chain;
 
     let chain: Chain;
-    if (source === "tradingview") chain = await this.tradingViewChain(underlying, expiryParam);
-    else if (source === "upstox") chain = await this.upstoxChain(underlying, expiryParam);
-    else {
-      try {
-        chain = await this.upstoxChain(underlying, expiryParam);
-      } catch (e) {
-        if (!(e instanceof HttpException)) throw e;
-        chain = await this.tradingViewChain(underlying, expiryParam); // Upstox not connected or down: the TradingView feed still has bid/ask, IV and greeks
-      }
-    }
+    if (source === "tradingview") chain = await this.feed("tv", underlying, expiryParam);
+    else if (source === "upstox") chain = await this.feed("upstox", underlying, expiryParam);
+    else chain = await this.combined(underlying, expiryParam);
     chains.set(key, { at: Date.now(), chain });
     return chain;
+  }
+
+  /** One feed's chain, cached on that feed's own clock (TradingView 1 s, Upstox 3 s). */
+  private async feed(which: "tv" | "upstox", underlying: string, expiryParam?: string): Promise<Chain> {
+    const key = `${which}|${underlying}|${expiryParam ?? ""}`;
+    const hit = feedCache.get(key);
+    if (hit && Date.now() - hit.at < (which === "tv" ? TV_CHAIN_TTL_MS : CHAIN_TTL_MS)) return hit.chain;
+    const chain = which === "tv" ? await this.tradingViewChain(underlying, expiryParam) : await this.upstoxChain(underlying, expiryParam);
+    feedCache.set(key, { at: Date.now(), chain });
+    return chain;
+  }
+
+  /**
+   * TradingView's live prices and greeks with Upstox's last trade, open interest and volume. When only one feed answers, that
+   * one is returned (`auto` and `combined` are the same).
+   */
+  private async combined(underlying: string, expiryParam?: string): Promise<Chain> {
+    const [tv, up] = await Promise.allSettled([this.feed("tv", underlying, expiryParam), this.feed("upstox", underlying, expiryParam)]);
+    if (tv.status === "fulfilled" && up.status === "fulfilled" && tv.value.expiry === up.value.expiry) return mergeChains(tv.value, up.value);
+    if (up.status === "fulfilled" && (tv.status === "rejected" || tv.value.expiry !== up.value.expiry)) return up.value; // TradingView does not list this expiry
+    if (tv.status === "fulfilled") return tv.value; // Upstox not connected or down
+    throw (up as PromiseRejectedResult).reason;
   }
 
   private async tradingViewChain(underlying: string, expiryParam?: string): Promise<Chain> {

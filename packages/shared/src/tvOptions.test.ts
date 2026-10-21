@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { buildTvChain, legPrice, parseTvOptions, tvUnderlyings } from "./tvOptions";
 import { LruCache } from "./lru";
+import { mergeChains, type Chain } from "./options";
 
 // rows in TV_OPTION_COLUMNS order: bid, ask, theo, iv, delta, gamma, theta, vega, rho, strike, expiration, type, mode, underlying
 // values taken from a real options/scan2 response for MCX:CRUDEOILX2026 (21 Oct 2026)
@@ -65,4 +66,26 @@ test("LruCache drops the least recently used entry past its cap", () => {
   expect(c.get("b")).toBeUndefined();
   expect(c.get("a")).toBe(1);
   expect(c.size).toBe(2);
+});
+
+test("mergeChains puts Upstox open interest, volume and last trade on TradingView's live prices", () => {
+  const exp = parseTvOptions(response)[0].expiry;
+  const tv = buildTvChain(parseTvOptions(response), { underlying: "CRUDEOIL", expiries: ["2026-11-17"], expiry: exp, spot: 7920, each: 1, now: 1 });
+  const up: Chain = {
+    underlying: "CRUDEOIL", expiry: "2026-11-17", expiries: ["2026-11-17", "2026-12-16"], spot: 7915, lot: 100, updatedAt: 2, source: "upstox",
+    rows: [
+      { strike: 7900, ce: { key: "u1", ltp: 1500, change: 12, oi: 600, volume: 40, bid: 1, ask: 2 }, pe: { key: "u2", ltp: 81, oi: 900, volume: 70 } },
+      { strike: 7950, ce: { key: "u3", oi: 100 }, pe: { key: "u4", oi: 300 } },
+    ],
+  };
+  const m = mergeChains(tv, up);
+  expect(m.source).toBe("combined");
+  expect(m.expiries).toEqual(["2026-11-17", "2026-12-16"]);
+  expect(m.spot).toBe(7920); // TradingView's live future
+  expect(m.lot).toBe(100);
+  const r = m.rows.find((x) => x.strike === 7900)!;
+  expect(r.ce).toMatchObject({ ltp: 1500, oi: 600, volume: 40, change: 12, bid: 1402.5, iv: 56.17759, theo: 1624.4 }); // last trade from Upstox; bid, IV, theo stay TradingView's
+  expect(m.rows.find((x) => x.strike === 3850)!.pe).toMatchObject({ bid: 0.1 }); // a strike Upstox lacks keeps TradingView numbers
+  expect(m.pcr).toBeCloseTo((900 + 300) / (600 + 100), 6);
+  expect(m.maxPain).toBeDefined();
 });

@@ -49,8 +49,8 @@ export interface Chain {
   maxPain?: number;
   rows: ChainRow[];
   updatedAt: number;
-  /** which feed built it; TradingView has no open interest or volume */
-  source?: "upstox" | "tradingview";
+  /** which feed built it; TradingView has no open interest or volume, so "combined" = TradingView prices and greeks with Upstox open interest and volume */
+  source?: "upstox" | "tradingview" | "combined";
   /** seconds the feed lags the exchange */
   delayedBy?: number;
 }
@@ -141,4 +141,45 @@ export function buildRows(
     byStrike.set(c.strike_price, row);
   }
   return [...byStrike.values()].sort((a, b) => a.strike - b.strike);
+}
+
+/**
+ * TradingView's live prices, IV and greeks with Upstox's last trade, open interest and volume, strike by strike.
+ * Both must be the same expiry. Strikes come from the TradingView chain; a strike Upstox does not carry keeps TradingView's
+ * numbers only. PCR and max pain are recomputed from the merged open interest.
+ */
+export function mergeChains(tv: Chain, up: Chain): Chain {
+  const upBy = new Map(up.rows.map((r) => [r.strike, r]));
+  const mix = (a?: OptionLeg, b?: OptionLeg): OptionLeg | undefined => {
+    if (!a) return b;
+    if (!b) return a;
+    return {
+      ...a,
+      ltp: b.ltp ?? a.ltp, // the last trade when there is one, else the TradingView midpoint
+      change: b.change,
+      oi: b.oi,
+      volume: b.volume,
+      // Upstox only fills what TradingView lacks (its greeks are optional on that side)
+      iv: a.iv ?? b.iv,
+      delta: a.delta ?? b.delta,
+      theta: a.theta ?? b.theta,
+      vega: a.vega ?? b.vega,
+      bid: a.bid ?? b.bid,
+      ask: a.ask ?? b.ask,
+    };
+  };
+  const rows = tv.rows.map((r) => {
+    const u = upBy.get(r.strike);
+    return { strike: r.strike, ce: mix(r.ce, u?.ce), pe: mix(r.pe, u?.pe) };
+  });
+  return {
+    ...tv,
+    expiries: [...new Set([...tv.expiries, ...up.expiries])].sort(),
+    lot: up.lot ?? tv.lot,
+    spot: tv.spot ?? up.spot,
+    pcr: pcr(rows),
+    maxPain: maxPain(rows),
+    rows,
+    source: "combined",
+  };
 }
