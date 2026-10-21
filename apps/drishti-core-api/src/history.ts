@@ -39,7 +39,8 @@ const ymd = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0,
 
 /** null when Upstox can't be used (no login today, or the stream hasn't published front months yet). */
 export async function upstoxHistory(inst: Instrument, tf: Timeframe, redis: RedisClient): Promise<Bar[] | null> {
-  const [token, frontsJson] = await Promise.all([redis.get("upstox:token"), redis.get("fronts")]);
+  const [login, frontsJson] = await Promise.all([redis.get("upstox:token"), redis.get("fronts")]);
+  const token = login || process.env.UPSTOX_ACCESS_TOKEN?.trim(); // today's login first, else the .env token
   const front: MasterRow | undefined = frontsJson ? JSON.parse(frontsJson)[inst.upstox!] : undefined;
   if (!token || !front) return null;
   const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };

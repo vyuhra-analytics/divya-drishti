@@ -9,7 +9,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "bun test",
-    "infra:up": "docker compose up -d",
+    "infra:up": "docker compose up -d --wait && bun --env-file=.env scripts/migrate.ts",
     "infra:down": "docker compose down",
     "db:migrate": "bun scripts/migrate.ts"
   },

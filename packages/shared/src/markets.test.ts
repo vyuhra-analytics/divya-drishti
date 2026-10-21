@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import {
   applyTick,
   frontMonth,
+  futuresByExpiry,
+  rollByVolume,
   mergeBars,
   normalizeBars,
   parseUpstoxCandles,
@@ -96,4 +98,15 @@ test("normalizeBars snaps partial bars to the bucket and rounds float noise", ()
     { time: 1792515720, open: 98.1, high: 98.2, low: 98, close: 98.1, volume: 5 },
     { time: 1792515780, open: 98.12, high: 98.13, low: 98.11, close: 98.12, volume: 2 },
   ]);
+});
+
+test("rollByVolume moves to the next month once it out-trades the nearest, otherwise stays", () => {
+  const near = { instrument_key: "oct", trading_symbol: "NATURALGAS FUT 27 OCT 26", instrument_type: "FUT", underlying_symbol: "NATURALGAS", expiry: 2 };
+  const next = { instrument_key: "nov", trading_symbol: "NATURALGAS FUT 24 NOV 26", instrument_type: "FUT", underlying_symbol: "NATURALGAS", expiry: 3 };
+  const vol = (v: Record<string, number | undefined>) => (r: MasterRow) => v[r.instrument_key];
+  expect(rollByVolume([near, next], vol({ oct: 70000, nov: 12000 }))?.instrument_key).toBe("oct");
+  expect(rollByVolume([near, next], vol({ oct: 9000, nov: 41000 }))?.instrument_key).toBe("nov");
+  expect(rollByVolume([near, next], vol({ oct: undefined, nov: 41000 }))?.instrument_key).toBe("oct"); // unknown → expiry rule
+  expect(rollByVolume([near], vol({}))?.instrument_key).toBe("oct");
+  expect(futuresByExpiry([next, near], "NATURALGAS", 1).map((r) => r.instrument_key)).toEqual(["oct", "nov"]);
 });

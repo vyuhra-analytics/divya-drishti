@@ -102,6 +102,8 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .panel-title .close { margin-left: auto; color: var(--muted); }
 .panel-title .close:hover { color: var(--down); }
 .panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.panel-error { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px; text-align: center; }
+.panel-error .muted { font-size: 11px; max-width: 280px; overflow-wrap: anywhere; }
 
 .group-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); }
 .group-dot.amber { background: var(--g-amber); border-color: var(--g-amber); }
@@ -113,7 +115,9 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .tf { padding: 2px 8px; color: var(--muted); border-radius: 4px; }
 .tf:hover { color: var(--text); }
 .tf.active { color: var(--on-accent); background: var(--accent); font-weight: 700; }
+.chart-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .chart { flex: 1; min-height: 0; }
+.chart-hint { position: absolute; left: 12px; top: 8px; margin: 0; padding: 4px 8px; font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; pointer-events: none; z-index: 2; }
 
 .quote { padding: 8px 12px; }
 .quote-last { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }

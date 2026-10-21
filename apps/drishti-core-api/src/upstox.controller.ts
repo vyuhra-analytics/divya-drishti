@@ -66,6 +66,13 @@ export class UpstoxController {
   @Get("status")
   async status() {
     const ttl = Number(await this.db.redis.send("PTTL", ["upstox:token"]).catch(() => -2));
-    return { configured: configured(), connected: ttl > 0, expiresAt: ttl > 0 ? Date.now() + ttl : null };
+    const envToken = !!process.env.UPSTOX_ACCESS_TOKEN?.trim();
+    return {
+      configured: configured() || envToken,
+      loginConfigured: configured(), // the Connect button needs key/secret/redirect
+      connected: ttl > 0 || envToken,
+      via: ttl > 0 ? "login" : envToken ? "env" : null,
+      expiresAt: ttl > 0 ? Date.now() + ttl : null, // .env tokens: expiry unknown to us (daily or analytics)
+    };
   }
 }

@@ -5,7 +5,8 @@ import type { Instrument, Quote } from "@drishti/shared";
 import type { Emit, ProviderStats } from "../provider";
 
 // Upstox Market Data Feed v3: authorize over REST, then a protobuf WebSocket.
-// Token comes from Redis (`upstox:token`, written by drishti-core-api after the user's daily login).
+// Token: today's login (Redis `upstox:token`, written by drishti-core-api) if present, else UPSTOX_ACCESS_TOKEN
+// from .env (a token generated in the Upstox developer dashboard, e.g. the long-lived read-only analytics token).
 const AUTHORIZE = "https://api.upstox.com/v3/feed/market-data-feed/authorize";
 const TOKEN_CHECK_MS = 10_000;
 const HEARTBEAT_MS = 5_000; // re-emit cached quotes so the router keeps Upstox as the fresh source in quiet markets
@@ -110,7 +111,7 @@ export function startUpstox(redis: RedisClient, targets: () => Map<string, Upsto
 
   const tokenTimer = setInterval(async () => {
     try {
-      const tok = (await redis.get("upstox:token")) ?? null;
+      const tok = (await redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim() || null;
       if (tok !== token) {
         token = tok; // new login (or expiry): start over
         close();

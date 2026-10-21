@@ -176,11 +176,29 @@ export interface MasterRow {
   lot_size?: number;
 }
 
-/** Nearest unexpired future for an underlying. ponytail: rolls on expiry; MCX volume moves a few days earlier, switch to volume-based roll if that bites. */
-export function frontMonth(rows: MasterRow[], underlying: string, now: number): MasterRow | undefined {
+/** Unexpired futures for an underlying, nearest expiry first. */
+export function futuresByExpiry(rows: MasterRow[], underlying: string, now: number): MasterRow[] {
   return rows
     .filter((r) => r.underlying_symbol === underlying && r.instrument_type === "FUT" && (r.expiry ?? 0) > now)
-    .sort((a, b) => a.expiry! - b.expiry!)[0];
+    .sort((a, b) => a.expiry! - b.expiry!);
+}
+
+/** Nearest unexpired future for an underlying (expiry-only rule; see rollByVolume for the traded-contract rule). */
+export function frontMonth(rows: MasterRow[], underlying: string, now: number): MasterRow | undefined {
+  return futuresByExpiry(rows, underlying, now)[0];
+}
+
+/**
+ * The contract traders are actually in: MCX volume moves to the next month a few days before expiry
+ * (NATURALGAS especially), so roll as soon as the next contract out-trades the nearest one today.
+ * Unknown volumes (feed down, before the open) keep the nearest expiry.
+ */
+export function rollByVolume(candidates: MasterRow[], volumeOf: (row: MasterRow) => number | undefined): MasterRow | undefined {
+  const [near, next] = candidates;
+  if (!near || !next) return near;
+  const v1 = volumeOf(near);
+  const v2 = volumeOf(next);
+  return v1 !== undefined && v2 !== undefined && v2 > v1 ? next : near;
 }
 
 const MONTH_CODES = "FGHJKMNQUVXZ";
@@ -231,3 +249,4 @@ export function mergeBars(...lists: Bar[][]): Bar[] {
 export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] };
 
 export * from "./news";
+export * from "./security";

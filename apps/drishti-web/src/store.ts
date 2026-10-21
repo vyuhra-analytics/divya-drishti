@@ -11,6 +11,8 @@ interface MarketState {
   prev: Record<string, number>;
   /** energy headlines, newest first (pushed by the stream service) */
   news: NewsItem[];
+  /** +1 on every (re)connect: charts re-fetch history so candles missed while disconnected get filled */
+  epoch: number;
 }
 
 export const useStore = create<MarketState>()(() => ({
@@ -18,7 +20,16 @@ export const useStore = create<MarketState>()(() => ({
   quotes: {},
   prev: {},
   news: [],
+  epoch: 0,
 }));
+
+// The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
+// proxy idle timeout) and would otherwise show frozen prices forever; after 45 s of silence, reconnect.
+const SILENCE_MS = 45_000;
+let lastMessageAt = 0;
+setInterval(() => {
+  if (useStore.getState().status === "open" && Date.now() - lastMessageAt > SILENCE_MS) reconnect();
+}, 5_000);
 
 let ws: WebSocket | undefined;
 
@@ -27,13 +38,15 @@ export function connectStream() {
   const sock = new WebSocket(streamUrl());
   ws = sock;
   sock.onopen = () => {
-    useStore.setState({ status: "open" });
+    lastMessageAt = Date.now();
+    useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
     sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news"] }));
   };
   sock.onmessage = (e) => {
-    const msg: Quote | { type: "news"; items: NewsItem[] } = JSON.parse(e.data);
+    lastMessageAt = Date.now();
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb" } = JSON.parse(e.data);
     if ("type" in msg) {
-      useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
+      if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       return;
     }
     const q = msg;

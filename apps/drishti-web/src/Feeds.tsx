@@ -9,6 +9,8 @@ interface Health {
 }
 interface UpstoxStatus {
   configured: boolean;
+  loginConfigured: boolean;
+  via: "login" | "env" | null;
   connected: boolean;
   expiresAt: number | null;
 }
@@ -50,18 +52,21 @@ export function Feeds() {
             {!upstox
               ? "API unreachable"
               : !upstox.configured
-                ? "add UPSTOX_API_KEY / SECRET / REDIRECT_URI to .env"
-                : upstox.connected
-                  ? `connected until ${clock.time(upstox.expiresAt!)}`
-                  : "not connected: MCX uses TradingView fallback"}
+                ? "add UPSTOX_ACCESS_TOKEN, or UPSTOX_API_KEY / SECRET / REDIRECT_URI, to .env"
+                : upstox.via === "login"
+                  ? `connected (login) until ${clock.time(upstox.expiresAt!)}`
+                  : upstox.via === "env"
+                    ? "using UPSTOX_ACCESS_TOKEN from .env (see feed health below if it's rejected)"
+                    : "not connected: MCX uses TradingView fallback"}
           </small>
         </span>
         <button
           className="btn"
-          disabled={!upstox?.configured}
+          disabled={!upstox?.loginConfigured}
+          title={upstox?.loginConfigured ? undefined : "Login needs UPSTOX_API_KEY / SECRET / REDIRECT_URI in .env"}
           onClick={() => window.open(`${apiUrl()}/auth/upstox/login`, "_blank", "noopener")}
         >
-          {upstox?.connected ? "Reconnect" : "Connect Upstox"}
+          {upstox?.via === "login" ? "Reconnect" : "Connect Upstox"}
         </button>
       </div>
 

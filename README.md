@@ -39,6 +39,8 @@ The **News** panel (`+ News` or `N` in the command palette) streams energy headl
 
 ### Upstox setup (MCX real-time)
 
+Quickest: put an access token from the Upstox developer dashboard in `.env` as `UPSTOX_ACCESS_TOKEN` and restart the stream and API. The read-only analytics token lasts much longer than a daily login token; Redis isn't needed for the live feed in this mode. Or use the in-app login:
+
 1. Create an app at [account.upstox.com/developer/apps](https://account.upstox.com/developer/apps) with redirect URL `http://localhost:3001/auth/upstox/callback`.
 2. Put its key and secret in `.env` as `UPSTOX_API_KEY` / `UPSTOX_API_SECRET` and restart the API.
 3. Each trading day: Settings (⚙ or Ctrl+,) → Data feeds → **Connect Upstox**, log in on upstox.com. Tokens expire at 03:30 IST. Needs Redis running.
@@ -84,7 +86,7 @@ bun run infra:up
 bun run dev
 ```
 
-The schema is applied automatically on first container start (`infra/sql` is mounted as initdb scripts).
+`infra:up` waits for Postgres to be healthy and then applies `infra/sql` with the same `db:migrate` script the native setup uses.
 
 ## Run without Docker (native Windows)
 
@@ -112,6 +114,16 @@ bun run desktop
 ```
 
 For a packaged build set `VITE_API_URL=http://localhost:3001` and `VITE_STREAM_URL=ws://localhost:3002/ws` in `.env`, then `bun run --cwd apps/drishti-desktop build`.
+
+## Security defaults
+
+This is a personal terminal, so everything is locked to your machine unless you open it up deliberately:
+
+- API (3001) and stream (3002) listen on `127.0.0.1` only. `HOST=0.0.0.0` exposes them to your network; set `WEB_ORIGINS` too.
+- Only the web app's own origins (Vite dev server, Tauri webview) may call the API or open the stream WebSocket from a browser; other web pages are refused. Override with `WEB_ORIGINS`.
+- Docker publishes Postgres and Redis on `127.0.0.1` only (Redis has no password and holds the Upstox token).
+- Rate limits: API 600 requests/min per client (HTTP 429 + `Retry-After`); stream WebSocket 30 messages per 10 s per connection, unknown topics ignored.
+- Upstox secrets live only in `.env`; the access token stays in Redis and is never returned or logged.
 
 ## Checks
 

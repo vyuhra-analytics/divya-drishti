@@ -5,13 +5,21 @@ services:
       POSTGRES_USER: drishti
       POSTGRES_PASSWORD: drishti
       POSTGRES_DB: drishti
-    ports: ["5432:5432"]
+    # localhost only: the DB password is a dev default and must not be reachable from the LAN
+    ports: ["127.0.0.1:5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/sql:/docker-entrypoint-initdb.d:ro
+    # Schema is applied by `bun run db:migrate` (run by infra:up), not an initdb bind mount: Docker Desktop can't
+    # mount project folders from unshared drives (e.g. I:), and one migration path serves Docker and native alike.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drishti -d drishti"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    # localhost only: Redis has no password and holds the Upstox access token
+    ports: ["127.0.0.1:6379:6379"]
 
 volumes:
   pgdata:

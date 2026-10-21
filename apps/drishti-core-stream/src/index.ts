@@ -1,7 +1,12 @@
 import { Elysia } from "elysia";
 import { RedisClient, SQL } from "bun";
 import {
+  allowedOrigins,
+  REDIS_OPTIONS,
   INSTRUMENTS,
+  isAllowedOrigin,
+  RateLimiter,
+  SYMBOLS,
   instrument,
   pickSource,
   quoteToTick,
@@ -21,13 +26,19 @@ import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
 import { currentNews, newsStats, startNews } from "./news";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
+// Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
+const HOST = process.env.HOST ?? "127.0.0.1";
+const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
+const TOPICS = new Set<string>([...SYMBOLS, "news"]);
+const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
+const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
 const DEMO = process.env.FEED === "demo";
 const STALE_MS = 15_000; // a source silent this long hands over to the next one
 const FLUSH_MS = 1000;
-const FRONTS_REFRESH_MS = 6 * 3600_000;
+const FRONTS_REFRESH_MS = 3600_000; // hourly: picks up the volume roll to the next month during the session
 
 const sql = new SQL(process.env.DATABASE_URL!, { connectionTimeout: 2 });
-const redis = new RedisClient(process.env.REDIS_URL, { enableOfflineQueue: false, connectionTimeout: 2000 });
+const redis = new RedisClient(process.env.REDIS_URL, REDIS_OPTIONS);
 
 const stats: Partial<Record<Source, ProviderStats>> = DEMO ? { demo: demoStats } : { upstox: newStats(), tradingview: newStats(), yahoo: newStats() };
 
@@ -64,11 +75,16 @@ function accept(q: Quote) {
 
 // ---- front-month contracts (MCX) ----
 let fronts: Fronts = new Map();
+// drishti-core-api reads the instrument keys for Upstox history from Redis. Re-published every minute: a write
+// made while Redis is (re)connecting is dropped (no offline queue), and Redis may restart without persistence.
+const publishFronts = () => {
+  if (fronts.size) redis.set("fronts", JSON.stringify(Object.fromEntries(fronts))).catch(() => {});
+};
+setInterval(publishFronts, 60_000);
 async function refreshFronts() {
   try {
     fronts = await loadFronts();
-    // drishti-core-api needs the instrument keys for Upstox history
-    redis.set("fronts", JSON.stringify(Object.fromEntries(fronts))).catch(() => {});
+    publishFronts();
     console.log("MCX front months:", [...fronts.values()].map((r) => r.trading_symbol).join(", "));
   } catch (err) {
     console.error("instrument master failed, TradingView falls back to 1! codes:", (err as Error).message);
@@ -97,8 +113,10 @@ function upstoxTargets() {
 }
 
 const app = new Elysia()
-  .get("/health", async ({ set }) => {
-    set.headers["access-control-allow-origin"] = "*"; // read by the web app / Tauri (Settings → Connection)
+  .get("/health", async ({ request, set }) => {
+    // read by the web app / Tauri (Settings → Data feeds); other web pages may not read it
+    const origin = request.headers.get("origin");
+    if (origin && isAllowedOrigin(origin, ORIGINS)) set.headers["access-control-allow-origin"] = origin;
     const [pg, rd] = await Promise.allSettled([sql`SELECT 1`, redis.send("PING", [])]);
     return {
       service: "drishti-core-stream",
@@ -112,10 +130,30 @@ const app = new Elysia()
     };
   })
   .ws("/ws", {
+    maxPayloadLength: 16 * 1024,
+    // a foreign web page open in the same browser must not be able to tap our feed
+    beforeHandle({ request, set }) {
+      if (!isAllowedOrigin(request.headers.get("origin"), ORIGINS)) {
+        set.status = 403;
+        return "Forbidden origin";
+      }
+    },
+    open(ws) {
+      ws.subscribe("hb");
+    },
     message(ws, raw) {
-      const msg = (typeof raw === "string" ? JSON.parse(raw) : raw) as ClientMessage;
+      if (!wsLimiter.take(ws.id)) return ws.close(1008, "rate limit");
+      let msg: ClientMessage;
+      try {
+        msg = (typeof raw === "string" ? JSON.parse(raw) : raw) as ClientMessage;
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== "object") return;
+      const list = (("subscribe" in msg ? msg.subscribe : msg?.unsubscribe) ?? []) as unknown[];
+      const topics = (Array.isArray(list) ? list : []).filter((t): t is string => typeof t === "string" && TOPICS.has(t));
       if ("subscribe" in msg) {
-        for (const s of msg.subscribe) {
+        for (const s of topics) {
           if (s === "news") {
             ws.subscribe("news");
             ws.send(JSON.stringify({ type: "news", items: currentNews() }));
@@ -125,10 +163,12 @@ const app = new Elysia()
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else msg.unsubscribe.forEach((s) => ws.unsubscribe(`quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" ? "news" : `quotes:${s}`));
     },
   })
-  .listen(PORT);
+  .listen({ port: PORT, hostname: HOST });
+
+setInterval(() => app.server?.publish("hb", JSON.stringify({ type: "hb", t: Date.now() })), HEARTBEAT_MS);
 
 if (DEMO) {
   startDemo(accept);
@@ -157,4 +197,4 @@ setInterval(async () => {
   }
 }, FLUSH_MS);
 
-console.log(`drishti-core-stream on :${PORT} (${DEMO ? "demo feed" : "live feeds"})`);
+console.log(`drishti-core-stream on http://${HOST}:${PORT} (${DEMO ? "demo feed" : "live feeds"})`);
