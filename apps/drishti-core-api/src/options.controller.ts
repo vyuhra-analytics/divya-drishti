@@ -33,6 +33,7 @@ const TV_HEADERS = {
 };
 const STRIKES_EACH_SIDE = 12; // 25 strikes → 50 option keys = Upstox's greeks limit per call
 const CHAIN_TTL_MS = 3000;
+const TV_CHAIN_TTL_MS = 1000; // TradingView's options are streaming: refresh the shared copy every second
 const TV_EXPIRIES_TTL_MS = 5 * 60_000;
 const MASTER_TTL_MS = 6 * 3600_000;
 const EXPIRY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
@@ -72,7 +73,7 @@ const tvOptionQuery = (ticker: string, columns: readonly string[], extra: object
  * Live MCX options chain, from Upstox (contracts from the public instrument master, quotes with open interest, greeks)
  * or from TradingView's public options scanner (live bid/ask, theoretical price, IV and greeks, no open interest or volume).
  * `source=auto` (default) tries Upstox and falls back to TradingView when Upstox is not connected or fails.
- * Cached 3 s so several open panels share a fetch.
+ * Cached 3 s (1 s for TradingView) so several open panels share a fetch.
  * GET /options?underlying=CRUDEOIL&expiry=2026-11-17&source=auto (expiry optional: nearest)
  */
 @Controller("options")
@@ -88,7 +89,7 @@ export class OptionsController {
 
     const key = `${source}|${underlying}|${expiryParam ?? ""}`;
     const hit = chains.get(key);
-    if (hit && Date.now() - hit.at < CHAIN_TTL_MS) return hit.chain;
+    if (hit && Date.now() - hit.at < (hit.chain.source === "tradingview" ? TV_CHAIN_TTL_MS : CHAIN_TTL_MS)) return hit.chain;
 
     let chain: Chain;
     if (source === "tradingview") chain = await this.tradingViewChain(underlying, expiryParam);

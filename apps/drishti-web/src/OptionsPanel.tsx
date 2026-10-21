@@ -4,6 +4,7 @@ import { apiUrl, makeFormat, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const POLL_MS = 3000;
+const POLL_TV_MS = 1000; // TradingView's options stream in real time, and the API shares one fetch per second
 
 /** MCX options chain for the linked contract's underlying (CRUDEOIL when the linked symbol isn't MCX). */
 export function OptionsWidget({ widget }: { widget: Widget }) {
@@ -14,6 +15,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
   const [expiry, setExpiry] = useState<string>("");
   const [feed, setFeed] = useState<"auto" | "upstox" | "tradingview">("auto");
   const [chain, setChain] = useState<Chain | null>(null);
+  const tv = chain?.source === "tradingview";
   const [error, setError] = useState<string | null>(null);
 
   // a different underlying has different expiries: forget the chosen one
@@ -39,13 +41,13 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
       }
     };
     load();
-    const id = setInterval(load, POLL_MS);
+    const id = setInterval(load, tv ? POLL_TV_MS : POLL_MS);
     return () => {
       alive = false;
       ctrl.abort();
       clearInterval(id);
     };
-  }, [underlying, expiry, feed]);
+  }, [underlying, expiry, feed, tv]);
 
   const price = makeFormat(locale, 1).price;
   const compact = makeFormat(locale, 0).volume;
