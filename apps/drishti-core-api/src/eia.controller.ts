@@ -1,5 +1,5 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
-import { EIA_SERIES, parseEia, summarizeEia, type EiaSummary } from "@drishti/shared";
+import { EIA_SERIES, limiter, parseEia, summarizeEia, type EiaSummary } from "@drishti/shared";
 
 const TTL_MS = 3600_000; // weekly data (spot prices daily): an hourly look is plenty, and keeps us far under EIA's limits
 const RETRY_MS = 5 * 60_000; // after a failed series, leave it alone this long
@@ -8,6 +8,7 @@ const LENGTH = { weekly: 320, daily: 400 } as const; // ~6 weekly years for the 
 const entries = new Map<string, { at: number; summary: EiaSummary }>();
 const nextTry = new Map<string, number>();
 const inflight = new Map<string, Promise<void>>();
+const gate = limiter(4); // EIA is slow and rate-limited: never more than 4 of the ten series in flight
 
 /** EIA's routes vary from 1 s to 45 s for the same call (natural gas worst), so each series loads on its own and never blocks the others. */
 function refresh(s: (typeof EIA_SERIES)[number], key: string): Promise<void> {
@@ -16,7 +17,7 @@ function refresh(s: (typeof EIA_SERIES)[number], key: string): Promise<void> {
   const url = new URL(`https://api.eia.gov/v2/seriesid/${s.route}`);
   url.searchParams.set("api_key", key);
   url.searchParams.set("length", String(LENGTH[s.freq]));
-  const p = fetch(url, { signal: AbortSignal.timeout(90_000) })
+  const p = gate(() => fetch(url, { signal: AbortSignal.timeout(90_000) }))
     .then(async (res) => {
       const points = res.ok ? parseEia(await res.json().catch(() => null)) : [];
       if (points.length) entries.set(s.id, { at: Date.now(), summary: summarizeEia(s.id, points) });

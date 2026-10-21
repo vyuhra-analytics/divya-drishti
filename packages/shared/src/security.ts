@@ -26,7 +26,10 @@ export function isAllowedOrigin(origin: string | null | undefined, allowed: stri
   return !origin || allowed.includes(origin.replace(/\/+$/, ""));
 }
 
-/** Fixed-window limiter keyed by client (IP or connection). Old windows are swept so the map can't grow unbounded. */
+/**
+ * Fixed-window limiter keyed by client (IP or connection). Old windows are swept, and the map has a hard cap (`maxKeys`: past it the
+ * oldest key is dropped), so a flood of distinct keys inside one window cannot grow memory without bound.
+ */
 export class RateLimiter {
   private hits = new Map<string, { count: number; resetAt: number }>();
   private lastSweep = 0;
@@ -34,6 +37,7 @@ export class RateLimiter {
   constructor(
     private readonly max: number,
     private readonly windowMs: number,
+    private readonly maxKeys = 10_000,
   ) {}
 
   /** true = allowed, false = over the limit for this window */
@@ -44,6 +48,8 @@ export class RateLimiter {
     }
     const h = this.hits.get(key);
     if (!h || now >= h.resetAt) {
+      this.hits.delete(key); // re-insert at the end so insertion order stays oldest-first
+      if (this.hits.size >= this.maxKeys) this.hits.delete(this.hits.keys().next().value as string);
       this.hits.set(key, { count: 1, resetAt: now + this.windowMs });
       return true;
     }

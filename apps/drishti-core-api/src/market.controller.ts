@@ -1,11 +1,11 @@
 import { BadRequestException, Controller, Get, NotFoundException, Param, Query } from "@nestjs/common";
-import { adjustBackward, instrument, SYMBOLS, TIMEFRAMES, type Bar, type Roll, type Timeframe } from "@drishti/shared";
+import { adjustBackward, instrument, LruCache, SYMBOLS, TIMEFRAMES, type Bar, type Roll, type Timeframe } from "@drishti/shared";
 import { Db } from "./db";
 import { upstoxHistory, yahooHistory } from "./history";
 
 const CACHE_MS = 30_000; // several panels open the same chart; don't hammer providers
 // ponytail: per-process memory cache; move to Redis if the API ever runs as more than one instance
-const cache = new Map<string, { at: number; bars: Bar[] }>();
+const cache = new LruCache<{ at: number; bars: Bar[] }>(64); // key = validated symbol + timeframe (about 30 combinations); capped anyway
 
 @Controller()
 export class MarketController {

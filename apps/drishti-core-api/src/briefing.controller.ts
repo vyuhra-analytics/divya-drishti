@@ -2,7 +2,7 @@ import { BadGatewayException, BadRequestException, Body, Controller, HttpExcepti
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { BRIEFING_SYSTEM, briefingPrompt, RateLimiter, SYMBOLS, type BriefingContext, type BriefingResult } from "@drishti/shared";
+import { BRIEFING_SYSTEM, briefingPrompt, LruCache, RateLimiter, SYMBOLS, type BriefingContext, type BriefingResult } from "@drishti/shared";
 
 const MODEL = process.env.BRIEFING_MODEL?.trim() || "claude-opus-5-5";
 const MAX_CONTEXT_BYTES = 40_000; // a real context is ~6 KB: anything bigger isn't ours
@@ -20,7 +20,7 @@ const Briefing = z.object({
   data_gaps: z.array(z.string()),
 });
 
-const cache = new Map<string, { at: number; body: BriefingResponse }>();
+const cache = new LruCache<{ at: number; body: BriefingResponse }>(32); // keyed by a validated symbol, capped anyway: every cache keyed by input is
 let client: Anthropic | null = null;
 
 export interface BriefingResponse {

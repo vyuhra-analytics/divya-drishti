@@ -25,3 +25,11 @@ test("RateLimiter: allows max per window per key, resets after the window, sweep
   rl.take("c", 5000); // sweep removes expired a, b
   expect(rl.size).toBe(1);
 });
+
+test("RateLimiter: a flood of distinct keys inside one window cannot grow the map past maxKeys", () => {
+  const rl = new RateLimiter(5, 60_000, 100);
+  for (let i = 0; i < 1000; i++) rl.take(`ip-${i}`, i);
+  expect(rl.size).toBe(100);
+  expect(rl.take("ip-999", 1000)).toBe(true); // the newest keys survive and still count
+  expect(rl.take("ip-0", 1001)).toBe(true); // an evicted key simply starts a new window
+});
