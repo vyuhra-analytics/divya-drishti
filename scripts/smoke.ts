@@ -161,7 +161,11 @@ await check("stream health: providers live, feeds agree, nothing rejected", asyn
   need(Object.keys(h.prices ?? {}).length === 6, "per-source prices missing");
   return `${h.rejected?.count ?? 0} quotes rejected`;
 });
-await check("stream: front months known", async () => need(Object.keys(await (await fetch(`${STREAM}/fronts`)).json()).length === 4, "expected 4 MCX front months"));
+await check("stream: front months known", async () => need(Object.keys(await (await fetch(`${STREAM}/fronts`)).json()).length >= 4, "expected the 4 built-in MCX front months"));
+await check("USD/INR feed: the stream has a plausible rate", async () => {
+  const fx = (await (await fetch(`${STREAM}/health`)).json()).fx;
+  need(fx.rows === 1 && fx.stats.failed <= fx.stats.ok, `fx rows ${fx.rows}, ok ${fx.stats.ok}, failed ${fx.stats.failed}, last error ${fx.stats.lastError}`);
+});
 await check("stream WebSocket: a live quote and a heartbeat arrive", async () => {
   const got = await new Promise<{ quote?: any; hb?: boolean }>((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN } } as any);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SYMBOLS, type Quote } from "@drishti/shared";
+import { FX_PAIRS, SYMBOLS, type FxRow, type Quote } from "@drishti/shared";
 import { TickerTape } from "./TickerTape";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
@@ -17,8 +17,8 @@ afterEach(cleanup);
 test("every tracked symbol appears with price, signed change, percent and expiry; the loop copy is hidden from assistive tech", () => {
   const { container } = render(<TickerTape />);
   const real = container.querySelectorAll(".tape-track > .tape-item");
-  expect(real).toHaveLength(SYMBOLS.length);
-  expect(container.querySelectorAll(".tape-copy .tape-item")).toHaveLength(SYMBOLS.length);
+  expect(real).toHaveLength(SYMBOLS.length + FX_PAIRS.length);
+  expect(container.querySelectorAll(".tape-copy .tape-item")).toHaveLength(SYMBOLS.length + FX_PAIRS.length);
   expect(container.querySelector(".tape-copy")?.getAttribute("aria-hidden")).toBe("true");
   const crude = real[0]!.textContent!;
   expect(crude).toContain("CRUDEOIL");
@@ -59,4 +59,34 @@ test("the strip can be switched off in Settings", () => {
   useSettings.setState({ tickerTape: false });
   render(<TickerTape />);
   expect(screen.queryByLabelText("Price ticker")).toBeNull();
+});
+
+const fx = (over: Partial<FxRow> = {}): FxRow => ({ id: "USDINR", price: 94.45, change: -0.32, changePct: -0.3377, time: Date.now(), delayedBy: 0, ...over });
+const fxItem = (c: HTMLElement) => c.querySelector(".tape-track > .tape-fx")!;
+
+test("USD/INR shows its live rate, change and percent, tagged FX, in the down colour when it fell", () => {
+  useStore.setState({ fx: { USDINR: fx() } });
+  const { container } = render(<TickerTape />);
+  const t = fxItem(container).textContent!;
+  expect(t).toContain("USD/INR");
+  expect(t).toContain("94.4500");
+  expect(t).toMatch(/−0\.3200 \(−0\.34%\)/);
+  expect(t).toContain("FX");
+  expect(fxItem(container).querySelector(".down")).not.toBeNull();
+  expect(fxItem(container).className).not.toContain("not-live");
+});
+
+test("USD/INR before the first reading is a dash, and a feed that stopped is dimmed, not shown as live", () => {
+  useStore.setState({ fx: {} });
+  const { container, rerender } = render(<TickerTape />);
+  expect(fxItem(container).textContent).toContain("—");
+  act(() => useStore.setState({ fx: { USDINR: fx({ time: Date.now() - 60_000 }) } }));
+  rerender(<TickerTape />);
+  expect(fxItem(container).className).toContain("not-live");
+});
+
+test("a delayed rate says so instead of looking live", () => {
+  useStore.setState({ fx: { USDINR: fx({ delayedBy: 900 }) } });
+  const { container } = render(<TickerTape />);
+  expect(fxItem(container).textContent).toContain("15m delay");
 });

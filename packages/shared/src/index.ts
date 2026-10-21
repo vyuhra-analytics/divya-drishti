@@ -317,6 +317,7 @@ export function daysToExpiry(contract: string | undefined, now: number): number 
 }
 export * from "./universe";
 export * from "./customInstruments";
+export * from "./fx";
 export * from "./options";
 export * from "./insider";
 export * from "./calendar";

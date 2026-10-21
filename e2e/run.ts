@@ -131,6 +131,7 @@ test("Ticker tape: scrolls, shows live price, change and expiry for every symbol
   const tape = page.getByLabel("Price ticker");
   await tape.waitFor();
   await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+\s*[+−-][\d,.]+ \([+−-][\d.]+%\)\s*Exp\. \d+ \w{3}/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
+  await page.waitForFunction(() => /USD\/INR\s*[\d.]+\s*[+−-][\d.]+ \([+−-][\d.]+%\)\s*(FX|\d+m delay)/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
   const x = () => page.locator(".tape-track").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
   const a = await x();
   await page.waitForTimeout(1200);
