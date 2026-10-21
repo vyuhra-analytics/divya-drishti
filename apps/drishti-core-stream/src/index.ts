@@ -23,7 +23,7 @@ import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
-import { currentNews, newsStats, startNews } from "./news";
+import { archiveStats, currentNews, newsStats, startNews } from "./news";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
@@ -113,6 +113,8 @@ function upstoxTargets() {
 }
 
 const app = new Elysia()
+  // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
+  .get("/fronts", () => Object.fromEntries(fronts))
   .get("/health", async ({ request, set }) => {
     // read by the web app / Tauri (Settings → Data feeds); other web pages may not read it
     const origin = request.headers.get("origin");
@@ -126,7 +128,7 @@ const app = new Elysia()
       providers: stats,
       active: Object.fromEntries(active),
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
-      news: { items: currentNews().length, feeds: newsStats },
+      news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
     };
   })
   .ws("/ws", {
@@ -184,7 +186,7 @@ if (DEMO) {
   );
 }
 
-startNews(redis, (fresh) => app.server?.publish("news", JSON.stringify({ type: "news", items: fresh })));
+startNews(redis, sql, (fresh) => app.server?.publish("news", JSON.stringify({ type: "news", items: fresh })));
 
 setInterval(async () => {
   if (!buffer.length) return;

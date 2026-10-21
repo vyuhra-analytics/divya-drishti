@@ -31,6 +31,29 @@ export interface NewsCopy {
 
 export const NEWS_MAX_COPIES = 30;
 
+export const NEWS_TAGS: NewsTag[] = ["crude", "oil", "natgas", "india"];
+
+/** Row of the Postgres `news` archive (infra/sql/003_news.sql). */
+export interface NewsRow {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  published_at: Date | string;
+  tags: string[];
+  copies: NewsCopy[] | null;
+}
+
+export const newsFromRow = (r: NewsRow): NewsItem => ({
+  id: r.id,
+  title: r.title,
+  url: r.url,
+  source: r.source,
+  publishedAt: new Date(r.published_at).getTime(),
+  tags: r.tags.filter((t): t is NewsTag => (NEWS_TAGS as string[]).includes(t)),
+  ...(r.copies?.length ? { copies: r.copies } : {}),
+});
+
 export const NEWS_MAX = 600; // broad oil searches fill 300 well inside the 48 h window
 export const NEWS_MAX_AGE_MS = 48 * 3600_000;
 

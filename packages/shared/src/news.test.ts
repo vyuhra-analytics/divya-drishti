@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dedupeNews, isSafeUrl, parseDate, parseRss, tagNews, type NewsItem } from "./news";
+import { dedupeNews, isSafeUrl, newsFromRow, parseDate, parseRss, tagNews, type NewsItem } from "./news";
 
 // Trimmed real shapes: Google News (source tag, " - Publisher" suffix), Economic Times (CDATA + trailing space),
 // OilPrice (numeric entity), Investing-style zone-less date, plus junk that must be skipped.
@@ -95,4 +95,11 @@ test("parseDate and isSafeUrl", () => {
   expect(parseDate("Fri, 09 Oct  09:00:00 EST")).toBeNaN(); // EIA's year-less date: skipped, not guessed
   expect(isSafeUrl("https://a.b")).toBe(true);
   expect(isSafeUrl("data:text/html,x")).toBe(false);
+});
+
+test("newsFromRow maps archive rows and drops unknown tags", () => {
+  const row = { id: "x", title: "T", url: "https://a/x", source: "A", published_at: "2026-10-20T10:35:00Z", tags: ["oil", "bogus"], copies: null };
+  expect(newsFromRow(row)).toEqual({ id: "x", title: "T", url: "https://a/x", source: "A", publishedAt: Date.UTC(2026, 9, 20, 10, 35), tags: ["oil"] });
+  const copies = [{ source: "B", url: "https://b/x", publishedAt: 1 }];
+  expect(newsFromRow({ ...row, copies }).copies).toEqual(copies);
 });

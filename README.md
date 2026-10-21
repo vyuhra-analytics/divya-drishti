@@ -35,7 +35,7 @@ Energy futures, each as a continuous front-month contract (the actual contract, 
 
 ### News
 
-The **News** panel (`+ News` or `N` in the command palette) streams energy headlines from about ten free RSS feeds: Google News searches for crude, natural gas and MCX, plus OilPrice.com, CNBC energy, Rigzone, Yahoo Finance (CL=F / NG=F), Economic Times commodities and EIA. The stream service polls them every 1–2 minutes, merges duplicates of the same story, tags each headline Crude / Nat Gas / India, and pushes new ones to the app as they appear. "Linked" shows the topic of the panel's linked symbol.
+The **News** panel (`+ News` or `N` in the command palette) streams energy headlines from about ten free RSS feeds: Google News searches for crude, natural gas and MCX, plus OilPrice.com, CNBC energy, Rigzone, Yahoo Finance (CL=F / NG=F), Economic Times commodities and EIA. The stream service polls them every 1–2 minutes, merges duplicates of the same story, tags each headline Crude / Nat Gas / India, and pushes new ones to the app as they appear. "Linked" shows the topic of the panel's linked symbol. With Postgres running, every story is archived (table `news`, one row per story with all outlet copies): the panel restores from it after a restart and **Load older** pages back through it. Without a database the feed works the same, minus the archive.
 
 ### Upstox setup (MCX real-time)
 

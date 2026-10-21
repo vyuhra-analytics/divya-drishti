@@ -35,13 +35,29 @@ export async function yahooHistory(inst: Instrument, tf: Timeframe): Promise<Bar
   return normalizeBars(parseYahooCandles(json), TIMEFRAMES[tf], inst.timeZone, inst.decimals);
 }
 
+const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
+
+/**
+ * Traded MCX contracts: from Redis (published by the stream every minute), or straight from the stream's /fronts
+ * when Redis isn't running, so MCX history works without Docker/Redis.
+ */
+async function loadFronts(redis: RedisClient): Promise<Record<string, MasterRow> | null> {
+  const cached = await redis.get("fronts").catch(() => null);
+  if (cached) return JSON.parse(cached);
+  const fromStream = await fetch(`${STREAM}/fronts`, { signal: AbortSignal.timeout(3000) })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  return fromStream && Object.keys(fromStream).length ? fromStream : null;
+}
+
 const ymd = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10); // IST date
 
-/** null when Upstox can't be used (no login today, or the stream hasn't published front months yet). */
+/** null when Upstox can't be used (no token, or front months unknown: stream not running yet). */
 export async function upstoxHistory(inst: Instrument, tf: Timeframe, redis: RedisClient): Promise<Bar[] | null> {
-  const [login, frontsJson] = await Promise.all([redis.get("upstox:token"), redis.get("fronts")]);
+  // Redis is optional: a failed read just means no login token / no cached fronts
+  const [login, fronts] = await Promise.all([redis.get("upstox:token").catch(() => null), loadFronts(redis)]);
   const token = login || process.env.UPSTOX_ACCESS_TOKEN?.trim(); // today's login first, else the .env token
-  const front: MasterRow | undefined = frontsJson ? JSON.parse(frontsJson)[inst.upstox!] : undefined;
+  const front: MasterRow | undefined = fronts?.[inst.upstox!];
   if (!token || !front) return null;
   const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
   const { unit, interval, days } = UPSTOX[tf];

@@ -1,5 +1,5 @@
-import type { RedisClient } from "bun";
-import { dedupeNews, parseRss, tagNews, type NewsItem, type NewsTag } from "@drishti/shared";
+import type { RedisClient, SQL } from "bun";
+import { dedupeNews, NEWS_MAX, newsFromRow, parseRss, tagNews, type NewsItem, type NewsRow, type NewsTag } from "@drishti/shared";
 import { newStats, poll, type ProviderStats } from "./providers/provider";
 
 // Energy news from free RSS feeds, polled here once and pushed to every client (not polled per panel).
@@ -35,16 +35,39 @@ const FEEDS: { name: string; url: string; tags: NewsTag[]; everyMs: number; stri
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0 Safari/537.36" };
 
 export const newsStats: Record<string, ProviderStats> = {};
+/** Postgres archive writes (shows "Failed to connect" in /health when running without a database) */
+export const archiveStats = newStats();
 let items: NewsItem[] = [];
 export const currentNews = () => items;
 
-/** Starts all feeds; `publish` gets only items not seen before. */
-export function startNews(redis: RedisClient, publish: (fresh: NewsItem[]) => void) {
-  // a restart shouldn't blank the panel (best effort: Redis may be down)
-  redis
-    .get("news:latest")
-    .then((raw) => raw && (items = dedupeNews(JSON.parse(raw), items)))
-    .catch(() => {});
+/**
+ * Archive: upsert the current (merged) version of every story a poll touched, so later copies and an earlier
+ * first report update the row. One statement per poll via jsonb_to_recordset. Best effort: no DB, no archive.
+ */
+async function archive(sql: SQL, stories: NewsItem[]) {
+  if (!stories.length) return;
+  const rows = stories.map((n) => ({ ...n, published_at: new Date(n.publishedAt).toISOString(), copies: n.copies ?? null }));
+  await sql`
+    INSERT INTO news (id, title, url, source, published_at, tags, copies, updated_at)
+    SELECT id, title, url, source, published_at, tags, copies, now()
+    FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) -- ::text first: Bun sends a string param cast straight to jsonb as a JSON string
+      AS x(id text, title text, url text, source text, published_at timestamptz, tags text[], copies jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      url = EXCLUDED.url, source = EXCLUDED.source, published_at = EXCLUDED.published_at,
+      tags = EXCLUDED.tags, copies = EXCLUDED.copies, updated_at = now()`;
+}
+
+/** Starts all feeds; `publish` gets only items not seen before. Stories are archived to Postgres when it's up. */
+export function startNews(redis: RedisClient, sql: SQL, publish: (fresh: NewsItem[]) => void) {
+  // a restart shouldn't blank the panel: the archive first, else the Redis copy (both best effort)
+  sql<NewsRow[]>`SELECT * FROM news WHERE published_at > now() - interval '48 hours' ORDER BY published_at DESC LIMIT ${NEWS_MAX}`
+    .then((rows) => rows.length && (items = dedupeNews(rows.map(newsFromRow), items)))
+    .catch(() =>
+      redis
+        .get("news:latest")
+        .then((raw) => raw && (items = dedupeNews(JSON.parse(raw), items)))
+        .catch(() => {}),
+    );
 
   const stops = FEEDS.map((feed, i) => {
     const key = `${feed.name} ${i}`;
@@ -59,6 +82,11 @@ export function startNews(redis: RedisClient, publish: (fresh: NewsItem[]) => vo
         const known = new Set(items.map((n) => n.id));
         items = dedupeNews(items, parsed);
         const fresh = items.filter((n) => !known.has(n.id));
+        const touched = new Set(parsed.map((n) => n.id));
+        archive(sql, items.filter((n) => touched.has(n.id))).then(
+          () => (archiveStats.ok++, (archiveStats.lastOkAt = Date.now())),
+          (err) => (archiveStats.failed++, (archiveStats.lastError = (err as Error).message)),
+        );
         if (fresh.length) {
           publish(fresh);
           redis.set("news:latest", JSON.stringify(items)).catch(() => {});

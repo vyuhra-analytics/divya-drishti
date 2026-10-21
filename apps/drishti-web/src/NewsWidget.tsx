@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { instrument, isSafeUrl, TOPIC_TAGS, type NewsItem, type NewsTag } from "@drishti/shared";
 import { useStore } from "./store";
-import { useClock, useSettings } from "./settings";
+import { apiUrl, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 type Filter = "linked" | "all" | NewsTag;
@@ -100,6 +100,31 @@ export function NewsWidget({ widget }: { widget: Widget }) {
     filter === "all" ? true : filter === "linked" ? !topic || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter),
   );
 
+  // archive paging: older stories from the API (Postgres), for the current filter
+  const wantTags = filter === "all" ? [] : filter === "linked" ? linkedTags : [filter];
+  const [older, setOlder] = useState<NewsItem[]>([]);
+  const [paging, setPaging] = useState<"idle" | "loading" | "end" | "error">("idle");
+  const tagKey = wantTags.join(",");
+  useEffect(() => {
+    setOlder([]);
+    setPaging("idle");
+  }, [tagKey]);
+  const liveIds = new Set(shown.map((n) => n.id));
+  const list = [...shown, ...older.filter((n) => !liveIds.has(n.id))];
+  const loadOlder = async () => {
+    setPaging("loading");
+    const before = list.length ? list[list.length - 1].publishedAt : Date.now();
+    try {
+      const res = await fetch(`${apiUrl()}/news?tags=${encodeURIComponent(tagKey)}&before=${before}&limit=100`);
+      if (!res.ok) throw new Error(String(res.status));
+      const page: NewsItem[] = await res.json();
+      setOlder((o) => [...o, ...page]);
+      setPaging(page.length < 100 ? "end" : "idle");
+    } catch {
+      setPaging("error");
+    }
+  };
+
   return (
     <div className="news">
       <div className="toolbar no-drag">
@@ -108,14 +133,23 @@ export function NewsWidget({ widget }: { widget: Widget }) {
             {f === "linked" && topic ? `${label}: ${topic === "crude" ? "Crude + Oil" : "Nat Gas"}` : label}
           </button>
         ))}
-        <span className="news-count muted">{shown.length}</span>
+        <span className="news-count muted">{list.length}</span>
       </div>
       <div className="news-list">
-        {shown.length === 0 ? (
+        {list.length === 0 && paging !== "loading" ? (
           <p className="empty muted">{news.length ? "No headlines for this filter yet." : "Loading headlines…"}</p>
         ) : (
-          shown.map((n) => <Row key={n.id} n={n} now={now} flash={flash} stampOf={clock.stamp} />)
+          list.map((n) => <Row key={n.id} n={n} now={now} flash={flash} stampOf={clock.stamp} />)
         )}
+        <div className="news-more">
+          {paging === "end" ? (
+            <span className="muted">No older stories in the archive</span>
+          ) : (
+            <button className="btn" disabled={paging === "loading"} onClick={loadOlder}>
+              {paging === "loading" ? "Loading…" : paging === "error" ? "Archive unavailable, retry" : "Load older"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
