@@ -13,7 +13,8 @@
     "infra:down": "docker compose down",
     "db:migrate": "bun scripts/migrate.ts",
     "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
-    "e2e": "bun e2e/run.ts"
+    "e2e": "bun e2e/run.ts",
+    "smoke": "bun scripts/smoke.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
