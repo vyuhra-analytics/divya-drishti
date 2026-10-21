@@ -67,11 +67,11 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
 
 const defaults = () => ({
   widgets: [
-    { id: "chart-1", type: "chart", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
+    { id: "chart-1", type: "advchart", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
     { id: "quote-1", type: "quote", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
     { id: "watch-1", type: "watchlist", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
-    { id: "chart-2", type: "chart", group: "blue", symbol: "NYMEX:CL", tf: "5m" },
-    { id: "chart-3", type: "chart", group: null, symbol: "MCX:NATURALGAS", tf: "5m" },
+    { id: "chart-2", type: "advchart", group: "blue", symbol: "NYMEX:CL", tf: "5m" },
+    { id: "chart-3", type: "advchart", group: null, symbol: "MCX:NATURALGAS", tf: "5m" },
   ] satisfies Widget[] as Widget[],
   layout: [
     { i: "chart-1", x: 0, y: 0, w: 8, h: 12 },

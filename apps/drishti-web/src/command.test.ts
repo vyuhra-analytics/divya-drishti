@@ -5,8 +5,8 @@ const SYMS = ["NIFTY", "BANKNIFTY", "TCS", "INFY"];
 
 test("parse symbol, mnemonic, both, in any order and case", () => {
   expect(parse("tcs", SYMS)).toEqual({ ok: true, cmd: { symbol: "TCS" } });
-  expect(parse("GP", SYMS)).toEqual({ ok: true, cmd: { open: "chart" } });
-  expect(parse("  infy  gp ", SYMS)).toEqual({ ok: true, cmd: { symbol: "INFY", open: "chart" } });
+  expect(parse("GP", SYMS)).toEqual({ ok: true, cmd: { open: "advchart" } });
+  expect(parse("  infy  gp ", SYMS)).toEqual({ ok: true, cmd: { symbol: "INFY", open: "advchart" } });
   expect(parse("Q TCS", SYMS)).toEqual({ ok: true, cmd: { symbol: "TCS", open: "quote" } });
 });
 
@@ -24,6 +24,6 @@ test("suggest ranks prefix before substring", () => {
 test("parse accepts exchange-less short codes", () => {
   const syms = ["MCX:CRUDEOIL", "MCX:CRUDEOILM", "NYMEX:CL", "NYMEX:NG"];
   expect(parse("crudeoil", syms)).toEqual({ ok: true, cmd: { symbol: "MCX:CRUDEOIL" } });
-  expect(parse("CL GP", syms)).toEqual({ ok: true, cmd: { symbol: "NYMEX:CL", open: "chart" } });
+  expect(parse("CL GP", syms)).toEqual({ ok: true, cmd: { symbol: "NYMEX:CL", open: "advchart" } });
   expect(parse("nymex:ng", syms)).toEqual({ ok: true, cmd: { symbol: "NYMEX:NG" } });
 });

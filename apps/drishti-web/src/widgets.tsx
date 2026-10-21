@@ -280,7 +280,8 @@ export const WIDGETS: Record<
   WidgetType,
   { title: string; component: ComponentType<{ widget: Widget }>; linked: boolean; showSymbol: boolean }
 > = {
-  chart: { title: "Chart", component: ChartWidget, linked: true, showSymbol: true },
+  advchart: { title: "Chart", component: AdvancedChartWidget, linked: true, showSymbol: true },
+  chart: { title: "Simple Chart", component: ChartWidget, linked: true, showSymbol: true },
   quote: { title: "Quote", component: QuoteWidget, linked: true, showSymbol: true },
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },
@@ -291,6 +292,5 @@ export const WIDGETS: Record<
   insider: { title: "Insider Trades", component: InsiderWidget, linked: false, showSymbol: false },
   calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
-  advchart: { title: "Advanced Chart", component: AdvancedChartWidget, linked: true, showSymbol: true },
   briefing: { title: "AI Briefing", component: BriefingWidget, linked: true, showSymbol: true },
 };

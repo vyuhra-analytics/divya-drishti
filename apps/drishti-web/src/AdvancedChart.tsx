@@ -22,7 +22,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
   useEffect(() => {
     let cancelled = false;
     let created: OaWidget | null = null;
-    Promise.all([import("openalgo-charts/widget"), import("openalgo-charts/indicators"), import("openalgo-charts/draw")])
+    Promise.all([import("openalgo-charts/widget"), import("openalgo-charts/indicators"), import("openalgo-charts/draw"), import("openalgo-charts/transform")])
       .then(([{ createWidget }]) => {
         if (cancelled || !host.current) return;
         created = createWidget(host.current, {

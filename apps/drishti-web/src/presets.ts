@@ -39,7 +39,7 @@ export const PRESETS: Preset[] = [
     hint: "Chart, quote and watchlist on top; news and calendar below",
     build: () =>
       snapshot([
-        ["chart-1", "chart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 16],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 16],
         ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 9],
         ["watch-1", "watchlist", "amber", "MCX:CRUDEOIL", "5m", 8, 9, 4, 7],
         ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 0, 16, 6, 10],
@@ -52,8 +52,8 @@ export const PRESETS: Preset[] = [
     hint: "MCX and Henry Hub charts side by side, with gas news and the EIA storage report",
     build: () =>
       snapshot([
-        ["chart-1", "chart", "green", "MCX:NATURALGAS", "5m", 0, 0, 6, 12],
-        ["chart-2", "chart", "red", "NYMEX:NG", "5m", 6, 0, 6, 12],
+        ["chart-1", "advchart", "green", "MCX:NATURALGAS", "5m", 0, 0, 6, 12],
+        ["chart-2", "advchart", "red", "NYMEX:NG", "5m", 6, 0, 6, 12],
         ["quote-1", "quote", "green", "MCX:NATURALGAS", "5m", 0, 12, 4, 10],
         ["news-1", "news", "green", "MCX:NATURALGAS", "5m", 4, 12, 4, 10],
         ["cal-1", "calendar", null, "MCX:NATURALGAS", "5m", 8, 12, 4, 10],
@@ -65,7 +65,7 @@ export const PRESETS: Preset[] = [
     hint: "Options chain beside its underlying chart and quote",
     build: () =>
       snapshot([
-        ["chart-1", "chart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 5, 12],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 5, 12],
         ["options-1", "options", "amber", "MCX:CRUDEOIL", "5m", 5, 0, 7, 14],
         ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 0, 12, 5, 10],
       ]),
@@ -90,7 +90,7 @@ export const PRESETS: Preset[] = [
       snapshot([
         ["tv-1", "tv", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 10],
         ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 10],
-        ["chart-1", "chart", "amber", "MCX:CRUDEOIL", "5m", 0, 10, 12, 10],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 10, 12, 10],
       ]),
   },
 ];
