@@ -78,7 +78,10 @@ export function App() {
         <button className="menu-btn" aria-label="Panels" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           ☰
         </button>
-        <h1 className="brand">DIVYA DRISHTI</h1>
+        <h1 className="brand">
+          <img className="brand-logo" src="/logo.svg" alt="" width={22} height={22} />
+          DIVYA DRISHTI
+        </h1>
         <button className="cmd" onClick={() => setPaletteOpen(true)}>
           <span className="muted">Command…</span> <kbd>Ctrl K</kbd>
         </button>

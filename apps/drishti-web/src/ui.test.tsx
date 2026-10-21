@@ -159,3 +159,20 @@ test("HelpDialog welcomes first-time users once, lists codes and the glossary", 
   rerender(<HelpDialog open={false} onClose={onClose} />);
   expect(useSettings.getState().helpSeen).toBe(true);
 });
+
+test("OptionsWidget lets you pick the feed and says which one built the chain", async () => {
+  const chain = (source: string) => ({
+    underlying: "CRUDEOIL", expiry: "2026-11-17", expiries: ["2026-11-17"], spot: 9459, atm: 9450, updatedAt: 1, source,
+    rows: [{ strike: 9450, ce: { key: "c", ltp: 524, bid: 523.2, ask: 524.9, iv: 50.4, delta: 0.53, theo: 524.6 }, pe: { key: "p", ltp: 480 } }],
+  });
+  const urls: string[] = [];
+  globalThis.fetch = mock(async (url: string) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => chain(String(url).includes("source=tradingview") ? "tradingview" : "upstox") };
+  }) as never;
+  render(<OptionsWidget widget={widget("options")} />);
+  expect(await screen.findByText("UPSTOX")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Options feed"), { target: { value: "tradingview" } });
+  expect(await screen.findByText("TV")).toBeTruthy();
+  expect(urls.some((u) => u.includes("source=tradingview"))).toBe(true);
+});

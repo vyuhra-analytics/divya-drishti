@@ -12,6 +12,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
   const underlying = inst?.upstox ?? "CRUDEOIL";
   const locale = useSettings((s) => s.locale);
   const [expiry, setExpiry] = useState<string>("");
+  const [feed, setFeed] = useState<"auto" | "upstox" | "tradingview">("auto");
   const [chain, setChain] = useState<Chain | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +28,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
     const load = async () => {
       if (document.hidden) return; // don't poll Upstox for a hidden tab
       try {
-        const res = await fetch(`${apiUrl()}/options?underlying=${underlying}${expiry ? `&expiry=${expiry}` : ""}`, { signal: ctrl.signal });
+        const res = await fetch(`${apiUrl()}/options?underlying=${underlying}&source=${feed}${expiry ? `&expiry=${expiry}` : ""}`, { signal: ctrl.signal });
         const json = await res.json();
         if (!alive) return;
         if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
@@ -44,7 +45,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
       ctrl.abort();
       clearInterval(id);
     };
-  }, [underlying, expiry]);
+  }, [underlying, expiry, feed]);
 
   const price = makeFormat(locale, 1).price;
   const compact = makeFormat(locale, 0).volume;
@@ -67,7 +68,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
       <td
         key="ltp"
         className={`ltp${tint} ${l?.change === undefined ? "" : l.change >= 0 ? "up" : "down"}`}
-        title={l?.bid !== undefined ? `Bid ${price(l.bid)} · Ask ${price(l.ask)}` : undefined}
+        title={l?.bid !== undefined ? `Bid ${price(l.bid)} · Ask ${price(l.ask)}${l.theo !== undefined ? ` · Theo ${price(l.theo)}` : ""}` : undefined}
       >
         {l?.ltp === undefined ? "—" : price(l.ltp)}
       </td>,
@@ -89,6 +90,20 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
             </option>
           ))}
         </select>
+        <select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as typeof feed)} title="Where the chain comes from">
+          <option value="auto">Feed: auto</option>
+          <option value="upstox">Upstox</option>
+          <option value="tradingview">TradingView</option>
+        </select>
+        {chain.source && (
+          <span
+            className={`badge src-${chain.source}`}
+            title={chain.source === "tradingview" ? "TradingView: live bid/ask, theoretical price, IV and greeks. No open interest or volume, so PCR and max pain need Upstox." : "Upstox: quotes with open interest and volume"}
+          >
+            {chain.source === "tradingview" ? "TV" : "UPSTOX"}
+            {chain.delayedBy ? ` ${Math.round(chain.delayedBy / 60)}m delay` : ""}
+          </span>
+        )}
         <span title="Future this expiry settles against">
           Spot <b>{spot === undefined ? "—" : price(spot)}</b>
         </span>

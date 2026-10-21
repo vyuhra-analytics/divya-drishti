@@ -27,6 +27,9 @@ export interface OptionLeg {
   delta?: number;
   theta?: number;
   vega?: number;
+  gamma?: number;
+  /** model (theoretical) price, when the feed supplies one */
+  theo?: number;
 }
 
 export interface ChainRow {
@@ -46,6 +49,10 @@ export interface Chain {
   maxPain?: number;
   rows: ChainRow[];
   updatedAt: number;
+  /** which feed built it; TradingView has no open interest or volume */
+  source?: "upstox" | "tradingview";
+  /** seconds the feed lags the exchange */
+  delayedBy?: number;
 }
 
 export const expiryDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -79,6 +86,7 @@ export function pcr(rows: ChainRow[]): number | undefined {
 
 /** Max pain: the strike at which option writers pay out least, from the OI of the given rows. */
 export function maxPain(rows: ChainRow[]): number | undefined {
+  if (!rows.some((r) => (r.ce?.oi ?? 0) > 0 || (r.pe?.oi ?? 0) > 0)) return undefined; // no open interest at all: every strike would tie
   let best: { strike: number; pain: number } | undefined;
   for (const { strike: k } of rows) {
     const pain = rows.reduce((t, r) => t + (r.ce?.oi ?? 0) * Math.max(0, k - r.strike) + (r.pe?.oi ?? 0) * Math.max(0, r.strike - k), 0);
