@@ -57,3 +57,14 @@ test("openalgo's RSI and EMA agree with ours (Wilder RSI, SMA-seeded EMA as in T
   at(rsi(bars, 14), oaRsi(closes, 14));
   at(ema(bars, 20), oaEma(closes, 20));
 });
+
+test("overlapping history requests for the same window share one fetch", async () => {
+  const feed = ourFeed();
+  const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls;
+  const before = calls.length;
+  const req = { symbol: "MCX:CRUDEOIL", exchange: "MCX", interval: "5m" };
+  await Promise.all([feed.getBars(req), feed.getBars(req), feed.getBars({ ...req, from: bars[5].time })]);
+  expect(calls.length - before).toBe(1);
+  await feed.getBars(req); // after it settled, a new request is allowed
+  expect(calls.length - before).toBe(2);
+});

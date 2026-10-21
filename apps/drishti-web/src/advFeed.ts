@@ -24,14 +24,25 @@ export function ourFeed(): DataFeed {
   // newest bar per symbol+timeframe, seeded by history and advanced by live ticks (the stream's volume deltas need the previous quote)
   const last = new Map<string, Bar>();
   const key = (symbol: string, tf: Timeframe) => `${symbol}|${tf}`;
+  const inflight = new Map<string, Promise<Bar[]>>();
   return {
     async getBars(req) {
       const tf = timeframeOf(req.interval);
       if (!tf) throw new Error(`Interval ${req.interval} isn't available: choose one of ${ADV_INTERVALS.join(", ")}`);
-      const res = await fetch(`${apiUrl()}/bars?symbol=${encodeURIComponent(req.symbol)}&tf=${tf}`, { signal: req.signal });
-      if (!res.ok) throw new Error(`History unavailable (${res.status})`);
-      const bars: Bar[] = await res.json();
-      if (bars.length) last.set(key(req.symbol, tf), bars[bars.length - 1]);
+      // the widget asks for the same window more than once while it starts up: share one request
+      const k = key(req.symbol, tf);
+      let pending = inflight.get(k);
+      if (!pending) {
+        pending = fetch(`${apiUrl()}/bars?symbol=${encodeURIComponent(req.symbol)}&tf=${tf}`, { signal: req.signal })
+          .then(async (res) => {
+            if (!res.ok) throw new Error(`History unavailable (${res.status})`);
+            return (await res.json()) as Bar[];
+          })
+          .finally(() => inflight.delete(k));
+        inflight.set(k, pending);
+      }
+      const bars = await pending;
+      if (bars.length) last.set(k, bars[bars.length - 1]);
       return bars.filter((b) => (req.from === undefined || b.time >= req.from) && (req.to === undefined || b.time <= req.to)).map(toOa);
     },
     subscribeBars(req, onBar) {
