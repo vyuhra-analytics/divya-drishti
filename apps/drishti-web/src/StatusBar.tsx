@@ -8,7 +8,13 @@ const CLOCKS = [
   { label: "NY", tz: "America/New_York" },
   { label: "LDN", tz: "Europe/London" },
 ];
-const SOURCE_LABEL: Record<string, string> = { upstox: "UPSTOX", tradingview: "TV", yahoo: "YAHOO", demo: "DEMO" };
+const SOURCE_LABEL: Record<string, string> = { upstox: "Upstox", tradingview: "TradingView", yahoo: "Yahoo", demo: "Demo feed" };
+const SOURCE_NOTE: Record<string, string> = {
+  upstox: "real-time MCX prices (your Upstox login)",
+  tradingview: "TradingView scanner: MCX fallback, a few seconds behind",
+  yahoo: "Yahoo Finance: NYMEX prices, about 10 minutes delayed",
+  demo: "simulated prices (FEED=demo)",
+};
 
 interface Health {
   providers: Record<string, { lastOkAt: number | null; failed: number; lastError: string | null }>;
@@ -77,7 +83,7 @@ export function StatusBar() {
             const age = p.lastOkAt ? now - p.lastOkAt : Infinity;
             const ok = age < 60_000; // same window as the STALE rule; quiet feeds (closed market) only send on trades
             return (
-              <span key={name} className="sb-item" title={p.lastError ? `Last error: ${p.lastError}` : `Last update ${ago(age)} ago`}>
+              <span key={name} className="sb-item" title={`${SOURCE_LABEL[name] ?? name}: ${SOURCE_NOTE[name] ?? "price feed"}. ${p.lastError ? `Last error: ${p.lastError}` : `Last update ${ago(age)} ago.`}`}>
                 <span className={ok ? "sb-dot open" : "sb-dot stale"} aria-hidden="true" />
                 {SOURCE_LABEL[name] ?? name} <span className="muted">{Number.isFinite(age) ? ago(age) : "—"}</span>
               </span>

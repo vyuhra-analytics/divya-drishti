@@ -11,6 +11,23 @@ import { PANEL_TYPES, Sidebar } from "./Sidebar";
 import { workspaceList } from "./presets";
 import { useWorkspace } from "./workspace";
 
+/** Top-bar quote: price, % change vs previous close, click to show it in the focused link group. */
+function TickerItem({ symbol }: { symbol: string }) {
+  const q = useStore((s) => s.quotes[symbol]);
+  const pct = q?.prevClose ? ((q.price - q.prevClose) / q.prevClose) * 100 : undefined;
+  const open = () => {
+    const { widgets, focusedId, loadSymbol } = useWorkspace.getState();
+    const target = widgets.find((w) => w.id === focusedId) ?? widgets[0];
+    if (target) loadSymbol(target.id, symbol);
+  };
+  return (
+    <button className="ticker-item" onClick={open} title={`Show ${symbol} in the focused panel`}>
+      {symbol.split(":")[1]} <Price symbol={symbol} />
+      {pct !== undefined && <span className={pct >= 0 ? "up" : "down"}>{`${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`}</span>}
+    </button>
+  );
+}
+
 export function App() {
   const status = useStore((s) => s.status);
   const paletteOpen = useWorkspace((s) => s.paletteOpen);
@@ -58,9 +75,7 @@ export function App() {
         </button>
         <div className="ticker">
           {SYMBOLS.map((s) => (
-            <span key={s}>
-              {s.split(":")[1]} <Price symbol={s} />
-            </span>
+            <TickerItem key={s} symbol={s} />
           ))}
         </div>
         <span className={`status ${status}`}>● {status}</span>

@@ -365,3 +365,8 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .sidebar button.active { color: var(--accent); background: var(--hover); }
 .sidebar ul { flex: none; }
 .sidebar .sb-foot { margin-top: auto; }
+
+.ticker-item { display: inline-flex; gap: 6px; align-items: baseline; color: inherit; padding: 0 2px; border-radius: 3px; white-space: nowrap; }
+.ticker-item:hover { background: var(--hover); color: var(--text); }
+.ticker-item .up, .ticker-item .down { font-size: 11px; }
+.statusbar { font-size: 12px; }
