@@ -13,6 +13,12 @@ export interface CalEvent {
   impact: "high" | "medium" | "low";
   forecast?: string;
   previous?: string;
+  /** the released value, filled in once the official source publishes it */
+  actual?: string;
+  /** two-letter market code for the list (US, IN, EA…) */
+  country?: string;
+  /** the period the figure covers, as a short tag: "OCT/16" for the week ending 16 Oct */
+  period?: string;
   /** who publishes it / why it matters, shown under the title */
   detail?: string;
 }
@@ -134,4 +140,25 @@ export function mcxHolidays(rows: HolidayRow[], from: number, to: number): CalEv
     })
     .filter((e) => Number.isFinite(e.at) && e.at >= from - DAY && e.at < to)
     .sort((a, b) => a.at - b.at);
+}
+
+const FF_COUNTRY: Record<string, string> = { USD: "US", EUR: "EA", GBP: "GB", JPY: "JP", CNY: "CN", INR: "IN", CAD: "CA", AUD: "AU" };
+
+/** "OCT/16": the Friday that ends the week a Tuesday-to-Thursday US weekly report covers (the last Friday before the release day). */
+export function weekEndingTag(eventAt: number): string {
+  const local = new Date(eventAt + tzOffsetSec(NY, eventAt) * 1000);
+  const back = ((local.getUTCDay() - 5 + 7) % 7) || 7; // days since the previous Friday, never zero
+  const d = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - back));
+  return `${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()}/${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Market code and period tag for each event, derived from what the event is (id and source), so every list can show them. */
+export function decorateEvents(events: CalEvent[]): CalEvent[] {
+  return events.map((e) => {
+    if (/^(api|eia-oil|eia-gas)-/.test(e.id)) return { ...e, country: "US", period: weekEndingTag(e.at) };
+    if (e.id.startsWith("rigs-")) return { ...e, country: "US" };
+    if (e.id.startsWith("mcx-")) return { ...e, country: "IN" };
+    const ff = /^ff-([A-Za-z]+)-/.exec(e.id);
+    return ff ? { ...e, country: FF_COUNTRY[ff[1]] ?? "" } : e;
+  });
 }

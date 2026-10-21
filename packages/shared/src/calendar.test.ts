@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { energyReleases, mcxHolidays, mergeForexFactory, nyTime } from "./calendar";
+import { decorateEvents, energyReleases, mcxHolidays, mergeForexFactory, nyTime, weekEndingTag } from "./calendar";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -45,4 +45,26 @@ test("mcxHolidays keeps only days MCX is closed", () => {
   expect(ev).toHaveLength(1);
   expect(ev[0]).toMatchObject({ title: "MCX closed: Diwali Laxmi Pujan", kind: "holiday" });
   expect(iso(ev[0].at)).toBe("2026-11-07T18:30:00.000Z");
+});
+
+test("weekEndingTag names the Friday a weekly report covers", () => {
+  expect(weekEndingTag(nyTime(2026, 9, 21, 10, 30))).toBe("OCT/16"); // Wednesday 21 Oct
+  expect(weekEndingTag(nyTime(2026, 9, 22, 10, 30))).toBe("OCT/16"); // Thursday gas report
+  expect(weekEndingTag(nyTime(2026, 9, 20, 16, 30))).toBe("OCT/16"); // Tuesday API
+  expect(weekEndingTag(nyTime(2026, 10, 4, 10, 30))).toBe("OCT/30"); // Wednesday 4 Nov covers the Friday in October
+});
+
+test("decorateEvents adds market codes and the period of the weekly reports", () => {
+  const from = Date.UTC(2026, 9, 19);
+  const ev = decorateEvents([
+    ...energyReleases(from, from + 7 * 86_400_000),
+    ...mcxHolidays([{ date: "2026-11-08", description: "Diwali", closed_exchanges: ["MCX"] }], from, from + 60 * 86_400_000),
+    { id: "ff-EUR-1-ECB", title: "ECB", at: 1, kind: "macro", impact: "high" },
+  ]);
+  const by = (t: string) => ev.find((e) => e.title.startsWith(t))!;
+  expect(by("EIA crude")).toMatchObject({ country: "US", period: "OCT/16" });
+  expect(by("Baker Hughes")).toMatchObject({ country: "US" });
+  expect(by("Baker Hughes").period).toBeUndefined();
+  expect(by("MCX closed")).toMatchObject({ country: "IN" });
+  expect(by("ECB").country).toBe("EA");
 });

@@ -4,6 +4,8 @@ Review date: 2026-10-21 (OpenBB section updated after the full clone). Nothing i
 
 **Your decisions (answers to section 13):** OpenBB re-cloned and read in full; do **both** the AI-trust block and the free-data block; Telegram for alert delivery (you create the bot); you **do** want a backtester and paper trading, so R19 and R20 are in scope and R18 grows from a calculator into the cost engine they depend on; and **research-only for now, with real-time broker execution as a later phase** that starts only after the relevant features have been verified, tested and used by real users (the gate is spelled out in section 11, R21).
 
+**Reading guide:** sections 1 to 13 are the full evaluation. **Section 14 splits everything into two tracks: Track A (no AI, built first) and Track B (AI, built after Track A is done and checked).** Your instruction is to implement features first and bring AI in later, so section 14 is the plan to work from.
+
 ## 0. How this was done, and its limits
 
 I read each repository's README, the architecture and concept docs, and the source of the modules that matter to us (listed under each repo). I ran none of them, so claims about behaviour come from code and docs, not from using the software. Where something is a README claim I could not check, I say so.
@@ -362,3 +364,111 @@ Data terms: EIA and CFTC data are US government public data. TradingView, Yahoo 
 | 5 | Backtester and paper trading wanted? | Yes | R19 and R20 are planned; R18 becomes the shared cost engine and lands first |
 
 **Open points I still need from you when we reach them:** which Upstox cost schedule is the default for R18 (brokerage per order, any plan discounts); whether paper trading should follow MCX lot sizes and margin exactly (my recommendation) or a simplified one-contract model; whether the strategy tester starts with MCX crude and gas only; and whether the gate in section 11 (four weeks of green checks, four weeks of daily use) is the bar you want.
+
+---
+
+## 14. The split: Track A (no AI) and Track B (AI)
+
+**Rule used to split.** An item is Track B if it only has a purpose when a language model is in the loop (checking, guarding, costing or teaching a model) or if its main consumer is an AI agent. Everything else is Track A, even when AI would later benefit from it. Items that are Track A but that the AI work will lean on are marked **bridge**: they are the reason Track A comes first.
+
+**Already built, for context.** Before this split we had built the AI briefing panel (with an opt-in Upstox position context and a graded journal). It stays as it is; Track B improves it later.
+
+### 14.1 Track A: no AI (build now)
+
+**A1. Market data and domain content** (what you see and trade on)
+| ID | Item | Comes from | Value | Effort | Notes |
+|---|---|---|---|---|---|
+| R9 | EIA actuals (crude stocks, gas storage) in the calendar; add `actual` and `revised` to events | OpenBB (free keyless CSVs, verified) | H | S-M | **bridge** |
+| R10 | CFTC positioning panel (managed money net, open interest, weekly change) for WTI and Henry Hub | OpenBB (free keyless, verified) | H | M | **bridge** |
+| R33 | Chokepoints panel: daily tanker transits through Hormuz, Bab el-Mandeb, Suez, Malacca | OpenBB's IMF provider (PortWatch, keyless, verified) | H | S-M | **bridge** |
+| R12 | Futures curve panel: every listed MCX and NYMEX month, calendar spreads, contango or backwardation, seasonality | OpenTerminalUI | H | M | MCX months come from Upstox's master we already load |
+| R11 | Continuous futures: record every roll, adjust prices backward (spread or ratio), a "continuous" chart option | NautilusTrader (ideas only, LGPL) | H | M-L | Needed for honest long history and any backtest |
+| R34 | JODI oil and gas balances by country, India first | OpenBB (keyless archive, about 23.5 MB) | M | M | Monthly job |
+| R35 | EIA API v2 datasets (stocks by product, refinery runs, product supplied, spot and NYMEX history) behind a free `EIA_API_KEY` | OpenBB | M | M | Optional |
+| R37 | Richer computed facts: realized volatility and cones, ATR, Hurst exponent, regime flag, drawdown statistics | OpenBB `technical` and `quantitative` (Apache-2.0, port with attribution) | M | S-M | **bridge** (these become briefing facts later) |
+| R28 | A fixed-template "energy recap" paragraph (price, move, next release, inventory result): no model, no key | openterminal | M | S | Free, works offline |
+
+**A2. Trader tools: costs, testing, paper trading**
+| ID | Item | Comes from | Value | Effort | Notes |
+|---|---|---|---|---|---|
+| R18 | MCX cost engine (brokerage, commodity transaction tax, exchange charges, SEBI fee, stamp duty, GST; rates configurable and checked against the Upstox schedule), lot and margin aware, plus a fixed-risk position sizer | NautilusTrader (sizing idea), Vibe-Trading (India cost stack as a pattern), tensortrade (costs decide the edge) | H | M | **Lands first in this group**; R19 and R20 sit on it |
+| R19 | Strategy tester on stored candles with validation: Monte Carlo permutation, bootstrap confidence interval on Sharpe, walk-forward | Vibe-Trading, tensortrade | H | L | Needs R18, R16, R11 |
+| R20 | Paper trading on live quotes with slippage, a cost bridge and a trade journal | OpenTerminalUI, Vibe-Trading | H | L | Needs R18. It is also the rehearsal for Phase 2 |
+| R26 | Trade journal from Upstox order history (the rule-extraction "shadow account" idea waits for Track B) | Vibe-Trading, OpenTerminalUI | M | M | Needs positions access working |
+
+**A3. Data trust and reliability** (works with or without AI)
+| ID | Item | Comes from | Value | Effort | Notes |
+|---|---|---|---|---|---|
+| R2 | Provenance on every data point (source, live or delayed or computed, as-of time); Upstox against TradingView conflict flag; freshness budgets | OpenTerminalUI | H | M | **bridge**: the AI checker in Track B needs it |
+| R16 | Bar rules: reject impossible bars on ingest, write down that `Bar.time` is the open, "available at close" for replay and tests | NautilusTrader | M | S | Same day |
+| R27 | Cap every cache keyed by user input; one shared concurrency helper | openterminal | M | S | The options cache part is already fixed; check the rest |
+| R13 | A common provider contract in TypeScript (transform query, extract, transform, `test()`, credential hint) and standard models for quote, bar, news, event, inventory, positioning | OpenBB | M | M | **bridge**: every new source in A1 should follow it |
+| R36 | Record-and-replay HTTP fixtures for provider tests | OpenBB | M | S-M | With R13 |
+| R14 | Scheduled source canaries (does the EIA file still parse, do TradingView and Upstox agree) and a startup status table | Vibe-Trading, OpenBB | M | S-M | Also the Phase 2 evidence |
+| R25 | A data-quality panel (each provider's last value, age, drift) | OpenTerminalUI | M | S-M | Needs R14 |
+| R15 | Source-risk ordering, an "explicit only" label for sources that would mislead, a small user-agent pool | Vibe-Trading, openterminal | L | S | Small |
+| R30 | A few end-to-end browser tests (Playwright) and provider contract tests | OpenTerminalUI | M | M | Needs R13 |
+| R17 | Better demo-feed generators (mean reversion, jumps) | tensortrade | L | S | Optional |
+
+**A4. Platform and reach** (not AI)
+| ID | Item | Comes from | Value | Effort | Notes |
+|---|---|---|---|---|---|
+| R22 | Alerts evaluated in the stream service with Telegram (token in `.env`) and webhook delivery | OpenTerminalUI, K.I.T., Vibe-Trading | H | M | Alerts keep working when the browser is closed |
+| R21 | **Phase 2** broker execution, designed on the mandate pattern (frozen hard caps, fail-closed, kill switch, human approval, credential isolation, hash-chained audit log) | Vibe-Trading, K.I.T. | later | L | Only after the gate in section 11 |
+
+**Track A order.**
+1. Hardening: R16, R27 (check the rest), start R13 and R36 as the way every new source is written.
+2. Data you can see: R9, R33, R10, R37, then R12 (curve). R14 canaries as each source lands.
+3. Trust: R2 (provenance everywhere).
+4. Cost engine and history: R18, then R11, then R19, then R20.
+5. Reach: R22.
+6. On demand: R34, R35, R28, R26, R25, R15, R30, R17.
+7. R21 after the gate.
+
+### 14.2 Track B: AI features (build after Track A is checked)
+
+**B1. Trust in what the model writes**
+| ID | Item | Comes from | Value | Effort | Needs from Track A |
+|---|---|---|---|---|---|
+| R1 | Grounding checker: verify every figure and statement in the briefing against the facts sent, mark verified, contradicted or unsourced, badge each point | OpenTerminalUI | H | M | R2 (provenance), R37 (richer facts) |
+| R6 | One targeted self-repair call when the checker finds a contradiction, kept only if it is measurably better | OpenTerminalUI | M | S | R1 |
+| R5 | Briefing eval cases (fixed facts in, expected claims out) run in CI | Vibe-Trading | M | M | R1 |
+| R3 | Prompt-injection scanner for headlines before they reach the model | Vibe-Trading | H | S | None, but only matters once AI reads news again; do it first in Track B |
+
+**B2. Cost, traceability, learning**
+| ID | Item | Comes from | Value | Effort | Needs |
+|---|---|---|---|---|---|
+| R7 | Persisted daily token and cost accounting, a configurable cap, usage visible in the panel, model routing (cheap model for notes, strong for synthesis) | Vibe-Trading, OpenTerminalUI, K.I.T. | H | S-M | None |
+| R4 | Run manifest (prompt hash, facts hash, model, app version) on every briefing; hash-chained journal | Vibe-Trading | M | S-M | None |
+| R8 | A one-paragraph lesson per graded briefing, fed into the next prompt | OpenTerminalUI | M | M | R4, a graded journal with real history |
+
+**B3. Content and interfaces for AI**
+| ID | Item | Comes from | Value | Effort | Needs |
+|---|---|---|---|---|---|
+| R32 | Required briefing sections (supply, demand, inventories, OPEC, rigs, SPR, seasonality, cost curve, geopolitics), each filled from our own data | Vibe-Trading's commodity checklist (its text is not grounded; ours would be) | M | M | R9, R10, R33, R37, R12 |
+| R23 | Read-only MCP server so Claude and other agents can query quotes, calendar, options, curve, positioning, briefings; bearer auth; tool names by what they return | OpenBB, OpenTerminalUI, Vibe-Trading | H | M | A1 data, R13. It is an interface rather than an AI feature, but its consumers are agents, so it waits |
+| R26b | Shadow account: extract your rules from the Upstox trade journal and compare | Vibe-Trading | M | L | R26, R20 |
+
+**Track B order.** R3 first (small, guards the input), then R7 and R4 (cost and traceability), then R1, R6 and R5 (verification), then R32 and R8, then R23. Each item uses data and structure built in Track A, which is why the order is not the other way round.
+
+### 14.3 What each repo gives to each track
+
+| Repo | Track A (no AI) | Track B (AI) |
+|---|---|---|
+| OpenTerminalUI | Provenance and reconcile (R2); server-side alerts (R22); futures curve and seasonality (R12); paper trading, journal, kill-switch ideas (R20, R21); data-quality console (R25); record-and-replay and Playwright testing habits (R30) | Grounding checker (R1), self-repair (R6), reflections (R8), model routing (R7), MCP tools (R23) |
+| Vibe-Trading | Source canaries and startup preflight (R14); validation toolkit (R19); India cost stack pattern (R18); live-trading mandate design (R21); source-risk ordering (R15) | Prompt-injection scanner (R3), run manifests and ledger (R4), spend limits (R7), evals harness (R5), commodity checklist (R32), shadow account (R26b), MCP (R23) |
+| OpenBB | Provider contract (R13); record-and-replay tests (R36); EIA, CFTC, IMF PortWatch, JODI data (R9, R10, R33, R34, R35); technical and quantitative functions (R37) | MCP server design (R23) |
+| NautilusTrader (ideas only) | Continuous futures (R11); bar and time rules and data integrity (R16); position sizing (R18); crash-only restart posture | None |
+| openterminal | Bounded caches and a concurrency helper (R27); user-agent pool (R15); templated recap (R28) | None (its AI route is simpler than ours) |
+| tensortrade | Costs decide the edge (R18); overfitting lessons (R19); price generators (R17) | None |
+| forex-trading-ai-agent | Alert channels (R22); the autonomy ladder as a Phase 2 reference (R21) | Model failover and retry (R7), small |
+
+### 14.4 Why Track A before Track B (the dependencies that matter)
+- The grounding checker (R1) cannot be strong until facts carry provenance (R2) and the fact set is rich (R37, R9, R10, R33). Building R1 first would mean checking a thin set of numbers.
+- The required briefing sections (R32) need the data behind them. Today we have no inventory actuals, positioning or chokepoint data to ground them.
+- The model's learning loop (R8) needs a graded journal with real history, which needs the paper-trading and journal work (R20, R26) and weeks of use.
+- The MCP server (R23) is most useful when there is more to serve (curve, positioning, chokepoints, cost engine results).
+- Nothing in Track A needs AI, and each Track A item is useful on its own to someone who never turns the briefing on.
+
+### 14.5 Counts
+Track A: 24 items, plus R21 (Phase 2, behind the gate). The three data panels with the best value for effort are R9, R10 and R33. Track B: 10 items (R1 to R8, R23, R32, and the shadow account R26b). Every repo-derived idea in sections 3 to 9 appears in exactly one track.

@@ -130,16 +130,26 @@ test("Quote and Watchlist panels render with no data and with a live quote", () 
   expect(document.body.textContent).toContain("CRUDEOIL");
 });
 
-test("CalendarWidget groups events by day and filters by kind", async () => {
+test("CalendarWidget shows forecast, previous and actual per event, and filters by kind", async () => {
   const at = Date.now() + 3600_000;
   mockFetch([
     { id: "e1", title: "EIA crude inventories", at, kind: "energy", impact: "high", forecast: "-1M", previous: "2M" },
+    { id: "e0", title: "EIA natural gas storage", at: Date.now() - 600_000, kind: "energy", impact: "high", forecast: "83B", previous: "67B", actual: "90B" },
     { id: "h1", title: "MCX closed: Diwali", at: at + 86_400_000, kind: "holiday", impact: "medium" },
   ]);
   const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
   render(<CalendarWidget widget={widget("calendar")} />);
   expect(await screen.findByText("EIA crude inventories")).toBeTruthy();
-  expect(document.body.textContent).toContain("forecast -1M");
+  const upcoming = screen.getByText("EIA crude inventories").closest(".cal-row")!;
+  expect(upcoming.querySelector(".cal-fc")!.textContent).toBe("-1M");
+  expect(upcoming.querySelector(".cal-prev")!.textContent).toBe("2M");
+  expect(upcoming.querySelector(".cal-actual")!.textContent).toBe(""); // not out yet
+  const released = screen.getByText("EIA natural gas storage").closest(".cal-row")!;
+  expect(released.querySelector(".cal-actual")!.textContent).toBe("90B");
+  expect(released.querySelector(".cal-actual")!.className).toContain("up"); // above the 83B forecast
+  fireEvent.click(upcoming.querySelector(".cal-bell")!); // bell: an alert 15 minutes before this release
+  const { useAlerts } = require("./alertsStore") as typeof import("./alertsStore");
+  expect(useAlerts.getState().alerts.some((x) => x.kind === "release" && x.text === "EIA crude inventories")).toBe(true);
   fireEvent.click(screen.getByText("Holidays"));
   expect(screen.queryByText("EIA crude inventories")).toBeNull();
   expect(screen.getByText("MCX closed: Diwali")).toBeTruthy();

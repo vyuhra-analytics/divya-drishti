@@ -1,13 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { instrument, type Bar } from "@drishti/shared";
 import type { Widget as OaWidget } from "openalgo-charts/widget";
-import type { ReplayController, ReplayState } from "openalgo-charts";
+import type { ReplayController, ReplayState, TickMarkType } from "openalgo-charts";
 import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
 import { advStorage } from "./advStorage";
-import { apiUrl, useClock, useSettings } from "./settings";
+import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const SPEEDS = [1, 2, 5, 10, 25];
+
+/** The viewer's own time zone: every time in the app is shown in it, and the chart follows. */
+const systemZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
+ * Axis and crosshair labels in the app's time format (Settings: 12/24-hour clock and number/date locale) and the system zone.
+ * Read from the settings store on every call, so a change applies the next time the chart repaints.
+ * `kind` is the library's tick class (`year`, `month`, `day`, `time`, `timeWithSeconds`); no kind is the crosshair label: date and time.
+ */
+export function chartTimeLabel(utcSeconds: number, kind?: TickMarkType): string {
+  const { locale, clock } = useSettings.getState();
+  const zone = systemZone();
+  const ms = utcSeconds * 1000;
+  if (kind === "year") return new Intl.DateTimeFormat(locale, { year: "numeric", timeZone: zone }).format(ms);
+  if (kind === "month") return new Intl.DateTimeFormat(locale, { month: "short", timeZone: zone }).format(ms);
+  if (kind === "day") return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: zone }).format(ms);
+  return formatStamp(ms, locale, clock, kind === undefined ? "datetime" : "time", zone);
+}
 const REPLAY_BARS = 150; // replay starts this many bars before the end of the stored history
 const BAR_MS = 800; // wall-clock per bar at 1x
 
@@ -62,6 +80,9 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           intervals: ADV_INTERVALS,
           theme: first.current.theme,
           mobile: "auto",
+          timezone: systemZone(),
+          locale: useSettings.getState().locale,
+          timeFormatter: chartTimeLabel,
           persist: `drishti-adv-${widget.id}`, // drawings, indicators and layout survive reloads; the view does not (advStorage)
           storage: advStorage(first.current.symbol, instrument(first.current.symbol)?.exchange ?? "MCX"),
           branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
