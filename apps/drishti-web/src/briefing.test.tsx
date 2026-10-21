@@ -67,3 +67,17 @@ test("a server error (no API key) is shown instead of a briefing", async () => {
   expect(await screen.findByText(/ANTHROPIC_API_KEY/)).toBeTruthy();
   expect(useJournal.getState().entries).toHaveLength(0);
 });
+
+test("the position is shared only when opted in, and a failed read is 'unavailable', not 'flat'", async () => {
+  const held = [{ symbol: "MCX:CRUDEOIL", contract: "CRUDEOIL 19 NOV 26 FUT", kind: "future", netQty: 100, avgPrice: 9300, lastPrice: 9384, pnl: 8400 }];
+  const base = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    String(url).includes("/positions") ? { ok: true, status: 200, json: async () => ({ positions: held }) } : base(url, init),
+  ) as never;
+  expect((await gatherContext("MCX:CRUDEOIL", "5m")).position).toBeUndefined(); // not opted in: nothing sent
+  expect((await gatherContext("MCX:CRUDEOIL", "5m", true)).position).toMatchObject({ status: "open", side: "long", netQty: 100 });
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    String(url).includes("/positions") ? { ok: false, status: 403, json: async () => ({ message: "no" }) } : base(url, init),
+  ) as never;
+  expect((await gatherContext("MCX:CRUDEOIL", "5m", true)).position).toEqual({ status: "unavailable" });
+});

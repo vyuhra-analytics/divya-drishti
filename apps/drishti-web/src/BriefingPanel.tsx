@@ -4,13 +4,15 @@ import { persist } from "zustand/middleware";
 import {
   buildContext,
   instrument,
+  positionContext,
   scoreBriefing,
   TOPIC_TAGS,
   type Bar,
   type BriefingResult,
   type CalEvent,
+  type OpenPosition,
 } from "@drishti/shared";
-import { apiUrl, useClock } from "./settings";
+import { apiUrl, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
 import { useNow } from "./market";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -47,15 +49,16 @@ const json = async <T,>(path: string): Promise<T | undefined> => {
 };
 
 /** Collect what the briefing may use: live quote, recent bars (indicators are computed from them), headlines, releases, options. */
-export async function gatherContext(symbol: string, tf: string) {
+export async function gatherContext(symbol: string, tf: string, withPosition = false) {
   const quote = useStore.getState().quotes[symbol];
   if (!quote) throw new Error("No live price for this instrument yet");
   const inst = instrument(symbol);
   const topicTags = inst?.topic ? TOPIC_TAGS[inst.topic] : [];
-  const [bars, events, chain] = await Promise.all([
+  const [bars, events, chain, held] = await Promise.all([
     json<Bar[]>(`/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}`),
     json<CalEvent[]>("/calendar?days=2"),
     inst?.exchange === "MCX" && inst.upstox ? json<{ expiry: string; pcr?: number; maxPain?: number; spot?: number }>(`/options?underlying=${inst.upstox}`) : Promise.resolve(undefined),
+    withPosition && inst?.exchange === "MCX" ? json<{ positions: OpenPosition[] }>("/positions") : Promise.resolve(undefined),
   ]);
   const news = useStore.getState().news;
   const relevant = topicTags.length ? news.filter((n) => n.tags.some((t) => topicTags.includes(t))) : news;
@@ -66,6 +69,8 @@ export async function gatherContext(symbol: string, tf: string) {
     timeframe: tf,
     news: relevant,
     events: events ?? [],
+    // opted in: a failed read is "unavailable", not "flat". Not opted in (or NYMEX, which Upstox does not carry): nothing is sent
+    position: withPosition && inst?.exchange === "MCX" ? positionContext(symbol, held?.positions) : undefined,
     options: chain ? { expiry: chain.expiry, pcr: chain.pcr, maxPain: chain.maxPain, spot: chain.spot } : undefined,
     now: Date.now(),
   });
@@ -95,6 +100,8 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
   const now = useNow(60_000);
   const price = useStore((s) => s.quotes[symbol]?.price);
   const { entries, add, clear } = useJournal();
+  const sharePosition = useSettings((s) => s.briefingPositions);
+  const set = useSettings((s) => s.set);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shownId, setShownId] = useState<string | null>(null);
@@ -105,7 +112,7 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
     setBusy(true);
     setError(null);
     try {
-      const context = await gatherContext(symbol, widget.tf);
+      const context = await gatherContext(symbol, widget.tf, sharePosition);
       const res = await fetch(`${apiUrl()}/briefing`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ context }) });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.message ?? `HTTP ${res.status}`);
@@ -127,6 +134,11 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
           {busy ? "Writing…" : `Brief me on ${symbol.split(":")[1]}`}
         </button>
         <span className="muted brief-note">One AI call (about US$0.05). Research aid, not advice.</span>
+        {instrument(symbol)?.exchange === "MCX" && (
+          <label className="brief-share" title="Sends your net quantity, average price and P&L in this contract to the AI service with the briefing">
+            <input type="checkbox" checked={sharePosition} onChange={(e) => set({ briefingPositions: e.target.checked })} /> Include my position
+          </label>
+        )}
       </div>
       <div className="brief-body" tabIndex={0} role="region" aria-label="Briefing">
         {error && <p className="down brief-error">{error}</p>}

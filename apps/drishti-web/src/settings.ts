@@ -30,6 +30,8 @@ export interface Settings {
   helpSeen: boolean;
   /** short beep when an alert fires */
   alertSound: boolean;
+  /** share my open position in the viewed contract with the AI briefing (off until ticked) */
+  briefingPositions: boolean;
   // live TV: user-added HLS (.m3u8) streams on top of the built-in list in TvWidget.tsx
   tvChannels: TvChannel[];
   // connection ("" = use env / dev proxy default)
@@ -53,6 +55,7 @@ export const DEFAULTS: Settings = {
   /** the welcome/help sheet has been shown once */
   helpSeen: false,
   alertSound: true,
+  briefingPositions: false,
   tvChannels: [],
   apiUrl: "",
   streamUrl: "",

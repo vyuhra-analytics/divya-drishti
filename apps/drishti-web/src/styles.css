@@ -427,3 +427,5 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .journal-row.active { background: var(--hover); }
 .journal-score { text-align: right; }
 .linklike { color: var(--muted); font-size: 10px; text-decoration: underline; margin-left: 6px; }
+
+.brief-share { margin-left: auto; font-size: 11px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }

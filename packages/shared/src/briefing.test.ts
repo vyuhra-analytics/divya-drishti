@@ -59,3 +59,10 @@ test("scoreBriefing grades direction, with a band for neutral", () => {
   expect(scoreBriefing("neutral", 100, 101).hit).toBe(false);
   expect(scoreBriefing("bullish", 200, 210).movePct).toBe(5);
 });
+
+test("a shared position is carried into the context; without one the field is absent", () => {
+  expect(buildContext(input()).position).toBeUndefined();
+  const position = { status: "open" as const, contract: "CRUDEOIL 19 NOV 26 FUT", side: "long" as const, netQty: 100, pnl: 8400 };
+  expect(buildContext(input({ position })).position).toEqual(position);
+  expect(briefingPrompt(buildContext(input({ position })))).toContain('"side":"long"');
+});
