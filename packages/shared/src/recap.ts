@@ -40,6 +40,13 @@ export function buildRecap(ctx: BriefingContext, extras: RecapExtras = {}): Reca
   }
   const headline = `${ctx.name} is at ${ctx.price.toFixed(d)}${ctx.changePct !== undefined ? ` (${signed(ctx.changePct)}% on the day)` : ""}${where}.`;
 
+  // how much to trust the price: a closed, quiet, delayed or disputed feed is said so before anything else
+  const pv = ctx.provenance?.price;
+  if (pv?.quality === "closed") lines.push("The market is closed: this is the last price, not a live one.");
+  else if (pv?.quality === "stale") lines.push("The feed has gone quiet: this price may be behind the market.");
+  else if (pv?.quality === "delayed") lines.push(`This price comes from ${pv.source}, which runs behind the exchange.`);
+  if (pv?.conflict) lines.push(`Two live feeds disagree: ${pv.conflict.between.join(" and ")} differ by ${pv.conflict.pct.toFixed(2)}%, so treat the price as disputed.`);
+
   // trend and momentum from the chart timeframe
   if (t.ema20 !== undefined && t.ema50 !== undefined) {
     const trend = ctx.price > t.ema20 && ctx.price > t.ema50 ? "above both its 20 and 50 period averages (uptrend)" : ctx.price < t.ema20 && ctx.price < t.ema50 ? "below both its 20 and 50 period averages (downtrend)" : "between its 20 and 50 period averages (no clear trend)";

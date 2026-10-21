@@ -1,4 +1,4 @@
-import { daysToExpiry, instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
+import { daysToExpiry, describeProvenance, instrument, quoteProvenance, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
 import type { ComponentType } from "react";
 import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
@@ -59,12 +59,19 @@ export function Price({ symbol }: { symbol: string }) {
 
 /** Source badge, plus a DELAYED tag when the feed lags the exchange. */
 export function SourceBadge({ symbol }: { symbol: string }) {
-  const source = useStore((s) => s.quotes[symbol]?.source);
-  const delayedBy = useStore((s) => s.quotes[symbol]?.delayedBy ?? 0);
+  const quote = useStore((s) => s.quotes[symbol]);
+  const source = quote?.source;
+  const delayedBy = quote?.delayedBy ?? 0;
   const fresh = useFreshness(symbol);
-  if (!source) return null;
+  if (!quote || !source) return null;
+  const provenance = describeProvenance(quoteProvenance(quote, fresh), Date.now());
   return (
     <span className="badges">
+      {quote.drift && (
+        <span className="badge disputed" title={`Two live feeds disagree: ${quote.drift.between.join(" and ")} differ by ${quote.drift.pct}% (${quote.drift.ticks} ticks). This price may be wrong.`}>
+          FEEDS DIFFER
+        </span>
+      )}
       {fresh === "closed" && (
         <span className="badge closed" title="Exchange closed: showing the last price">
           CLOSED
@@ -75,7 +82,7 @@ export function SourceBadge({ symbol }: { symbol: string }) {
           STALE
         </span>
       )}
-      <span className={`badge src-${source}`} title={`Source: ${source}`}>
+      <span className={`badge src-${source}`} title={provenance}>
         {SOURCE_LABEL[source]}
       </span>
       {delayedBy > 0 && (

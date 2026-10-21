@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CHOKEPOINTS, rollingTankers, type ChokepointId, type Flow, type TransitDay, type TransitSummary } from "@drishti/shared";
+import { Outdated } from "./Outdated";
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import type { Widget } from "./workspace";
@@ -76,7 +77,7 @@ export function ChokepointsWidget(_: { widget: Widget }) {
         {s && (
           <>
             <p className="muted chk-asof">
-              {CHOKEPOINTS.find((c) => c.id === active)?.name} · 7-day average of tankers per day · data to <b>{day(s.asOf)}</b> (published weekly, a few days behind)
+              {CHOKEPOINTS.find((c) => c.id === active)?.name} · 7-day average of tankers per day · data to <b>{day(s.asOf)}</b> (published weekly, a few days behind) <Outdated kind="transits" asOf={Date.parse(`${s.asOf}T00:00:00Z`)} />
             </p>
             <svg className="chk-chart" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Tankers per day, 7-day average">
               <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />

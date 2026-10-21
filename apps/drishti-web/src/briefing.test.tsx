@@ -90,3 +90,12 @@ test("the position is shared only when opted in, and a failed read is 'unavailab
   ) as never;
   expect((await gatherContext("MCX:CRUDEOIL", "5m", true)).position).toEqual({ status: "unavailable" });
 });
+
+test("the facts carry provenance: feed, live or closed, a feed conflict, and when the indicators are as of", async () => {
+  useStore.setState({ quotes: { "MCX:CRUDEOIL": { symbol: "MCX:CRUDEOIL", price: 9100, time: Date.now() - 5000, delayedBy: 0, source: "upstox", drift: { between: ["tradingview", "upstox"], pct: 0.3, ticks: 27 } } as never }, seen: {} });
+  const c = await gatherContext("MCX:CRUDEOIL", "5m");
+  expect(c.provenance.price).toMatchObject({ source: "upstox", conflict: { between: ["tradingview", "upstox"], pct: 0.3, ticks: 27 } });
+  expect(["stale", "closed"]).toContain(c.provenance.price.quality); // no heartbeat: never described as live
+  expect(c.provenance.technicals).toEqual({ source: "computed", quality: "computed", asOf: (bars[bars.length - 1].time + 300) * 1000 });
+  expect(c.provenance.news).toMatchObject({ source: "rss", quality: "published" });
+});

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EiaPoint, EiaSummary } from "@drishti/shared";
+import { Outdated } from "./Outdated";
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import type { Widget } from "./workspace";
 
@@ -73,7 +74,9 @@ export function EiaWidget(_: { widget: Widget }) {
                   .map((r) => (
                     <tr key={r.id}>
                       <td>{r.label}</td>
-                      <td className="muted">{r.latest ? day(r.latest) : "—"}</td>
+                      <td className="muted">
+                        {r.latest ? day(r.latest) : "—"} {r.latest && <Outdated kind={r.freq === "daily" ? "spot" : "inventory"} asOf={Date.parse(`${r.latest.period}T00:00:00Z`)} />}
+                      </td>
                       <td>
                         {num(r, r.latest?.value)} <small className="muted">{r.unit}</small>
                       </td>

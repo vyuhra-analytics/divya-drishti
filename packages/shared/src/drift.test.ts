@@ -33,3 +33,10 @@ test("a delayed feed is not compared with a live one", () => {
   expect(a.gap!.ticks).toBe(5); // NYMEX crude ticks are 0.01
   expect(a.drifting).toBe(false);
 });
+
+test("the flag threshold can be tightened or loosened by the caller", () => {
+  const p = { upstox: { price: 9483, at: at(500) }, tradingview: { price: 9468, at: at(500) } }; // 0.158%
+  expect(agreement("MCX:CRUDEOIL", p, NOW).drifting).toBe(true);
+  expect(agreement("MCX:CRUDEOIL", p, NOW, 0.5).drifting).toBe(false);
+  expect(agreement("MCX:CRUDEOIL", p, NOW, 0.01).drifting).toBe(true);
+});

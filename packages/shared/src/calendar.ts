@@ -15,6 +15,8 @@ export interface CalEvent {
   previous?: string;
   /** the released value, filled in once the official source publishes it */
   actual?: string;
+  /** where each filled-in figure came from, shown on hover: provenance for the forecast/previous and the actual */
+  src?: { forecast?: string; actual?: string };
   /** two-letter market code for the list (US, IN, EA…) */
   country?: string;
   /** the period the figure covers, as a short tag: "OCT/16" for the week ending 16 Oct */
@@ -99,7 +101,7 @@ export function mergeForexFactory(releases: CalEvent[], rows: FFRow[], from: num
     const at = Date.parse(row.date);
     if (!Number.isFinite(at)) continue;
     const mine = out.find((e) => e.id.startsWith(`${r.key}-`) && Math.abs(e.at - at) < 3 * DAY);
-    const patch = { forecast: row.forecast || undefined, previous: row.previous || undefined };
+    const patch = { forecast: row.forecast || undefined, previous: row.previous || undefined, src: { forecast: "Forex Factory" } };
     if (mine) Object.assign(mine, { at, id: `${r.key}-${at}` }, patch);
     else if (at >= from && at < to) out.push({ id: `${r.key}-${at}`, title: r.title, at, kind: "energy", impact: r.impact, detail: r.detail, ...patch });
   }
@@ -117,6 +119,7 @@ export function mergeForexFactory(releases: CalEvent[], rows: FFRow[], from: num
       impact: FF_IMPACT[row.impact] ?? "low",
       forecast: row.forecast || undefined,
       previous: row.previous || undefined,
+      src: { forecast: "Forex Factory" },
       detail: opec ? "OPEC" : "Moves the dollar, and so crude",
     });
   }

@@ -36,7 +36,7 @@ function actualTitle(e: CalEvent, time: (t: number) => string, now: number) {
   if (e.actual !== undefined) {
     const vs = numberOf(e.forecast) !== undefined ? "forecast" : "previous";
     const c = actualClass(e);
-    return `Released${c ? `, ${c === "up" ? "above" : "below"} ${vs}` : ""}`;
+    return `Released${c ? `, ${c === "up" ? "above" : "below"} ${vs}` : ""}${e.src?.actual ? ` · source: ${e.src.actual}` : ""}`;
   }
   return e.at < now ? `Released ${time(e.at)}; waiting for the official figure` : "Not released yet";
 }
@@ -162,8 +162,8 @@ export function CalendarWidget(_: { widget: Widget }) {
                       <span className={`cal-actual ${actualClass(e)}${fresh.has(e.id) ? " fresh" : ""}`} title={actualTitle(e, clock.time, now)}>
                         {e.actual ?? (e.at < now ? "…" : "")}
                       </span>
-                      <span className="cal-prev" title="Previous release">{e.previous ?? ""}</span>
-                      <span className="cal-fc" title="Consensus forecast">{e.forecast ?? ""}</span>
+                      <span className="cal-prev" title={e.src?.forecast ? `Previous release · source: ${e.src.forecast}` : "Previous release"}>{e.previous ?? ""}</span>
+                      <span className="cal-fc" title={e.src?.forecast ? `Consensus forecast · source: ${e.src.forecast}` : "Consensus forecast"}>{e.forecast ?? ""}</span>
                       <button
                         className={`cal-bell${watching(e) ? " on" : ""}`}
                         aria-pressed={!!watching(e)}

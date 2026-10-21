@@ -17,7 +17,7 @@ import {
 } from "@drishti/shared";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
-import { useNow } from "./market";
+import { symbolFreshness, useNow } from "./market";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 interface Entry {
@@ -71,6 +71,7 @@ export async function gatherContext(symbol: string, tf: string, withPosition = f
     // only bars that have closed: the forming bar is not final, and the facts must not change while it fills
     bars: completedBars(bars ?? [], TIMEFRAMES[tf as Timeframe] ?? 300, Date.now() / 1000).slice(-200),
     timeframe: tf,
+    freshness: symbolFreshness(symbol),
     news: relevant,
     events: events ?? [],
     // opted in: a failed read is "unavailable", not "flat". Not opted in (or NYMEX, which Upstox does not carry): nothing is sent

@@ -57,6 +57,9 @@ test("applyEiaActuals fills released EIA events from the right file and leaves t
   const now = nyTime(2026, 9, 21, 11, 0); // 30 minutes after the 21 Oct oil release, before the file is refreshed
   const out = applyEiaActuals([oil14, oil21, gas15, gas22, rigs], files, now);
   expect(out.map((e) => e.actual)).toEqual(["-8.6M", undefined, "67B", undefined, undefined]);
+  expect(out[0].src?.actual).toBe("EIA weekly report (ir.eia.gov)"); // the actual says where it came from
+  expect(out[2].src?.actual).toBe("EIA gas storage report (ir.eia.gov)");
+  expect(out[1].src).toBeUndefined();
   // the file is refreshed with the next week: only then does the 21 Oct event get a number
   const next = { wpsr: { weekEnding: Date.UTC(2026, 9, 16), change: { "Commercial (Excluding SPR)": 1.234 } } };
   expect(applyEiaActuals([oil21], next, now)[0].actual).toBe("1.2M");

@@ -29,6 +29,8 @@ test("mergeForexFactory borrows forecasts, honours a shifted day, adds USD high-
   const eia = ev.find((e) => e.title === "EIA crude inventories")!;
   expect(iso(eia.at)).toBe("2026-10-22T14:30:00.000Z");
   expect(eia.forecast).toBe("-1.2M");
+  expect(eia.src).toEqual({ forecast: "Forex Factory" });
+  expect(ev.find((e) => e.title === "CPI m/m (US)")?.src?.forecast).toBe("Forex Factory");
   expect(ev.filter((e) => e.title === "EIA crude inventories")).toHaveLength(1);
   expect(ev.find((e) => e.title === "CPI m/m (US)")).toMatchObject({ kind: "macro", impact: "high", forecast: "0.3%" });
   expect(ev.find((e) => e.title === "OPEC Meetings")?.kind).toBe("energy");

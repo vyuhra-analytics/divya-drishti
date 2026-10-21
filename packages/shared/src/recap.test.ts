@@ -6,6 +6,7 @@ const base = (over: Partial<BriefingContext> = {}): BriefingContext => ({
   symbol: "NYMEX:CL",
   name: "WTI Crude Oil",
   asOf: "2026-10-21T10:00:00Z",
+  provenance: { price: { source: "upstox", quality: "live", asOf: 0 }, technicals: { source: "computed", quality: "computed", asOf: 0 } },
   price: 98.9,
   changePct: 1.19,
   day: { open: 97.5, high: 99.2, low: 97.4, prevClose: 97.74 },
@@ -54,4 +55,13 @@ test("buildRecap leaves out whatever is missing and handles a mid-range, mixed-t
   expect(r.headline).toBe("WTI Crude Oil is at 98.30, mid-range for the day.");
   expect(r.lines).toEqual(["On the 1h chart price is between its 20 and 50 period averages (no clear trend)."]);
   expect(buildRecap(base({ technicals: { timeframe: "5m" }, stats: {} })).lines).toEqual([]);
+});
+
+test("buildRecap says so when the price is closed, behind or disputed", () => {
+  const p = (price: object) => base({ provenance: { price: { source: "yahoo", quality: "live", asOf: 0, ...price } as never, technicals: { source: "computed", quality: "computed", asOf: 0 } } });
+  expect(buildRecap(p({ quality: "closed" })).lines[0]).toBe("The market is closed: this is the last price, not a live one.");
+  expect(buildRecap(p({ quality: "stale" })).lines[0]).toBe("The feed has gone quiet: this price may be behind the market.");
+  expect(buildRecap(p({ quality: "delayed" })).lines[0]).toBe("This price comes from yahoo, which runs behind the exchange.");
+  expect(buildRecap(p({ conflict: { between: ["tradingview", "upstox"], pct: 0.31, ticks: 29 } })).lines[0]).toBe("Two live feeds disagree: tradingview and upstox differ by 0.31%, so treat the price as disputed.");
+  expect(buildRecap(p({})).lines[0]).toMatch(/^On the 5m chart/); // live and undisputed: nothing added
 });

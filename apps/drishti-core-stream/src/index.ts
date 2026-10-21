@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { RedisClient, SQL } from "bun";
 import {
+  agreement,
   allowedOrigins,
   changedFronts,
   REDIS_OPTIONS,
@@ -72,6 +73,7 @@ const heartbeat = () => {
 let buffer: Tick[] = [];
 
 const lastPrice = new Map<string, SourcePrices>();
+const DRIFT_PCT = Number(process.env.DRIFT_FLAG_PCT) > 0 ? Number(process.env.DRIFT_FLAG_PCT) : undefined; // percent; default in shared drift.ts
 const rejected = { count: 0, last: undefined as undefined | { symbol: string; source: string; reason: string; at: number } };
 
 function accept(q: Quote) {
@@ -97,10 +99,14 @@ function accept(q: Quote) {
   if (winner) active.set(q.symbol, winner);
   if (q.source !== winner) return;
 
+  // provenance: when another live source disagrees with the one we show by more than the drift threshold, say so on the quote itself
+  const ag = agreement(q.symbol, bySource, now, DRIFT_PCT);
+  if (ag.drifting && ag.gap) q = { ...q, drift: { between: ag.gap.between, pct: Number(ag.gap.pct.toFixed(3)), ticks: ag.gap.ticks } };
+
   const prev = latest.get(q.symbol);
-  // republish only when something shown changed (trade, depth or OI); heartbeat re-sends stay quiet
+  // republish only when something shown changed (trade, depth, OI or whether the feeds disagree); heartbeat re-sends stay quiet
   const same = (k: keyof Quote) => prev?.[k] === q[k];
-  if (prev && (["source", "price", "volume", "time", "bid", "ask", "bidQty", "askQty", "oi"] as const).every(same)) return;
+  if (prev && Boolean(prev.drift) === Boolean(q.drift) && (["source", "price", "volume", "time", "bid", "ask", "bidQty", "askQty", "oi"] as const).every(same)) return;
   latest.set(q.symbol, q);
   // volume counts differ between sources, so only diff volumes within one source
   const tick = quoteToTick(prev?.source === q.source ? prev : undefined, q);

@@ -103,9 +103,9 @@ export function applyEiaActuals(events: CalEvent[], files: { wpsr?: Wpsr; wngsr?
     if (e.actual !== undefined || e.at > now) return e;
     if (e.id.startsWith("eia-oil-") && files.wpsr && fileIsForEvent(files.wpsr.weekEnding, e.at)) {
       const d = files.wpsr.change["Commercial (Excluding SPR)"];
-      if (d !== undefined) return { ...e, actual: `${signed(d, 1)}M` };
+      if (d !== undefined) return { ...e, actual: `${signed(d, 1)}M`, src: { ...e.src, actual: "EIA weekly report (ir.eia.gov)" } };
     }
-    if (e.id.startsWith("eia-gas-") && files.wngsr && fileIsForEvent(files.wngsr.weekEnding, e.at)) return { ...e, actual: `${signed(files.wngsr.netChange, 0)}B` };
+    if (e.id.startsWith("eia-gas-") && files.wngsr && fileIsForEvent(files.wngsr.weekEnding, e.at)) return { ...e, actual: `${signed(files.wngsr.netChange, 0)}B`, src: { ...e.src, actual: "EIA gas storage report (ir.eia.gov)" } };
     return e;
   });
 }

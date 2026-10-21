@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { COT_MARKETS, cotPublishedAt, instrument, netChange, percentileRank, type CotGroup, type CotMarketId, type CotRow } from "@drishti/shared";
+import { Outdated } from "./Outdated";
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -78,7 +79,7 @@ export function CotWidget({ widget }: { widget: Widget }) {
         {last && (
           <>
             <p className="muted cot-asof">
-              {COT_MARKETS.find((m) => m.id === active)?.name} · positions as of <b>{reportDay(last.date)}</b>, published {publishedDay(cotPublishedAt(last.date))} · open interest {nf.format(last.openInterest)}
+              {COT_MARKETS.find((m) => m.id === active)?.name} · positions as of <b>{reportDay(last.date)}</b>, published {publishedDay(cotPublishedAt(last.date))} · open interest {nf.format(last.openInterest)} <Outdated kind="positioning" asOf={last.date} />
             </p>
             <div className="cot-head">
               <div>

@@ -83,7 +83,7 @@ export class CalendarController {
       const title = e.title.replace(/ \(US\)$/, "");
       const m = fredSeriesFor(title);
       const actual = m ? fredActual(title, "USD", e.at, now, series.get(m.seriesId) ?? []) : undefined;
-      return actual === undefined ? e : { ...e, actual };
+      return actual === undefined ? e : { ...e, actual, src: { ...e.src, actual: "FRED (St. Louis Fed)" } };
     });
     return out;
   }

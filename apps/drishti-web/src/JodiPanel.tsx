@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { JODI_COUNTRIES, type JodiCountry, type JodiSeries } from "@drishti/shared";
+import { Outdated } from "./Outdated";
 import { apiUrl, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import type { Widget } from "./workspace";
@@ -63,7 +64,9 @@ export function JodiWidget(_: { widget: Widget }) {
               {reported.map((f) => (
                 <tr key={f.flow}>
                   <td title={f.latest ? QUALITY[f.latest.quality as 1 | 2 | 3] : undefined}>{f.label}</td>
-                  <td className="muted">{month(f.latest!.month)}</td>
+                  <td className="muted">
+                    {month(f.latest!.month)} <Outdated kind="balances" asOf={Date.parse(`${f.latest!.month}-28T00:00:00Z`)} />
+                  </td>
                   <td>
                     {nf.format(f.latest!.value)} <small className="muted">{f.unit === "KBD" ? "kb/d" : "kb"}</small>
                   </td>

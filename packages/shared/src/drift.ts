@@ -29,7 +29,7 @@ export interface Agreement {
 }
 
 /** Compare the fresh, comparable sources of one symbol. Fewer than two such sources is no comparison, not a pass. */
-export function agreement(symbol: string, prices: SourcePrices, now: number): Agreement {
+export function agreement(symbol: string, prices: SourcePrices, now: number, thresholdPct = DRIFT_FLAG_PCT): Agreement {
   const fresh = Object.entries(prices).filter(([, p]) => now - p.at <= FRESH_MS && Number.isFinite(p.price) && p.price > 0);
   // keep the group that shares the most common delay, so a live feed is only compared with live feeds
   const delays = new Map<number, number>();
@@ -43,5 +43,5 @@ export function agreement(symbol: string, prices: SourcePrices, now: number): Ag
   const points = hi.price - lo.price;
   const tick = 10 ** -(instrument(symbol)?.decimals ?? 2);
   const pct = (points / lo.price) * 100;
-  return { symbol, sources, gap: { points, pct, ticks: Math.round(points / tick), between: [lo.source, hi.source] }, drifting: pct > DRIFT_FLAG_PCT };
+  return { symbol, sources, gap: { points, pct, ticks: Math.round(points / tick), between: [lo.source, hi.source] }, drifting: pct > thresholdPct };
 }

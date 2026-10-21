@@ -65,6 +65,8 @@ export interface Quote {
   contract?: string;
   source: Source;
   delayedBy: number;
+  /** set by the stream when another live source disagrees with this price by more than the drift threshold (see drift.ts) */
+  drift?: { between: [string, string]; pct: number; ticks: number };
 }
 
 /** time = epoch ms */
@@ -316,3 +318,4 @@ export * from "./fixtures";
 export * from "./fixtureSamples";
 export * from "./canary";
 export * from "./drift";
+export * from "./provenance";

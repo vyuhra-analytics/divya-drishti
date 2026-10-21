@@ -578,3 +578,4 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .dq-dots i.dq-ok { background: var(--up); }
 .dq-dots i.dq-bad { background: var(--down); }
 .dq-dots i.dq-skip { background: var(--muted); opacity: .4; }
+.badge.disputed { color: var(--down); border-color: color-mix(in srgb, var(--down) 60%, transparent); }
