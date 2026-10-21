@@ -8,6 +8,7 @@ import { parseEia } from "./eia";
 import type { shrink } from "./fixtures";
 import { parseYahooCandles } from "./index";
 import { summarizeJodi } from "./jodi";
+import { parseRss } from "./news";
 
 type ShrinkOpts = NonNullable<Parameters<typeof shrink>[1]>;
 
@@ -18,6 +19,8 @@ export interface FixtureSample {
   shrink?: ShrinkOpts;
   /** run the real code path and return what it produced */
   run(io: FetchIO): Promise<unknown>;
+  /** how often the scheduled canary runs this one (default hourly; heavy downloads less often) */
+  everyMs?: number;
   /** a problem with the result, or undefined when it looks like real, usable data */
   check(result: any): string | undefined;
 }
@@ -50,6 +53,7 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
   },
   {
     id: "jodi",
+    everyMs: 24 * 3600_000, // about 18 MB of CSV: once a day is enough
     // the real files are ~12 MB: keep the header and the five countries' crude rows only
     shrink: { keepLine: (l) => /^(IN|US|CN|SA|JP),[^,]*,CRUDEOIL,/.test(l) },
     run: (io) => createRunner(io)(jodiFetcher, {}).then((r) => r.data),
@@ -75,6 +79,21 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
     run: async (io) => parseYahooCandles(await json(io, "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?interval=5m&range=1d")),
     check: (bars) => (bars.length >= 20 && bars.every((b: any) => num(b.close) && b.high >= b.low) ? undefined : "expected 20+ consistent 5m bars"),
   },
+  ...(
+    [
+      ["rss-oilprice", "OilPrice.com", "https://oilprice.com/rss/main"],
+      ["rss-cnbc", "CNBC", "https://www.cnbc.com/id/19836768/device/rss/rss.html"],
+      ["rss-rigzone", "Rigzone", "https://www.rigzone.com/news/rss/rigzone_latest.aspx"],
+      ["rss-google-oil", "Google News", "https://news.google.com/rss/search?q=oil%20when%3A1d&hl=en-IN&gl=IN&ceid=IN:en"],
+    ] as const
+  ).map(
+    ([id, name, url]): FixtureSample => ({
+      id,
+      shrink: { maxItems: 15 },
+      run: async (io) => parseRss(await text(io, url), name),
+      check: (items) => (items.length >= 5 && items.every((i: any) => i.title && i.url && num(i.publishedAt)) ? undefined : "expected 5+ items with a title, link and time"),
+    }),
+  ),
   {
     id: "eia-v2-stocks",
     needs: ["EIA_API_KEY"],

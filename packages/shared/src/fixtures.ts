@@ -67,9 +67,15 @@ export function replayIO(entries: Recorded[], env: Record<string, string | undef
   };
 }
 
-/** Keep fixtures small: JSON arrays under `features`/the root are cut to `max` items; CSV keeps its header and the lines `keep` accepts. */
+/** Keep fixtures small: JSON arrays under `features`/the root and RSS items are cut to `maxItems`; CSV keeps its header and the lines `keepLine` accepts. */
 export function shrink(e: Recorded, opts: { maxItems?: number; keepLine?: (line: string) => boolean } = {}): Recorded {
   let text = e.text;
+  const items = text.match(/<item[\s>][\s\S]*?<\/item>/g) ?? [];
+  const [firstItem, lastItem] = [items[0], items[items.length - 1]];
+  if (firstItem && lastItem) {
+    // RSS: keep the channel head, the first items and the tail
+    return { ...e, text: text.slice(0, text.indexOf(firstItem)) + items.slice(0, opts.maxItems ?? 20).join("\n") + text.slice(text.lastIndexOf(lastItem) + lastItem.length) };
+  }
   try {
     const json = JSON.parse(text);
     const cut = opts.maxItems ?? 400;

@@ -314,3 +314,4 @@ export * from "./fetcher";
 export * from "./fetchers";
 export * from "./fixtures";
 export * from "./fixtureSamples";
+export * from "./canary";
