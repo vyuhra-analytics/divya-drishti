@@ -358,3 +358,10 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .cal-title { font-weight: 600; }
 .cal-detail { font-size: 11px; }
 .cal-until { font-size: 11px; white-space: nowrap; }
+
+.sidebar .ws-item { display: flex; }
+.sidebar .ws-item .ws-del { flex: none; width: 26px; padding: 6px 0; justify-content: center; color: var(--muted); }
+.sidebar .ws-item .ws-del:hover { color: var(--down); }
+.sidebar button.active { color: var(--accent); background: var(--hover); }
+.sidebar ul { flex: none; }
+.sidebar .sb-foot { margin-top: auto; }

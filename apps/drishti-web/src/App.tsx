@@ -8,12 +8,13 @@ import { useStore } from "./store";
 import { Price } from "./widgets";
 import { Workspace } from "./Grid";
 import { PANEL_TYPES, Sidebar } from "./Sidebar";
+import { workspaceList } from "./presets";
 import { useWorkspace } from "./workspace";
 
 export function App() {
   const status = useStore((s) => s.status);
   const paletteOpen = useWorkspace((s) => s.paletteOpen);
-  const { setPaletteOpen, addWidget } = useWorkspace.getState();
+  const { setPaletteOpen, addWidget, loadWorkspace } = useWorkspace.getState();
   const setSettingsOpen = useSettings((s) => s.setOpen);
   const [menuOpen, setMenuOpen] = useState(false); // phone-width sidebar overlay
 
@@ -25,6 +26,13 @@ export function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
+      } else if (/^F[1-9]$/.test(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        // F1…F9 switch workspace (presets first, then saved ones); F1 would otherwise open the browser's help
+        const ws = workspaceList(useWorkspace.getState().saved)[Number(e.key.slice(1)) - 1];
+        if (ws) {
+          e.preventDefault();
+          loadWorkspace(ws.key);
+        }
       } else if (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) {
         // Alt+1…9 adds a panel (e.code: works on any keyboard layout)
         const type = PANEL_TYPES[Number(e.code.slice(5)) - 1];
@@ -36,7 +44,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setPaletteOpen, setSettingsOpen, addWidget]);
+  }, [setPaletteOpen, setSettingsOpen, addWidget, loadWorkspace]);
 
   return (
     <div className="shell">

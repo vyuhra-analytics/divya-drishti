@@ -4,6 +4,7 @@ import type { LayoutItem } from "react-grid-layout";
 import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
+import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
 export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
@@ -29,6 +30,12 @@ interface WorkspaceState {
   groups: Record<Group, string>;
   focusedId: string | null;
   paletteOpen: boolean;
+  /** user-saved workspaces by name, and the name of the one loaded last (null = the untouched default) */
+  saved: Record<string, Snapshot>;
+  activeWorkspace: string | null;
+  saveWorkspace: (name: string) => boolean;
+  loadWorkspace: (key: string) => void;
+  deleteWorkspace: (name: string) => void;
   addWidget: (type: WidgetType, symbol?: string) => void;
   removeWidget: (id: string) => void;
   setLayout: (layout: readonly LayoutItem[]) => void;
@@ -81,9 +88,36 @@ const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
 
 export const useWorkspace = create<WorkspaceState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...defaults(),
       paletteOpen: false,
+      saved: {},
+      activeWorkspace: null,
+
+      // key = "preset:<key>" or "saved:<name>"; a copy is applied, so editing the live layout never touches the stored one
+      loadWorkspace: (key) =>
+        set((s) => {
+          const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+          const found = kind === "preset" ? PRESETS.find((p) => p.key === id) : undefined;
+          const snap = found ? found.build() : kind === "saved" ? s.saved[id] : undefined;
+          if (!snap) return {};
+          return { ...structuredClone(snap), activeWorkspace: found ? found.name : id };
+        }),
+
+      saveWorkspace: (name) => {
+        const clean = cleanName(name);
+        const { saved, widgets, layout, groups, focusedId } = get();
+        const taken = PRESETS.some((p) => p.name.toLowerCase() === clean.toLowerCase());
+        if (!clean || taken || (!(clean in saved) && Object.keys(saved).length >= MAX_SAVED)) return false;
+        set({ saved: { ...saved, [clean]: structuredClone({ widgets, layout, groups, focusedId }) }, activeWorkspace: clean });
+        return true;
+      },
+
+      deleteWorkspace: (name) =>
+        set((s) => {
+          const { [name]: _gone, ...rest } = s.saved;
+          return { saved: rest, activeWorkspace: s.activeWorkspace === name ? null : s.activeWorkspace };
+        }),
 
       addWidget: (type, symbol) =>
         set((s) => {
@@ -141,13 +175,13 @@ export const useWorkspace = create<WorkspaceState>()(
       updateWidget: (id, change) => set((s) => ({ widgets: patch(s.widgets, id, change) })),
       focus: (focusedId) => set({ focusedId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-      reset: () => set(defaults()),
+      reset: () => set({ ...defaults(), activeWorkspace: null }),
     }),
     {
       name: "drishti-workspace",
       version: 2,
       migrate: () => defaults(), // ponytail: any schema change resets the layout (v2: equity mocks → energy futures); write real migrations once layouts are worth keeping
-      partialize: ({ widgets, layout, groups, focusedId }) => ({ widgets, layout, groups, focusedId }),
+      partialize: ({ widgets, layout, groups, focusedId, saved, activeWorkspace }) => ({ widgets, layout, groups, focusedId, saved, activeWorkspace }),
     },
   ),
 );
