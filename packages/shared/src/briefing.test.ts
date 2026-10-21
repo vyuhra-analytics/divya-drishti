@@ -28,6 +28,9 @@ test("buildContext computes the numbers the model will quote", () => {
   expect(c.technicals.timeframe).toBe("5m");
   expect(c.technicals.rsi14).toBe(100); // only gains
   expect(c.technicals.ema20!).toBeLessThan(9158);
+  expect(c.stats.realizedVol20).toBeGreaterThanOrEqual(0);
+  expect(c.stats.maxDrawdownPct).toBe(0); // only gains: never below its peak
+  expect(c.stats.atr14).toBeGreaterThan(0);
   expect(c.technicals.ema20!).toBeGreaterThan(c.technicals.ema50!);
   expect(c.technicals.changeOverBars).toEqual({ bars: 20, pct: 0.44 });
   expect(c.news[0]).toEqual({ n: 1, title: "Brent climbs", source: "Reuters", ageMin: 10, tags: ["crude"] });

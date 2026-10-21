@@ -5,6 +5,7 @@ import { bollinger, ema, macd, rsi, vwap } from "./indicators";
 import { instrument, tzOffsetSec, type Bar, type Quote } from "./index";
 import type { NewsItem } from "./news";
 import type { PositionContext } from "./positions";
+import { atr, barsPerYear, drawdown, hurst, realizedVol, regimeOf, volPercentile, type Regime } from "./stats";
 
 export type Bias = "bullish" | "bearish" | "neutral";
 
@@ -44,6 +45,21 @@ export interface BriefingContext {
     bollingerPos?: number;
     vwapSession?: number;
     changeOverBars?: { bars: number; pct: number };
+  };
+  /** volatility and behaviour of the loaded bars (same timeframe as technicals) */
+  stats: {
+    /** annualised, percent; approximate except on 1D */
+    realizedVol20?: number;
+    /** where the latest 20-bar volatility sits in the loaded history, 0–100 */
+    volPercentile?: number;
+    /** typical bar range in price units, and as a share of price */
+    atr14?: number;
+    atrPct?: number;
+    /** ~0.5 random, higher trending, lower mean-reverting; unreliable on a short history */
+    hurst?: number;
+    regime?: Regime;
+    maxDrawdownPct?: number;
+    belowPeakPct?: number;
   };
   /** newest first, trimmed */
   news: { n: number; title: string; source: string; ageMin: number; tags: string[] }[];
@@ -114,6 +130,22 @@ export function buildContext(i: ContextInput): BriefingContext {
       vwapSession: round(last(vwap(closes, offsetOf))),
       changeOverBars,
     },
+    stats: (() => {
+      const py = barsPerYear(i.timeframe);
+      const a = atr(closes, 14);
+      const h = hurst(closes);
+      const dd = drawdown(closes);
+      return {
+        realizedVol20: py ? round(realizedVol(closes, 20, py), 1) : undefined,
+        volPercentile: round(volPercentile(closes, 20), 0),
+        atr14: round(a, 3),
+        atrPct: a && lastBar ? round((a / lastBar.close) * 100, 2) : undefined,
+        hurst: round(h, 2),
+        regime: regimeOf(h),
+        maxDrawdownPct: round(dd?.max),
+        belowPeakPct: round(dd?.current),
+      };
+    })(),
     news: i.news.slice(0, NEWS_IN_BRIEFING).map((n, idx) => ({
       n: idx + 1,
       title: n.title.slice(0, 200),

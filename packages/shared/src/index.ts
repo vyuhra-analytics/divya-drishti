@@ -298,3 +298,4 @@ export * from "./lru";
 export * from "./actuals";
 export * from "./cot";
 export * from "./chokepoints";
+export * from "./stats";
