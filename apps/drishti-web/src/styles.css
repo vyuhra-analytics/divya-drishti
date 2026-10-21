@@ -119,6 +119,26 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .chart { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .chart-legend { position: absolute; left: 8px; top: 4px; z-index: 2; display: flex; flex-wrap: wrap; gap: 2px 12px; max-width: calc(100% - 80px); padding: 2px 6px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); border-radius: 4px; pointer-events: none; }
 .chart-legend b { font-weight: 600; color: var(--text); }
+.main-area { flex: 1; min-height: 0; display: flex; }
+.main-area .workspace { flex: 1; min-width: 0; }
+.sidebar { flex: none; width: 168px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; }
+.sidebar.collapsed { width: 44px; }
+.sidebar .sb-head { padding: 8px 10px 4px; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; min-height: 22px; }
+.sidebar ul { list-style: none; margin: 0; padding: 0; flex: 1; }
+.sidebar button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; text-align: left; color: var(--text); }
+.sidebar button:hover { background: var(--hover); color: var(--accent); }
+.sidebar .code { flex: none; width: 24px; font-size: 10px; font-weight: 700; color: var(--accent); text-align: center; }
+.sidebar .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar kbd { font-size: 10px; }
+.sidebar .sb-foot { border-top: 1px solid var(--line); }
+.sidebar .collapse .code { color: var(--muted); }
+.menu-btn { display: none; font-size: 16px; color: var(--muted); }
+@media (max-width: 640px) {
+  .menu-btn { display: block; }
+  .sidebar { display: none; }
+  .sidebar.mobile-open { display: flex; position: absolute; z-index: 20; top: 36px; bottom: 24px; left: 0; width: 200px; box-shadow: 4px 0 16px rgb(0 0 0 / 0.3); }
+  .sidebar.mobile-open.collapsed { width: 200px; }
+}
 .statusbar { display: flex; align-items: center; gap: 14px; height: 24px; flex: none; padding: 0 12px; font-size: 11px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
 .statusbar b { font-weight: 600; color: var(--text); }
 .sb-item { flex: none; display: inline-flex; align-items: center; gap: 4px; }
