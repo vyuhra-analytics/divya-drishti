@@ -281,3 +281,4 @@ export function daysToExpiry(contract: string | undefined, now: number): number 
   return Math.round((exp - istToday) / 86_400_000);
 }
 export * from "./universe";
+export * from "./options";

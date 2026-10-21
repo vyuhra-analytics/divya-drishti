@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
 import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
+import { OptionsWidget } from "./OptionsPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -276,4 +277,5 @@ export const WIDGETS: Record<
   news: { title: "News", component: NewsWidget, linked: true, showSymbol: false },
   heatmap: { title: "Energy Heatmap", component: HeatmapWidget, linked: false, showSymbol: false },
   screener: { title: "Energy Screener", component: ScreenerWidget, linked: false, showSymbol: false },
+  options: { title: "Options Chain", component: OptionsWidget, linked: true, showSymbol: true },
 };

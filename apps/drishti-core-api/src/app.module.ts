@@ -4,6 +4,7 @@ import { MarketController } from "./market.controller";
 import { UpstoxController } from "./upstox.controller";
 import { NewsController } from "./news.controller";
 import { SessionsController } from "./sessions.controller";
+import { OptionsController } from "./options.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController], providers: [Db] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController], providers: [Db] })
 export class AppModule {}

@@ -41,7 +41,7 @@ const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
  * Traded MCX contracts: from Redis (published by the stream every minute), or straight from the stream's /fronts
  * when Redis isn't running, so MCX history works without Docker/Redis.
  */
-async function loadFronts(redis: RedisClient): Promise<Record<string, MasterRow> | null> {
+export async function loadFronts(redis: RedisClient): Promise<Record<string, MasterRow> | null> {
   const cached = await redis.get("fronts").catch(() => null);
   if (cached) return JSON.parse(cached);
   const fromStream = await fetch(`${STREAM}/fronts`, { signal: AbortSignal.timeout(3000) })
