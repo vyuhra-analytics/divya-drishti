@@ -13,6 +13,7 @@ import { CotWidget } from "./CotPanel";
 import { ChokepointsWidget } from "./ChokepointsPanel";
 import { CurveWidget } from "./CurvePanel";
 import { JodiWidget } from "./JodiPanel";
+import { EiaWidget } from "./EiaPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -301,4 +302,5 @@ export const WIDGETS: Record<
   chokepoints: { title: "Chokepoints", component: ChokepointsWidget, linked: false, showSymbol: false },
   curve: { title: "Futures curve", component: CurveWidget, linked: true, showSymbol: false },
   jodi: { title: "JODI oil balance", component: JodiWidget, linked: false, showSymbol: false },
+  eia: { title: "EIA petroleum data", component: EiaWidget, linked: false, showSymbol: false },
 };

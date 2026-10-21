@@ -12,7 +12,8 @@ import { CotController } from "./cot.controller";
 import { ChokepointsController } from "./chokepoints.controller";
 import { CurveController } from "./curve.controller";
 import { JodiController } from "./jodi.controller";
+import { EiaController } from "./eia.controller";
 import { PositionsController } from "./positions.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController, CurveController, JodiController], providers: [Db] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController], providers: [Db] })
 export class AppModule {}
