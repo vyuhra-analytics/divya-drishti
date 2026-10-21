@@ -305,3 +305,5 @@ export * from "./jodi";
 export * from "./eia";
 export * from "./recap";
 export * from "./costs";
+export * from "./strategies";
+export * from "./backtest";

@@ -14,8 +14,9 @@ export const logReturns = (bars: Bar[]) => bars.slice(1).map((b, i) => Math.log(
 
 /** Bars per year for a chart timeframe, for annualising volatility. ponytail: assumes ~14 trading hours a day, 252 days; exact only for 1D */
 export function barsPerYear(timeframe: string): number | undefined {
-  const per: Record<string, number> = { "1m": 840, "5m": 168, "15m": 56, "1h": 14, "1D": 1 };
-  return per[timeframe] === undefined ? undefined : per[timeframe] * 252;
+  const per: Record<string, number> = { "1m": 840, "5m": 168, "15m": 56, "1h": 14, "1d": 1 };
+  const n = per[timeframe.toLowerCase()]; // callers write both "1D" and "1d"
+  return n === undefined ? undefined : n * 252;
 }
 
 /** Realized volatility: standard deviation of the last `window` log returns, annualised, in percent. */

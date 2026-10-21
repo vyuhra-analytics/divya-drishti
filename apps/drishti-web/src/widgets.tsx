@@ -16,6 +16,7 @@ import { JodiWidget } from "./JodiPanel";
 import { EiaWidget } from "./EiaPanel";
 import { RecapWidget } from "./RecapPanel";
 import { CostsWidget } from "./CostsPanel";
+import { BacktestWidget } from "./BacktestPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -307,4 +308,5 @@ export const WIDGETS: Record<
   eia: { title: "EIA petroleum data", component: EiaWidget, linked: false, showSymbol: false },
   recap: { title: "Energy recap", component: RecapWidget, linked: true, showSymbol: true },
   costs: { title: "Costs and size", component: CostsWidget, linked: true, showSymbol: true },
+  backtest: { title: "Strategy tester", component: BacktestWidget, linked: true, showSymbol: true },
 };
