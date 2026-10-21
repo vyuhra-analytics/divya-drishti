@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { SimulatedBanner } from "./SourceBadge";
-import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
 import { startAlertEngine } from "./alertEngine";
 import { syncRatesToServer } from "./paperClient";
@@ -10,28 +9,11 @@ import { SettingsDialog } from "./SettingsDialog";
 import { StatusBar } from "./StatusBar";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
-import { Price } from "./widgets";
+import { TickerTape } from "./TickerTape";
 import { Workspace } from "./Grid";
 import { PANEL_TYPES, Sidebar } from "./Sidebar";
 import { workspaceList } from "./presets";
 import { useWorkspace } from "./workspace";
-
-/** Top-bar quote: price, % change vs previous close, click to show it in the focused link group. */
-function TickerItem({ symbol }: { symbol: string }) {
-  const q = useStore((s) => s.quotes[symbol]);
-  const pct = q?.prevClose ? ((q.price - q.prevClose) / q.prevClose) * 100 : undefined;
-  const open = () => {
-    const { widgets, focusedId, loadSymbol } = useWorkspace.getState();
-    const target = widgets.find((w) => w.id === focusedId) ?? widgets[0];
-    if (target) loadSymbol(target.id, symbol);
-  };
-  return (
-    <button className="ticker-item" onClick={open} title={`Show ${symbol} in the focused panel`}>
-      {symbol.split(":")[1]} <Price symbol={symbol} />
-      {pct !== undefined && <span className={pct >= 0 ? "up" : "down"}>{`${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`}</span>}
-    </button>
-  );
-}
 
 export function App() {
   const status = useStore((s) => s.status);
@@ -89,11 +71,6 @@ export function App() {
         <button className="cmd" onClick={() => setPaletteOpen(true)}>
           <span className="muted">Command…</span> <kbd>Ctrl K</kbd>
         </button>
-        <div className="ticker">
-          {SYMBOLS.map((s) => (
-            <TickerItem key={s} symbol={s} />
-          ))}
-        </div>
         <span className={`status ${status}`}>● {status}</span>
         <button className="gear" title="Help and shortcuts (?)" aria-label="Help" onClick={() => setHelpOpen(true)}>
           ?
@@ -102,6 +79,7 @@ export function App() {
           ⚙
         </button>
       </header>
+      <TickerTape />
       <div className="main-area">
         <Sidebar mobileOpen={menuOpen} onClose={() => setMenuOpen(false)} />
         <main className="workspace-main" aria-label="Panels">

@@ -21,6 +21,8 @@ export interface Settings {
   clock: "12h" | "24h";
   defaultTf: Timeframe;
   flash: boolean;
+  /** the scrolling price strip under the top bar */
+  tickerTape: boolean;
   // workspace
   lockLayout: boolean;
   confirmClose: boolean;
@@ -49,6 +51,7 @@ export const DEFAULTS: Settings = {
   clock: "12h",
   defaultTf: "1m",
   flash: true,
+  tickerTape: true,
   lockLayout: false,
   confirmClose: false,
   sidebarCollapsed: false,

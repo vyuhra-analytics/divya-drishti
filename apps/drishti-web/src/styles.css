@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cmd { display: flex; align-items: center; gap: 24px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; }
 .cmd:hover { border-color: var(--accent); }
 kbd { font: inherit; font-size: 11px; color: var(--muted); }
-.ticker { display: flex; gap: 18px; flex: 1; overflow: hidden; color: var(--muted); }
+.topbar .status { margin-left: auto; }
 .status.open { color: var(--up); }
 .status.closed { color: var(--down); }
 .status.connecting { color: var(--accent); }
@@ -331,7 +331,7 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .react-grid-item > .react-resizable-handle::after { border-color: var(--muted); }
 
 @media (max-width: 640px) {
-  .ticker, .cmd kbd { display: none; }
+  .cmd kbd { display: none; }
 }
 
 .insider { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -353,9 +353,6 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .sidebar ul { flex: none; }
 .sidebar .sb-foot { margin-top: auto; }
 
-.ticker-item { display: inline-flex; gap: 6px; align-items: baseline; color: inherit; padding: 0 2px; border-radius: 3px; white-space: nowrap; }
-.ticker-item:hover { background: var(--hover); color: var(--text); }
-.ticker-item .up, .ticker-item .down { font-size: 11px; }
 .statusbar { font-size: 12px; }
 
 .help-list { margin: 0; }
@@ -637,3 +634,15 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ocx-key { display: inline-block; width: 10px; height: 6px; margin-right: 4px; }
 .ocx-key.now { background: var(--accent); }
 .ocx-key.prev { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* scrolling price strip under the top bar */
+.tape { flex: none; height: 28px; overflow: hidden; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tape-track { display: flex; width: max-content; height: 100%; align-items: center; animation: tape-scroll linear infinite; }
+.tape:hover .tape-track, .tape:focus-within .tape-track { animation-play-state: paused; }
+.tape-copy { display: contents; }
+.tape-item { display: inline-flex; gap: 8px; align-items: baseline; height: 100%; align-items: center; padding: 0 16px; border-right: 1px solid var(--line); white-space: nowrap; color: inherit; }
+.tape-item:hover { background: var(--hover); color: var(--text); }
+.tape-name { color: var(--text); font-weight: 600; }
+.tape-exp { font-size: 11px; }
+@keyframes tape-scroll { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .tape { overflow-x: auto; } .tape-track { animation: none; } }
