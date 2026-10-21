@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { LayoutItem } from "react-grid-layout";
 import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
+import type { ChartType, Indicator } from "./Chart";
 
 export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
@@ -17,6 +18,9 @@ export interface Widget {
   tf: Timeframe;
   /** tv widgets: selected stream URL */
   channel?: string;
+  /** chart widgets: series type and enabled indicators (defaults: candles + volume) */
+  chartType?: ChartType;
+  indicators?: Indicator[];
 }
 
 interface WorkspaceState {
@@ -32,6 +36,7 @@ interface WorkspaceState {
   loadSymbol: (id: string, symbol: string) => void;
   setTf: (id: string, tf: Timeframe) => void;
   setChannel: (id: string, channel: string) => void;
+  updateWidget: (id: string, change: Partial<Pick<Widget, "chartType" | "indicators">>) => void;
   focus: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   reset: () => void;
@@ -128,6 +133,7 @@ export const useWorkspace = create<WorkspaceState>()(
 
       setTf: (id, tf) => set((s) => ({ widgets: patch(s.widgets, id, { tf }) })),
       setChannel: (id, channel) => set((s) => ({ widgets: patch(s.widgets, id, { channel }) })),
+      updateWidget: (id, change) => set((s) => ({ widgets: patch(s.widgets, id, change) })),
       focus: (focusedId) => set({ focusedId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       reset: () => set(defaults()),

@@ -250,3 +250,4 @@ export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] };
 
 export * from "./news";
 export * from "./security";
+export * from "./indicators";
