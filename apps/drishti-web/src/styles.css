@@ -581,3 +581,5 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .badge.disputed { color: var(--down); border-color: color-mix(in srgb, var(--down) 60%, transparent); }
 .bt .bt-num td:not(:first-child) { text-align: right; }
 .paper th:nth-child(2), .paper th:last-child { text-align: left; }
+.alert-server { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 12px; }
+.alert-server input { width: auto; flex: none; min-width: 0; margin: 0; }

@@ -127,6 +127,13 @@ test("Data quality: feed health, price agreement and source checks", async ({ pa
   await shot(root, "quality");
 });
 
+test("Alerts: the server-alert delivery status is shown (nothing is sent)", async ({ page }) => {
+  const root = await openPanel(page, "AL", ".alerts");
+  await root.getByText(/Server alerts:/).waitFor({ timeout: 15_000 });
+  assert((await root.getByLabel(/From the server/).count()) === 1, "the From the server option is missing");
+  await shot(root, "alerts");
+});
+
 for (const [code, selector, text, name] of [
   ["COT", ".cot", "Managed money net", "cot"],
   ["CHK", ".chk", "Strait of Hormuz", "chokepoints"],
@@ -153,8 +160,10 @@ if (reachable.includes(false)) {
 const browser = await launch();
 let failed = 0;
 let skipped = 0;
+let ran = 0;
 const only = process.argv.slice(2).map((x) => x.toLowerCase());
 for (const t of tests.filter((x) => !only.length || only.some((o) => x.name.toLowerCase().includes(o)))) {
+  ran++;
   const c = await open(browser);
   const t0 = Date.now();
   try {
@@ -174,5 +183,5 @@ for (const t of tests.filter((x) => !only.length || only.some((o) => x.name.toLo
   }
 }
 await browser.close();
-console.log(`\n${tests.length - failed - skipped} passed, ${failed} failed, ${skipped} skipped. Screenshots: e2e/screenshots/`);
+console.log(`\n${ran - failed - skipped} passed, ${failed} failed, ${skipped} skipped. Screenshots: e2e/screenshots/`);
 process.exit(failed ? 1 : 0);

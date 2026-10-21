@@ -24,6 +24,7 @@ import {
 } from "@drishti/shared";
 import { loadFronts, tvCloses, type Fronts } from "./contracts";
 import { newStats, type ProviderStats } from "./providers/provider";
+import { startServerAlerts } from "./serverAlerts";
 import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
@@ -35,7 +36,7 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const TOPICS = new Set<string>([...SYMBOLS, "news", "universe"]);
+const TOPICS = new Set<string>([...SYMBOLS, "news", "universe", "alerts"]);
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
 const DEMO = process.env.FEED === "demo";
@@ -117,7 +118,11 @@ function accept(q: Quote) {
   // ponytail: fire-and-forget Redis writes; add backpressure/metrics if they ever fall behind
   redis.send("PUBLISH", [`quotes:${q.symbol}`, json]).catch(() => {});
   redis.set(`quote:${q.symbol}`, json).catch(() => {});
+  serverAlerts?.onQuotes();
 }
+
+// server-side alerts (R22): evaluated here on every live quote, headline and a timer; see serverAlerts.ts
+let serverAlerts: ReturnType<typeof startServerAlerts> | undefined;
 
 // ---- front-month contracts (MCX) ----
 let fronts: Fronts = new Map();
@@ -261,11 +266,15 @@ const app = new Elysia()
             ws.send(JSON.stringify({ type: "universe", rows: currentUniverse() }));
             continue;
           }
+          if (s === "alerts") {
+            ws.subscribe("alerts");
+            continue;
+          }
           ws.subscribe(`quotes:${s}`);
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" ? s : `quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" || s === "alerts" ? s : `quotes:${s}`));
     },
   })
   .listen({ port: PORT, hostname: HOST });
@@ -294,7 +303,11 @@ const mcxTicker = (root: string) => {
 };
 startUniverse(mcxTicker, (changed) => app.server?.publish("universe", JSON.stringify({ type: "universe", rows: changed })));
 
-startNews(redis, sql, (fresh) => app.server?.publish("news", JSON.stringify({ type: "news", items: fresh })));
+serverAlerts = startServerAlerts(sql, (json) => app.server?.publish("alerts", json), () => Object.fromEntries([...latest].map(([symbol, q]) => [symbol, { price: q.price, prevClose: q.prevClose }])));
+startNews(redis, sql, (fresh) => {
+  app.server?.publish("news", JSON.stringify({ type: "news", items: fresh }));
+  serverAlerts?.onNews(fresh);
+});
 
 setInterval(async () => {
   if (!buffer.length) return;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { describe, SYMBOLS, type AlertKind, type AlertOp } from "@drishti/shared";
+import { describe, SYMBOLS, type Alert, type AlertKind, type AlertOp } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
+import { useServerAlerts } from "./serverAlertsClient";
 import { useClock, useSettings } from "./settings";
 import type { Widget } from "./workspace";
 
@@ -27,18 +28,24 @@ export function AlertsWidget(_: { widget: Widget }) {
   const [release, setRelease] = useState(RELEASES[0]);
   const [lead, setLead] = useState(15);
   const [perm, setPerm] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  const server = useServerAlerts();
+  const [onServer, setOnServer] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
   const num = Number(value);
   const valid =
     kind === "news" ? text.trim() !== "" : kind === "release" ? true : value.trim() !== "" && Number.isFinite(num) && (kind === "price" ? num > 0 : num !== 0);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    if (kind === "price") add({ kind, symbol, op, value: num });
-    else if (kind === "change") add({ kind, symbol, op: num < 0 ? "below" : "above", value: num });
-    else if (kind === "news") add({ kind, text: text.trim() });
-    else add({ kind, text: release, minutes: lead });
+    const rule: Omit<Alert, "id" | "armed"> =
+      kind === "price" ? { kind, symbol, op, value: num } : kind === "change" ? { kind, symbol, op: num < 0 ? "below" : "above", value: num } : kind === "news" ? { kind, text: text.trim() } : { kind, text: release, minutes: lead };
+    if (onServer) {
+      const err = await server.add(rule);
+      setNote(err ?? null);
+      if (err) return; // keep the form so nothing is lost
+    } else add(rule);
     setValue("");
     setText("");
   };
@@ -94,10 +101,14 @@ export function AlertsWidget(_: { widget: Widget }) {
             </select>
           </>
         )}
+        <label className="alert-server muted" title="Kept on the server: fires with this window closed and is sent to Telegram or your webhook">
+          <input type="checkbox" checked={onServer} onChange={(e) => setOnServer(e.target.checked)} /> From the server
+        </label>
         <button className="btn" type="submit" disabled={!valid}>
           Add alert
         </button>
       </form>
+      {note && <p className="down alert-note">{note}</p>}
 
       <div className="alert-opts muted">
         <label>
@@ -110,11 +121,49 @@ export function AlertsWidget(_: { widget: Widget }) {
         )}
         {perm === "granted" && <span>Desktop notifications on</span>}
         {perm === "denied" && <span title="Allow notifications for this site in the browser settings">Notifications blocked</span>}
-        <span className="alert-note">Checked while this window is open.</span>
+        <span className="alert-note">Local alerts are checked while this window is open.</span>
+      </div>
+      <div className="alert-opts muted" aria-label="Server alert delivery">
+        {server.error ? (
+          <span title={server.error}>Server alerts unavailable: {server.error}</span>
+        ) : server.channels ? (
+          <>
+            <span>
+              Server alerts: Telegram {server.channels.telegramLinked ? "linked" : server.channels.telegram ? "bot set, chat not linked" : "not set up"}
+              {server.channels.webhook ? " · webhook set" : ""}
+            </span>
+            {server.channels.telegram && !server.channels.telegramLinked && (
+              <button className="btn" title="First send your bot any message in Telegram" onClick={async () => setNote(await server.link())}>
+                Link Telegram
+              </button>
+            )}
+            {(server.channels.telegramLinked || server.channels.webhook) && (
+              <button className="btn" title="Sends one real message to your chat / webhook" onClick={async () => setNote(await server.test())}>
+                Send test message
+              </button>
+            )}
+          </>
+        ) : null}
       </div>
 
       <div className="alert-list" tabIndex={0} role="region" aria-label="Alerts">
-        {alerts.length === 0 && <p className="empty muted">No alerts yet. Add one above.</p>}
+        {alerts.length === 0 && server.alerts.length === 0 && <p className="empty muted">No alerts yet. Add one above.</p>}
+        {server.alerts.map((a) => (
+          <div key={a.id} className={`alert-row${a.armed ? "" : " spent"}`}>
+            <span className="alert-text">
+              {describe(a)} <small className="muted" title="Evaluated by the server: fires with the app closed, sent to Telegram / webhook">· server</small>
+            </span>
+            <span className="muted alert-state">{a.armed ? "watching" : `fired ${clock.time(a.firedAt ?? 0)}`}</span>
+            {!a.armed && (
+              <button className="btn" onClick={() => server.rearm(a.id)}>
+                Re-arm
+              </button>
+            )}
+            <button aria-label={`Delete server alert ${describe(a)}`} className="alert-del" onClick={() => server.remove(a.id)}>
+              ×
+            </button>
+          </div>
+        ))}
         {alerts.map((a) => (
           <div key={a.id} className={`alert-row${a.armed ? "" : " spent"}`}>
             <span className="alert-text">{describe(a)}</span>

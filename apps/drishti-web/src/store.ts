@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { dedupeNews, SYMBOLS, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
+import { useAlerts } from "./alertsStore";
 import { streamUrl } from "./settings";
 import { pushTrail } from "./spark";
 
@@ -50,13 +51,15 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } =
       JSON.parse(e.data);
     if ("type" in msg) {
+      // a server-side alert fired (it also went to Telegram/webhook): show it here too
+      if (msg.type === "alert") useAlerts.getState().push(msg.id, msg.message);
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));

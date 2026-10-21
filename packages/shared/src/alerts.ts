@@ -25,6 +25,8 @@ export interface Alert {
   /** release: the event already announced */
   lastEvent?: string;
   firedAt?: number;
+  /** server alerts: when the user last re-armed it (a re-arm made after the last fire wins over the engine's own copy) */
+  rearmedAt?: number;
 }
 
 /** Went from one side of `level` to the other (or touched it) between two observations. */
