@@ -1,4 +1,4 @@
-import { instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
+import { daysToExpiry, instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
 import type { ComponentType } from "react";
 import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
@@ -142,6 +142,20 @@ function ChartWidget({ widget }: { widget: Widget }) {
   );
 }
 
+/** Where the last price sits in today's range (with the open marked): a glance at intraday position. */
+function DayRange({ low, high, last, open }: { low?: number; high?: number; last?: number; open?: number }) {
+  if (low === undefined || high === undefined || last === undefined || high <= low) return null;
+  const at = (v: number) => `${Math.min(100, Math.max(0, ((v - low) / (high - low)) * 100))}%`;
+  return (
+    <div className="day-range" title="Day range: low → high">
+      <div className="track">
+        {open !== undefined && <span className="open-mark" style={{ left: at(open) }} />}
+        <span className="last-mark" style={{ left: at(last) }} />
+      </div>
+    </div>
+  );
+}
+
 function QuoteWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const q = useStore((s) => s.quotes[symbol]);
@@ -149,11 +163,24 @@ function QuoteWidget({ widget }: { widget: Widget }) {
   const { change, pct, dir } = useChange(symbol);
   const fmt = useFormat(symbol);
   const clock = useClock();
+  const days = daysToExpiry(q?.contract, Date.now());
+  const spread = q?.bid !== undefined && q?.ask !== undefined ? q.ask - q.bid : undefined;
+  const book = q?.totalBuyQty !== undefined && q?.totalSellQty !== undefined ? q.totalBuyQty + q.totalSellQty : 0;
+  const buyPct = book > 0 ? (q!.totalBuyQty! / book) * 100 : undefined;
+  const cell = (label: string, value: string, title?: string) => (
+    <>
+      <dt title={title}>{label}</dt>
+      <dd>{value}</dd>
+    </>
+  );
   return (
     <div className="quote">
       <div className="quote-head">
         <span>{inst?.name ?? symbol}</span>
-        <span className="muted">{q?.contract ?? ""}</span>
+        <span className="muted">
+          {q?.contract ?? ""}
+          {days !== undefined && <b className={days <= 3 ? "expiry soon" : "expiry"}>{days === 0 ? "expires today" : `${days}d to expiry`}</b>}
+        </span>
       </div>
       <div className="quote-last">
         <Price symbol={symbol} />
@@ -163,20 +190,39 @@ function QuoteWidget({ widget }: { widget: Widget }) {
           {fmt.price(change)} ({pct !== undefined ? `${pct > 0 ? "+" : ""}${pct.toFixed(2)}` : "—"}%)
         </span>
       </div>
-      <dl>
-        <dt>Open</dt>
-        <dd>{fmt.price(q?.open)}</dd>
-        <dt>High</dt>
-        <dd>{fmt.price(q?.high)}</dd>
-        <dt>Low</dt>
-        <dd>{fmt.price(q?.low)}</dd>
-        <dt>Prev close</dt>
-        <dd>{fmt.price(q?.prevClose)}</dd>
-        <dt>Volume</dt>
-        <dd>{fmt.volume(q?.volume)}</dd>
-        <dt>Lot</dt>
-        <dd>{inst?.lot ?? "—"}</dd>
+      {(q?.bid !== undefined || q?.ask !== undefined) && (
+        <div className="quote-book">
+          <span>
+            <span className="muted">Bid</span> <b className="up">{fmt.price(q?.bid)}</b>
+            {q?.bidQty !== undefined && <span className="muted"> ×{q.bidQty}</span>}
+          </span>
+          <span className="muted">spread {fmt.price(spread)}</span>
+          <span>
+            <span className="muted">Ask</span> <b className="down">{fmt.price(q?.ask)}</b>
+            {q?.askQty !== undefined && <span className="muted"> ×{q.askQty}</span>}
+          </span>
+        </div>
+      )}
+      <DayRange low={q?.low} high={q?.high} last={q?.price} open={q?.open} />
+      <dl className="quote-grid">
+        {cell("Open", fmt.price(q?.open))}
+        {cell("Prev close", fmt.price(q?.prevClose))}
+        {cell("High", fmt.price(q?.high))}
+        {cell("Low", fmt.price(q?.low))}
+        {cell("Volume", fmt.volume(q?.volume))}
+        {cell("OI", fmt.volume(q?.oi), "Open interest: contracts outstanding")}
+        {cell("ATP", fmt.price(q?.atp), "Average traded price today (VWAP)")}
+        {cell("Lot", inst?.lot ?? "—")}
       </dl>
+      {buyPct !== undefined && (
+        <div className="quote-pressure" title="Pending buy vs sell quantity in the order book">
+          <span className="up">Buy {buyPct.toFixed(0)}%</span>
+          <div className="bar">
+            <span style={{ width: `${buyPct}%` }} />
+          </div>
+          <span className="down">{(100 - buyPct).toFixed(0)}% Sell</span>
+        </div>
+      )}
       <div className="quote-foot">
         <SourceBadge symbol={symbol} />
         {q && <span className="muted">{clock.time(q.time)}</span>}

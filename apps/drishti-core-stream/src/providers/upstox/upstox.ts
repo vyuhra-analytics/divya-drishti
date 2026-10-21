@@ -31,6 +31,7 @@ export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quot
     const ltpc = ff?.ltpc ?? feed?.ltpc ?? feed?.firstLevelWithGreeks?.ltpc;
     if (!t || !ltpc?.ltp) continue;
     const day = ff?.marketOHLC?.ohlc?.find((o: any) => o.interval === "1d");
+    const best = ff?.marketLevel?.bidAskQuote?.[0];
     out.push({
       symbol: t.inst.symbol,
       price: Number(ltpc.ltp),
@@ -40,6 +41,15 @@ export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quot
       high: num(day?.high),
       low: num(day?.low),
       volume: num(ff?.vtt ?? feed?.firstLevelWithGreeks?.vtt),
+      // depth/OI/ATP only in full mode; zeros mean "no order on that side", so keep them out
+      bid: num(best?.bidP) || undefined,
+      ask: num(best?.askP) || undefined,
+      bidQty: num(best?.bidQ) || undefined,
+      askQty: num(best?.askQ) || undefined,
+      oi: num(ff?.oi) || undefined,
+      atp: num(ff?.atp) || undefined,
+      totalBuyQty: num(ff?.tbq) || undefined,
+      totalSellQty: num(ff?.tsq) || undefined,
       contract: t.contract,
       source: "upstox",
       delayedBy: 0,

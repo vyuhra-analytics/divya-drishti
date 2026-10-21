@@ -49,6 +49,18 @@ export interface Quote {
   low?: number;
   /** cumulative day volume */
   volume?: number;
+  /** best bid/ask and their quantities (Upstox depth) */
+  bid?: number;
+  ask?: number;
+  bidQty?: number;
+  askQty?: number;
+  /** open interest (contracts) */
+  oi?: number;
+  /** average traded price today (session VWAP) */
+  atp?: number;
+  /** total pending buy / sell quantity in the order book */
+  totalBuyQty?: number;
+  totalSellQty?: number;
   /** actual contract, e.g. "CRUDEOIL FUT 19 NOV 26" */
   contract?: string;
   source: Source;
@@ -252,3 +264,19 @@ export * from "./news";
 export * from "./security";
 export * from "./indicators";
 export * from "./sessions";
+
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+/** "CRUDEOIL FUT 19 NOV 26" → expiry day as UTC midnight ms; undefined if the label has no date. */
+export function contractExpiry(contract?: string): number | undefined {
+  const m = contract?.match(/(\d{1,2}) ([A-Z]{3}) (\d{2})$/);
+  const month = m ? MONTHS.indexOf(m[2]) : -1;
+  return m && month >= 0 ? Date.UTC(2000 + Number(m[3]), month, Number(m[1])) : undefined;
+}
+
+/** Whole calendar days from `now` (in IST, where MCX contracts expire) to the expiry date; 0 = expires today. */
+export function daysToExpiry(contract: string | undefined, now: number): number | undefined {
+  const exp = contractExpiry(contract);
+  if (exp === undefined) return undefined;
+  const istToday = Math.floor((now + 5.5 * 3600_000) / 86_400_000) * 86_400_000;
+  return Math.round((exp - istToday) / 86_400_000);
+}

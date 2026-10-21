@@ -73,7 +73,9 @@ function accept(q: Quote) {
   if (q.source !== winner) return;
 
   const prev = latest.get(q.symbol);
-  if (prev && prev.source === q.source && prev.price === q.price && prev.volume === q.volume && prev.time === q.time) return;
+  // republish only when something shown changed (trade, depth or OI); heartbeat re-sends stay quiet
+  const same = (k: keyof Quote) => prev?.[k] === q[k];
+  if (prev && (["source", "price", "volume", "time", "bid", "ask", "bidQty", "askQty", "oi"] as const).every(same)) return;
   latest.set(q.symbol, q);
   // volume counts differ between sources, so only diff volumes within one source
   const tick = quoteToTick(prev?.source === q.source ? prev : undefined, q);

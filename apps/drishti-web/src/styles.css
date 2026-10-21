@@ -143,6 +143,18 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .quote-last { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
 .quote-last > :first-child { font-size: 22px; font-weight: 700; }
 .quote dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; }
+.quote dl.quote-grid { grid-template-columns: auto 1fr auto 1fr; gap: 3px 10px; }
+.quote-book { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.quote-book b { font-weight: 600; }
+.day-range { margin: 2px 0 8px; }
+.day-range .track { position: relative; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--down), var(--muted), var(--up)); opacity: 0.8; }
+.day-range .last-mark { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--text); }
+.day-range .open-mark { position: absolute; top: -1px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; border: 1px solid var(--text); background: var(--panel); }
+.quote-pressure { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; }
+.quote-pressure .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--down); overflow: hidden; }
+.quote-pressure .bar span { display: block; height: 100%; background: var(--up); }
+.expiry { margin-left: 6px; font-weight: 600; color: var(--muted); }
+.expiry.soon { color: var(--g-amber); }
 .quote dt { color: var(--muted); }
 .quote dd { margin: 0; text-align: right; }
 

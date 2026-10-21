@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   applyTick,
+  contractExpiry,
+  daysToExpiry,
   frontMonth,
   futuresByExpiry,
   rollByVolume,
@@ -109,4 +111,12 @@ test("rollByVolume moves to the next month once it out-trades the nearest, other
   expect(rollByVolume([near, next], vol({ oct: undefined, nov: 41000 }))?.instrument_key).toBe("oct"); // unknown → expiry rule
   expect(rollByVolume([near], vol({}))?.instrument_key).toBe("oct");
   expect(futuresByExpiry([next, near], "NATURALGAS", 1).map((r) => r.instrument_key)).toEqual(["oct", "nov"]);
+});
+
+test("contract expiry from the Upstox label, days counted in IST", () => {
+  expect(contractExpiry("CRUDEOIL FUT 19 NOV 26")).toBe(Date.UTC(2026, 10, 19));
+  expect(contractExpiry("NYMEX:CL")).toBeUndefined();
+  expect(daysToExpiry("NATURALGAS FUT 27 OCT 26", Date.parse("2026-10-21T08:00:00+05:30"))).toBe(6);
+  expect(daysToExpiry("NATURALGAS FUT 27 OCT 26", Date.parse("2026-10-27T23:00:00+05:30"))).toBe(0);
+  expect(daysToExpiry("CRUDEOIL FUT 19 NOV 26", Date.parse("2026-10-20T23:00:00Z"))).toBe(29); // 04:30 IST on 21 Oct
 });

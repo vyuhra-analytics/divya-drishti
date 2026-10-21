@@ -9,7 +9,7 @@ const HEADERS = {
   Referer: "https://www.tradingview.com/",
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0 Safari/537.36",
 };
-const COLUMNS = ["close", "open", "high", "low", "volume", "change", "update_mode"] as const;
+const COLUMNS = ["close", "open", "high", "low", "volume", "change", "update_mode", "bid", "ask", "open_interest", "VWAP"] as const;
 const POLL_MS = 2000;
 
 /** Scanner rows → quotes. `targets` maps TradingView ticker → our instrument (+ contract label). */
@@ -21,7 +21,10 @@ export function parseScan(
   const out: Quote[] = [];
   for (const row of json?.data ?? []) {
     const t = targets.get(row.s);
-    const [close, open, high, low, volume, change, mode] = row.d ?? [];
+    const [close, open, high, low, volume, change, mode, bid, ask, oi, vwapToday] = (row.d ?? []).map((v: unknown) =>
+      typeof v === "number" || typeof v === "string" ? v : undefined,
+    );
+    const n = (v: unknown) => (typeof v === "number" ? v : undefined);
     if (!t || typeof close !== "number") continue;
     // "delayed_streaming_600" → 600 s behind the exchange
     const delayedBy = Number(/delayed_streaming_(\d+)/.exec(mode ?? "")?.[1] ?? 0);
@@ -34,6 +37,10 @@ export function parseScan(
       high: high ?? undefined,
       low: low ?? undefined,
       volume: volume ?? undefined,
+      bid: n(bid),
+      ask: n(ask),
+      oi: n(oi),
+      atp: n(vwapToday),
       contract: t.contract,
       source: "tradingview",
       delayedBy,
