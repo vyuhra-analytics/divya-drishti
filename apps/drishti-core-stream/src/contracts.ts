@@ -29,6 +29,18 @@ async function tvVolumes(codes: string[]): Promise<Map<string, number>> {
   }
 }
 
+/** Last price per dated TradingView code, for pricing both sides of a roll. Best effort: empty map on failure. */
+export async function tvCloses(codes: string[]): Promise<Map<string, number>> {
+  try {
+    const res = await fetch(SCAN_URL, { method: "POST", headers: TV_HEADERS, body: JSON.stringify({ symbols: { tickers: codes }, columns: ["close"] }), signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return new Map();
+    const json: any = await res.json();
+    return new Map((json?.data ?? []).filter((r: any) => typeof r.d?.[0] === "number").map((r: any) => [r.s, r.d[0]]));
+  } catch {
+    return new Map();
+  }
+}
+
 export async function loadFronts(now = Date.now()): Promise<Fronts> {
   const res = await fetch(MASTER_URL, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`instrument master ${res.status}`);

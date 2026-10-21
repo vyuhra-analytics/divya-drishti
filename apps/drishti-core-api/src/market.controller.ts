@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, NotFoundException, Param, Query } from "@nestjs/common";
-import { instrument, SYMBOLS, TIMEFRAMES, type Bar, type Timeframe } from "@drishti/shared";
+import { adjustBackward, instrument, SYMBOLS, TIMEFRAMES, type Bar, type Roll, type Timeframe } from "@drishti/shared";
 import { Db } from "./db";
 import { upstoxHistory, yahooHistory } from "./history";
 
@@ -33,14 +33,16 @@ export class MarketController {
    * Chart history: provider first (fresh, deep), written through to Timescale; when the provider can't answer
    * (no Upstox login, network down) fall back to what we stored before plus candles built from our own ticks.
    * ?source=db skips the provider and returns that stored history only (used by chart replay).
+   * ?adjust=roll back-adjusts stored candles for the MCX contract rolls the stream recorded (continuous series); provider history is one contract already.
    */
   @Get("bars")
-  async bars(@Query("symbol") symbol: string, @Query("tf") tf: string = "1m", @Query("source") source?: string): Promise<Bar[]> {
+  async bars(@Query("symbol") symbol: string, @Query("tf") tf: string = "1m", @Query("source") source?: string, @Query("adjust") adjust?: string): Promise<Bar[]> {
     const inst = instrument(symbol);
     if (!inst) throw new BadRequestException(`unknown symbol ${symbol}`);
     if (!(tf in TIMEFRAMES)) throw new BadRequestException(`tf must be one of ${Object.keys(TIMEFRAMES)}`);
     // source=db: only what we have stored (replay: a fixed past, no provider call, no write-through)
-    if (source === "db") return this.fromDb(symbol, tf as Timeframe).catch(() => []);
+    const stored = () => this.fromDb(symbol, tf as Timeframe).then((b) => (adjust === "roll" ? this.adjusted(symbol, b) : b)).catch(() => []);
+    if (source === "db") return stored();
     const key = `${symbol}|${tf}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.bars;
@@ -53,7 +55,24 @@ export class MarketController {
       this.store(symbol, tf, bars).catch(() => {}); // best effort: no DB means no archive, not no chart
       return bars;
     }
-    return this.fromDb(symbol, tf as Timeframe).catch(() => []);
+    return stored();
+  }
+
+  /** Recorded roll gaps for a symbol, newest last. Empty without a database. */
+  @Get("rolls")
+  async rolls(@Query("symbol") symbol: string): Promise<{ at: number; gap: number; from: string; to: string }[]> {
+    if (!instrument(symbol)) throw new BadRequestException(`unknown symbol ${symbol}`);
+    return this.rollRows(symbol).catch(() => []);
+  }
+
+  private async rollRows(symbol: string) {
+    const rows = await this.db.sql`SELECT extract(epoch FROM at)::float8 AS at, gap, from_contract AS "from", to_contract AS "to" FROM rolls WHERE symbol = ${symbol} ORDER BY at`;
+    return rows as { at: number; gap: number; from: string; to: string }[];
+  }
+
+  private async adjusted(symbol: string, bars: Bar[]): Promise<Bar[]> {
+    const rolls: Roll[] = (await this.rollRows(symbol).catch(() => [])).map((r) => ({ at: r.at, gap: r.gap }));
+    return adjustBackward(bars, rolls);
   }
 
   private async store(symbol: string, tf: string, bars: Bar[]) {

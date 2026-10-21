@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { RedisClient, SQL } from "bun";
 import {
   allowedOrigins,
+  changedFronts,
   REDIS_OPTIONS,
   INSTRUMENTS,
   isAllowedOrigin,
@@ -18,7 +19,7 @@ import {
   type Source,
   type Tick,
 } from "@drishti/shared";
-import { loadFronts, type Fronts } from "./contracts";
+import { loadFronts, tvCloses, type Fronts } from "./contracts";
 import { newStats, type ProviderStats } from "./providers/provider";
 import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
@@ -103,10 +104,27 @@ const publishFronts = () => {
   if (fronts.size) redis.set("fronts", JSON.stringify(Object.fromEntries(fronts))).catch(() => {});
 };
 setInterval(publishFronts, 60_000);
+/** When the traded MCX contract changes, store the price gap between old and new so stored candles can be back-adjusted (shared `continuous.ts`). */
+async function recordRolls(before: Fronts, after: Fronts) {
+  const keyOf = (f: Fronts) => new Map([...f].map(([u, r]) => [u, r.trading_symbol]));
+  for (const c of changedFronts(keyOf(before), keyOf(after))) {
+    const inst = INSTRUMENTS.find((i) => i.upstox === c.underlying);
+    const [oldRow, newRow] = [before.get(c.underlying), after.get(c.underlying)];
+    if (!inst || !oldRow?.expiry || !newRow?.expiry) continue;
+    const [oldCode, newCode] = [tvContract(inst.tv, oldRow.expiry), tvContract(inst.tv, newRow.expiry)];
+    const closes = await tvCloses([oldCode, newCode]);
+    const [p0, p1] = [closes.get(oldCode), closes.get(newCode)];
+    if (p0 === undefined || p1 === undefined) continue; // no price for one side: skip rather than record a guess
+    await sql`INSERT INTO rolls (symbol, at, from_contract, to_contract, gap) VALUES (${inst.symbol}, now(), ${c.from}, ${c.to}, ${p1 - p0}) ON CONFLICT DO NOTHING`;
+    console.log(`roll ${inst.symbol}: ${c.from} → ${c.to}, gap ${(p1 - p0).toFixed(2)}`);
+  }
+}
 async function refreshFronts() {
   try {
+    const before = fronts;
     fronts = await loadFronts();
     publishFronts();
+    recordRolls(before, fronts).catch((err) => console.warn("roll record failed:", (err as Error).message));
     console.log("MCX front months:", [...fronts.values()].map((r) => r.trading_symbol).join(", "));
   } catch (err) {
     console.error("instrument master failed, TradingView falls back to 1! codes:", (err as Error).message);
