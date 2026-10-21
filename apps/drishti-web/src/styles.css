@@ -548,3 +548,19 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .bt td { padding: 3px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .bt th:first-child, .bt td:first-child { text-align: left; }
 .bt td:nth-child(2) { text-align: right; }
+.paper { height: 100%; min-height: 0; }
+.paper-body { height: 100%; overflow: auto; padding: 8px 12px 12px; font-size: 12px; }
+.paper-body h2 { margin: 12px 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.paper-acct { display: flex; flex-wrap: wrap; gap: 20px; }
+.paper-acct > div { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
+.paper-acct strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.paper-state { font-size: 11px; }
+.paper table { width: 100%; border-collapse: collapse; }
+.paper th { text-align: right; font-weight: 600; font-size: 11px; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.paper td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.paper th:first-child, .paper td:first-child, .paper td:nth-child(2) { text-align: left; }
+.paper-note { width: 100%; min-width: 110px; font: inherit; font-size: 11px; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; }
+.paper-note:focus { border-color: var(--line); }
+.paper-note-text { margin: 10px 0 0; font-size: 11px; }
+.paper details { margin: 10px 0; }
+.paper summary { cursor: pointer; color: var(--muted); }

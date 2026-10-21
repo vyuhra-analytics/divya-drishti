@@ -42,3 +42,10 @@ export function useFreshness(symbol: string): Freshness {
   const exchange = instrument(symbol)?.exchange;
   return freshness(exchange ? sessions[exchange].open : true, seen, Date.now());
 }
+
+/** Non-hook version of `useFreshness` for engines that run outside React: is this symbol's exchange open and its feed live right now? */
+export function isLive(symbol: string, now = Date.now()): boolean {
+  const exchange = instrument(symbol)?.exchange;
+  const open = exchange === "MCX" ? mcxSession(now, mcxToday).open : exchange === "NYMEX" ? nymexSession(now).open : true;
+  return freshness(open, useStore.getState().seen[symbol], now) === "live";
+}

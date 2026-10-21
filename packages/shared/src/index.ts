@@ -307,3 +307,4 @@ export * from "./recap";
 export * from "./costs";
 export * from "./strategies";
 export * from "./backtest";
+export * from "./paper";

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
 import { startAlertEngine } from "./alertEngine";
+import { startPaperEngine } from "./paperStore";
 import { Toasts } from "./AlertsPanel";
 import { HelpDialog } from "./HelpDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -41,6 +42,7 @@ export function App() {
   const [helpOpen, setHelpOpen] = useState(!helpSeen); // first run shows the welcome sheet once
 
   useEffect(() => startAlertEngine(), []);
+  useEffect(() => startPaperEngine(), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
