@@ -20,6 +20,8 @@ export interface PaperPosition {
   stop?: number;
   target?: number;
   openedAt: number;
+  /** who opened it: "ui" (the browser) or "mcp" (an agent). Absent on positions from before accounts moved to the server. */
+  actor?: string;
 }
 
 export type ExitReason = "manual" | "stop" | "target";
@@ -39,6 +41,9 @@ export interface PaperTrade {
   net: number;
   reason: ExitReason;
   note: string;
+  /** who opened it, and who closed it ("engine" when a stop or target fired) */
+  actor?: string;
+  closedBy?: string;
 }
 
 /** Where an order fills: at the book's far side when depth is known (ask to buy, bid to sell), else the last price, then `slippage` points worse. */

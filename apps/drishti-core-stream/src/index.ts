@@ -2,6 +2,13 @@ import { Elysia } from "elysia";
 import { RedisClient, SQL } from "bun";
 import {
   agreement,
+  DEFAULT_LIMITS,
+  freshness,
+  mcxSession,
+  nymexSession,
+  PaperEngine,
+  UPSTOX_MCX_RATES,
+  type DayOverride,
   allowedOrigins,
   changedFronts,
   REDIS_OPTIONS,
@@ -26,6 +33,8 @@ import {
 import { loadFronts, tvCloses, type Fronts } from "./contracts";
 import { newStats, type ProviderStats } from "./providers/provider";
 import { startServerAlerts } from "./serverAlerts";
+import { PgPaperStore } from "./paperStore";
+import { paperRoutes } from "./paperRoutes";
 import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
@@ -37,7 +46,7 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const TOPICS = new Set<string>([...SYMBOLS, "news", "universe", "alerts"]);
+const TOPICS = new Set<string>([...SYMBOLS, "news", "universe", "alerts", "paper"]);
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
 const DEMO = process.env.FEED === "demo";
@@ -120,7 +129,10 @@ function accept(q: Quote) {
   redis.send("PUBLISH", [`quotes:${q.symbol}`, json]).catch(() => {});
   redis.set(`quote:${q.symbol}`, json).catch(() => {});
   serverAlerts?.onQuotes();
+  void paperEngine?.onQuotes().catch((e) => console.warn("paper engine:", (e as Error).message));
 }
+
+let paperEngine: PaperEngine | undefined;
 
 // server-side alerts (R22): evaluated here on every live quote, headline and a timer; see serverAlerts.ts
 let serverAlerts: ReturnType<typeof startServerAlerts> | undefined;
@@ -182,7 +194,44 @@ function upstoxTargets() {
   return out;
 }
 
+// ---- server-side paper trading (simulated): the engine lives here because the live quotes do ----
+let mcxDay: DayOverride | undefined; // today's official MCX window from Upstox, via the API (holidays, special sessions); the weekday rule until it arrives
+const refreshMcxDay = () =>
+  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/sessions`, { signal: AbortSignal.timeout(5000) })
+    .then(async (r) => void (mcxDay = r.ok ? ((await r.json()) as { mcx: DayOverride | null }).mcx ?? undefined : undefined))
+    .catch(() => undefined);
+void refreshMcxDay();
+setInterval(() => void refreshMcxDay(), 30 * 60_000);
+/** Exchange open and the active source heard from in the last minute: the same rule the browser uses (`useFreshness`). */
+const symbolLive = (symbol: string) => {
+  const exchange = instrument(symbol)?.exchange;
+  const now = Date.now();
+  const open = exchange === "MCX" ? mcxSession(now, mcxDay).open : exchange === "NYMEX" ? nymexSession(now).open : true;
+  const src = active.get(symbol);
+  return freshness(open, src ? lastSeen.get(symbol)?.[src] : undefined, now) === "live";
+};
+const paperStore = new PgPaperStore(sql);
+const envInt = (name: string, d: number) => (Number(process.env[name]) > 0 ? Math.floor(Number(process.env[name])) : d);
+paperEngine = new PaperEngine({
+  store: paperStore,
+  quote: (symbol) => latest.get(symbol),
+  live: symbolLive,
+  rates: () => paperStore.rates().catch(() => UPSTOX_MCX_RATES),
+  now: Date.now,
+  newId: () => `pp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+  publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })),
+  limits: {
+    ui: DEFAULT_LIMITS.ui,
+    mcp: { maxLots: envInt("PAPER_MCP_MAX_LOTS", DEFAULT_LIMITS.mcp.maxLots), maxOpenPositions: envInt("PAPER_MCP_MAX_POSITIONS", DEFAULT_LIMITS.mcp.maxOpenPositions), maxOrdersPerDay: envInt("PAPER_MCP_MAX_ORDERS_PER_DAY", DEFAULT_LIMITS.mcp.maxOrdersPerDay) },
+  },
+});
+const loadPaper = () => paperEngine!.refresh().catch((e) => console.warn(`paper trading idle (is the database migrated? bun run db:migrate): ${(e as Error).message}`));
+void loadPaper();
+setInterval(() => void loadPaper(), 15_000);
+const paperLimiter = new RateLimiter(240, 60_000); // requests a minute to /paper: the panel polls and the MCP server calls through here
+
 const app = new Elysia()
+  .use(paperRoutes({ engine: paperEngine, store: paperStore, quote: (s) => latest.get(s), origins: ORIGINS, limiter: paperLimiter, publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })) }))
   // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
   .get("/fronts", () => Object.fromEntries(fronts))
   // preflight for the JSON POST below
@@ -268,15 +317,15 @@ const app = new Elysia()
             ws.send(JSON.stringify({ type: "universe", rows: currentUniverse() }));
             continue;
           }
-          if (s === "alerts") {
-            ws.subscribe("alerts");
+          if (s === "alerts" || s === "paper") {
+            ws.subscribe(s);
             continue;
           }
           ws.subscribe(`quotes:${s}`);
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" || s === "alerts" ? s : `quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" || s === "alerts" || s === "paper" ? s : `quotes:${s}`));
     },
   })
   .listen({ port: PORT, hostname: HOST });
