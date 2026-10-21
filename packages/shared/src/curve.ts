@@ -3,7 +3,7 @@
 import { INSTRUMENTS, tvContract } from "./index";
 
 /** Instruments with a futures curve: every one of ours (a function: index.ts re-exports this module, so INSTRUMENTS cannot be read at load). Root = TradingView's code without the continuous "1!". */
-export const curveInstruments = () => INSTRUMENTS.map((i) => ({ symbol: i.symbol, name: i.name, currency: i.currency, root: i.tv.replace(/1!$/, "") }));
+export const curveInstruments = () => INSTRUMENTS.filter((i) => i.exchange !== "FX").map((i) => ({ symbol: i.symbol, name: i.name, currency: i.currency, root: i.tv.replace(/1!$/, "") }));
 
 /** Dated TradingView codes for the next `months` delivery months starting with the current one (CL, Nov 2026 → NYMEX:CLX2026). Months with no contract simply come back empty. */
 export function curveCodes(root: string, now: number, months = 12): string[] {

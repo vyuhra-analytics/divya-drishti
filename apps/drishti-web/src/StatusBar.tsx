@@ -68,6 +68,7 @@ export function StatusBar() {
     <footer className="statusbar" aria-label="Market status">
       <Market name="MCX" s={sessions.MCX} locale={locale} clock={clock} />
       <Market name="NYMEX" s={sessions.NYMEX} locale={locale} clock={clock} />
+      <Market name="FX" s={sessions.FX} locale={locale} clock={clock} />
       <span className="sb-sep" aria-hidden="true" />
       {CLOCKS.map((c) => (
         <span key={c.label} className="sb-item">

@@ -158,13 +158,18 @@ await check("refuses: a foreign website reading the API (CORS)", async () => {
 await check("stream health: providers live, feeds agree, nothing rejected", async () => {
   const h: any = await (await fetch(`${STREAM}/health`)).json();
   for (const name of ["upstox", "tradingview", "yahoo"]) need(h.providers[name]?.ok > 0, `${name} has never succeeded`);
-  need(Object.keys(h.prices ?? {}).length === 6, "per-source prices missing");
+  need(Object.keys(h.prices ?? {}).length >= 7, "per-source prices missing");
   return `${h.rejected?.count ?? 0} quotes rejected`;
 });
 await check("stream: front months known", async () => need(Object.keys(await (await fetch(`${STREAM}/fronts`)).json()).length >= 4, "expected the 4 built-in MCX front months"));
-await check("USD/INR feed: the stream has a plausible rate", async () => {
-  const fx = (await (await fetch(`${STREAM}/health`)).json()).fx;
-  need(fx.rows === 1 && fx.stats.failed <= fx.stats.ok, `fx rows ${fx.rows}, ok ${fx.stats.ok}, failed ${fx.stats.failed}, last error ${fx.stats.lastError}`);
+await check("USD/INR: a plausible live rate from the stream, history from the API, never a paper-trading symbol", async () => {
+  const p = (await (await fetch(`${STREAM}/health`)).json()).prices["FX:USDINR"];
+  need(p && Object.keys(p).length >= 1, "no USD/INR price from any feed");
+  const rate = Object.values(p as Record<string, { price: number }>)[0]!.price;
+  need(rate > 40 && rate < 200, `implausible rate ${rate}`);
+  need((await ok("/bars?symbol=FX:USDINR&tf=1d")).length > 30, "no daily history");
+  const order = await fetch(`${STREAM}/paper/accounts/main/orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "FX:USDINR", side: "buy", lots: 1 }) });
+  need(order.status === 400, `a paper order on USD/INR got HTTP ${order.status}`);
 });
 await check("stream WebSocket: a live quote and a heartbeat arrive", async () => {
   const got = await new Promise<{ quote?: any; hb?: boolean }>((resolve, reject) => {

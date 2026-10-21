@@ -4,13 +4,13 @@ export interface Instrument {
   /** EXCHANGE:ROOT, always the continuous front-month contract */
   symbol: string;
   name: string;
-  exchange: "MCX" | "NYMEX";
+  exchange: "MCX" | "NYMEX" | "FX";
   currency: "INR" | "USD";
   /** exchange time zone: candles (1h, 1d) start on its hours/midnight, like the providers' history */
   timeZone: "Asia/Kolkata" | "America/New_York";
   decimals: number;
   /** commodity, for news filtering in linked panels */
-  topic: "crude" | "natgas";
+  topic: "crude" | "natgas" | "fx";
   /** contract size, display only */
   lot: string;
   /** seconds the free feed lags the exchange (CME rule: 10 min) */
@@ -34,6 +34,7 @@ export const INSTRUMENTS: Instrument[] = [
   { symbol: "MCX:NATGASMINI", topic: "natgas", name: "Natural Gas Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATGASMINI", tv: "MCX:NATGASMINI" },
   { symbol: "NYMEX:CL", topic: "crude", name: "WTI Crude Oil", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 2, lot: "1000 bbl", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "CL=F", tv: "NYMEX:CL1!" },
   { symbol: "NYMEX:NG", topic: "natgas", name: "Henry Hub Natural Gas", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 3, lot: "10000 mmBtu", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "NG=F", tv: "NYMEX:NG1!" },
+  { symbol: "FX:USDINR", topic: "fx", name: "USD/INR", exchange: "FX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 4, lot: "1 USD", delayedBy: 0, sources: ["tradingview", "yahoo"], yahoo: "INR=X", tv: "FX_IDC:USDINR" },
 ];
 
 export const SYMBOLS = INSTRUMENTS.map((i) => i.symbol);
@@ -317,7 +318,6 @@ export function daysToExpiry(contract: string | undefined, now: number): number 
 }
 export * from "./universe";
 export * from "./customInstruments";
-export * from "./fx";
 export * from "./options";
 export * from "./insider";
 export * from "./calendar";

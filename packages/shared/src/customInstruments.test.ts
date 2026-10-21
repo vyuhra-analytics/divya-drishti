@@ -66,15 +66,15 @@ test("the number of added instruments is capped", () => {
   expect(err({ ...zinc, root: "EXTRA" })).toMatch(/at most/);
 });
 
-test("setCustomInstruments changes the catalogue in place, keeps the six built-ins, and can be undone", () => {
+test("setCustomInstruments changes the catalogue in place, keeps the seven built-ins, and can be undone", () => {
   const [instruments, symbols] = [INSTRUMENTS, SYMBOLS]; // same arrays before and after: every importer sees the change
   setCustomInstruments([ok(zinc)]);
   expect(INSTRUMENTS).toBe(instruments);
   expect(SYMBOLS).toBe(symbols);
-  expect(SYMBOLS).toHaveLength(7);
+  expect(SYMBOLS).toHaveLength(8);
   expect(instrument("MCX:ZINC")?.name).toBe("Zinc");
   setCustomInstruments([]);
-  expect(SYMBOLS).toHaveLength(6);
+  expect(SYMBOLS).toHaveLength(7);
   expect(instrument("MCX:ZINC")).toBeUndefined();
 });
 
@@ -84,5 +84,5 @@ test("setCustomInstruments cannot replace a built-in or add the same symbol twic
   setCustomInstruments([crude, z, z]);
   expect(instrument("MCX:CRUDEOIL")?.name).toBe("Crude Oil");
   expect(SYMBOLS.filter((s) => s === "MCX:ZINC")).toHaveLength(1);
-  expect(SYMBOLS).toHaveLength(7);
+  expect(SYMBOLS).toHaveLength(8);
 });

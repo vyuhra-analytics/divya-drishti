@@ -48,7 +48,7 @@ test("adds a valid instrument: saved, catalogue reloaded, 201", async () => {
   expect(changes).toBe(1);
   expect(instrument("MCX:ZINC")?.custom).toBe(true);
   const list = (await (await call("")).json()) as { instruments: Instrument[] };
-  expect(list.instruments).toHaveLength(7);
+  expect(list.instruments).toHaveLength(8);
 });
 
 test("bad input is a 400 and nothing is saved", async () => {

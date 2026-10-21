@@ -5,7 +5,8 @@
 export type NewsTag = "crude" | "oil" | "natgas" | "india";
 
 /** Tags a linked panel shows for an instrument's commodity. */
-export const TOPIC_TAGS: Record<"crude" | "natgas", NewsTag[]> = { crude: ["crude", "oil"], natgas: ["natgas"] };
+/** which news tags sit beside an instrument; none for currencies (the linked filter then shows every headline) */
+export const TOPIC_TAGS: Record<"crude" | "natgas" | "fx", NewsTag[]> = { crude: ["crude", "oil"], natgas: ["natgas"], fx: [] };
 
 export interface NewsItem {
   /** normalized-title hash: the same story from several feeds collapses to one item */

@@ -67,6 +67,17 @@ export function nymexSession(now: number): SessionState {
   return { open: true, next: at(17, 1) };
 }
 
+/** Spot FX trades round the clock from Sunday 17:00 to Friday 17:00 New York time, with no daily break. */
+export function fxSession(now: number): SessionState {
+  const { dow, msOfDay, midnight } = local(now, "America/New_York");
+  const at = (h: number, dayOffset = 0) => midnight + dayOffset * 24 * H + h * H;
+  const mins = msOfDay / MIN;
+  if (dow === 6) return { open: false, next: at(17, 1) };
+  if (dow === 0) return mins < 17 * 60 ? { open: false, next: at(17) } : { open: true, next: at(17, 5) };
+  if (dow === 5) return mins < 17 * 60 ? { open: true, next: at(17) } : { open: false, next: at(17, 2) };
+  return { open: true, next: at(17, 5 - dow) };
+}
+
 export type Freshness = "live" | "stale" | "closed";
 
 /**

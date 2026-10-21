@@ -42,3 +42,15 @@ test("freshness: closed beats stale; live within the window", () => {
   expect(freshness(true, 1000, 70_000, 60_000)).toBe("stale");
   expect(freshness(true, undefined, 70_000)).toBe("stale");
 });
+
+test("spot FX: open Sunday 17:00 to Friday 17:00 New York time, round the clock in between", async () => {
+  const { fxSession } = await import("./sessions");
+  const at = (iso: string) => fxSession(Date.parse(iso)).open;
+  expect(at("2026-10-21T03:00:00Z")).toBe(true); // Wednesday night: no daily break
+  expect(at("2026-10-21T21:30:00Z")).toBe(true); // Wednesday 17:30 New York (EDT)
+  expect(at("2026-10-23T20:59:00Z")).toBe(true); // Friday 16:59
+  expect(at("2026-10-23T21:01:00Z")).toBe(false); // Friday 17:01
+  expect(at("2026-10-24T15:00:00Z")).toBe(false); // Saturday
+  expect(at("2026-10-25T20:59:00Z")).toBe(false); // Sunday 16:59
+  expect(at("2026-10-25T21:01:00Z")).toBe(true); // Sunday 17:01
+});

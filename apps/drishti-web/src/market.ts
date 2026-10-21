@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { freshness, instrument, mcxSession, nymexSession, type DayOverride, type Freshness, type SessionState } from "@drishti/shared";
+import { freshness, fxSession, instrument, mcxSession, nymexSession, type DayOverride, type Freshness, type SessionState } from "@drishti/shared";
 import { useStore } from "./store";
 import { apiUrl } from "./settings";
 
@@ -28,11 +28,11 @@ async function refreshCalendar() {
   }
 }
 
-/** MCX and NYMEX open/closed with the next boundary, recomputed every 15 s. */
-export function useSessions(): { MCX: SessionState; NYMEX: SessionState } {
+/** MCX, NYMEX and spot FX open/closed with the next boundary, recomputed every 15 s. */
+export function useSessions(): { MCX: SessionState; NYMEX: SessionState; FX: SessionState } {
   const now = useNow();
   useEffect(() => void refreshCalendar(), [now]);
-  return { MCX: mcxSession(now, mcxToday), NYMEX: nymexSession(now) };
+  return { MCX: mcxSession(now, mcxToday), NYMEX: nymexSession(now), FX: fxSession(now) };
 }
 
 /** live / stale / closed for one symbol: exchange session + when its source was last heard from (server heartbeat). */
@@ -46,7 +46,7 @@ export function useFreshness(symbol: string): Freshness {
 /** Non-hook version of `useFreshness` for code that runs outside React: live / stale / closed for this symbol right now. */
 export function symbolFreshness(symbol: string, now = Date.now()): Freshness {
   const exchange = instrument(symbol)?.exchange;
-  const open = exchange === "MCX" ? mcxSession(now, mcxToday).open : exchange === "NYMEX" ? nymexSession(now).open : true;
+  const open = exchange === "MCX" ? mcxSession(now, mcxToday).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : true;
   return freshness(open, useStore.getState().seen[symbol], now);
 }
 

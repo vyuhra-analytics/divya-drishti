@@ -10,6 +10,7 @@ const START: Record<string, number> = {
   "MCX:NATGASMINI": 283,
   "NYMEX:CL": 98,
   "NYMEX:NG": 2.97,
+  "FX:USDINR": 94.45,
 };
 
 export const demoStats = newStats();

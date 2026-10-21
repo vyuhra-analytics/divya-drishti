@@ -99,7 +99,7 @@ export function NewsWidget({ widget }: { widget: Widget }) {
 
   const shown = news.filter(
     (n) =>
-      (filter === "all" ? true : filter === "linked" ? !topic || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter)) &&
+      (filter === "all" ? true : filter === "linked" ? !topic || linkedTags.length === 0 || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter)) &&
       matchesQuery(n, query),
   );
 

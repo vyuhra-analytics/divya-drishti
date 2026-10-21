@@ -86,7 +86,7 @@ test("the app loads with the default workspace and no script errors", async ({ p
 test("the default chart and every watchlist row say where their price comes from; no simulated-prices banner on the live feed", async ({ page }) => {
   await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 20_000 });
   const rows = await page.locator(".watchlist .badge").allInnerTexts();
-  assert(rows.every((t) => ["UPSTOX", "TV", "YAHOO"].includes(t.trim())), `unexpected watchlist badges: ${rows.join(",")}`);
+  assert(rows.every((t) => ["UPSTOX", "TV", "YAHOO", "≠"].includes(t.trim())), `unexpected watchlist badges: ${rows.join(",")}`);
   assert((await page.locator(".adv-replay .badge").count()) >= 1, "the default chart shows no feed badge");
   assert((await page.locator(".sim-banner").count()) === 0, "the SIMULATED PRICES banner shows on the live feed");
   await page.locator(".watchlist").first().screenshot({ path: join(SHOTS, "watchlist.png") });
@@ -131,7 +131,7 @@ test("Ticker tape: scrolls, shows live price, change and expiry for every symbol
   const tape = page.getByLabel("Price ticker");
   await tape.waitFor();
   await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+\s*[+−-][\d,.]+ \([+−-][\d.]+%\)\s*Exp\. \d+ \w{3}/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
-  await page.waitForFunction(() => /USD\/INR\s*[\d.]+\s*[+−-][\d.]+ \([+−-][\d.]+%\)\s*(FX|\d+m delay)/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
+  await page.waitForFunction(() => /USDINR\s*[\d.]+\s*[+−-][\d.]+ \([+−-][\d.]+%\)/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
   const x = () => page.locator(".tape-track").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
   const a = await x();
   await page.waitForTimeout(1200);
@@ -142,6 +142,23 @@ test("Ticker tape: scrolls, shows live price, change and expiry for every symbol
   assert((await x()) === b, "the tape did not pause on hover");
   await page.mouse.move(0, 400);
   await page.screenshot({ path: join(SHOTS, "ticker-tape.png"), clip: { x: 0, y: 0, width: 1280, height: 70 } });
+});
+
+test("USD/INR: live in the watchlist, on a chart with history, and not offered where it makes no sense (paper trading, futures curve)", async ({ page }) => {
+  await page.waitForFunction(() => /USDINR.*?\d{2}\.\d{4}/.test(document.querySelector(".watchlist")?.textContent ?? ""), undefined, { timeout: 20_000 });
+  const bars = await (await fetch(`${API}/bars?symbol=FX:USDINR&tf=5m`)).json();
+  assert(Array.isArray(bars) && bars.length > 100, `USD/INR history has ${bars?.length} bars`);
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("USDINR GP");
+  await page.keyboard.press("Enter");
+  const chart = page.locator(".adv-chart").last();
+  await chart.waitFor({ timeout: 20_000 });
+  await chart.scrollIntoViewIfNeeded();
+  await chart.locator("canvas").first().waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(3000);
+  await shot(page.locator(".adv-wrap").last(), "usdinr-chart");
+  const curve = await openPanel(page, "CRV", ".curve");
+  assert((await curve.getByRole("button", { name: "USDINR" }).count()) === 0, "the futures curve offers USD/INR");
 });
 
 test("Costs panel: gross-to-net bridge and a position size from the live price", async ({ page }) => {

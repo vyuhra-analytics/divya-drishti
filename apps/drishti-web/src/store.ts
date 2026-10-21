@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { dedupeNews, SYMBOLS, type FxRow, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { streamUrl } from "./settings";
 import { pushTrail } from "./spark";
@@ -21,8 +21,6 @@ interface MarketState {
   seen: Record<string, number>;
   /** energy universe (heatmap/screener) by TradingView ticker, ~10 s fresh */
   universe: Record<string, UniverseRow>;
-  /** currency pairs (USD/INR) by id, ~5 s fresh */
-  fx: Record<string, FxRow>;
   /** +1 whenever the server says a paper account changed (a trade from any client, an agent over MCP, a stop firing): the Paper panel re-reads */
   paperRev: number;
   /** +1 when the tracked instruments change (one added or removed in Settings, here or in another tab): the app remounts so every list and picker re-reads SYMBOLS */
@@ -38,7 +36,6 @@ export const useStore = create<MarketState>()(() => ({
   epoch: 0,
   seen: {},
   universe: {},
-  fx: {},
   paperRev: 0,
   instrumentsRev: 0,
 }));
@@ -60,11 +57,11 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper", "fx"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "fx"; rows: FxRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
@@ -76,7 +73,6 @@ export function connectStream() {
       }
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));
-      if (msg.type === "fx") useStore.setState((s) => ({ fx: { ...s.fx, ...Object.fromEntries(msg.rows.map((r) => [r.id, r])) } }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));
       return;
     }
