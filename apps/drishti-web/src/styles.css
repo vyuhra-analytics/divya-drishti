@@ -370,3 +370,10 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .ticker-item:hover { background: var(--hover); color: var(--text); }
 .ticker-item .up, .ticker-item .down { font-size: 11px; }
 .statusbar { font-size: 12px; }
+
+.help-list { margin: 0; }
+.help-list > div { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.help-list dt { font-weight: 600; }
+.help-list dd { margin: 0; color: var(--muted); }
+.settings .hint { margin: 10px 0 0; font-size: 12px; }
+@media (max-width: 600px) { .help-list > div { grid-template-columns: 1fr; gap: 2px; } }

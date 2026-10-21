@@ -26,6 +26,8 @@ export interface Settings {
   confirmClose: boolean;
   /** left panel rail shows codes only */
   sidebarCollapsed: boolean;
+  /** the welcome/help sheet has been shown once */
+  helpSeen: boolean;
   // live TV: user-added HLS (.m3u8) streams on top of the built-in list in TvWidget.tsx
   tvChannels: TvChannel[];
   // connection ("" = use env / dev proxy default)
@@ -46,6 +48,8 @@ export const DEFAULTS: Settings = {
   lockLayout: false,
   confirmClose: false,
   sidebarCollapsed: false,
+  /** the welcome/help sheet has been shown once */
+  helpSeen: false,
   tvChannels: [],
   apiUrl: "",
   streamUrl: "",

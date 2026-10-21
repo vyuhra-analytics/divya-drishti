@@ -144,3 +144,18 @@ test("CalendarWidget groups events by day and filters by kind", async () => {
   expect(screen.queryByText("EIA crude inventories")).toBeNull();
   expect(screen.getByText("MCX closed: Diwali")).toBeTruthy();
 });
+
+test("HelpDialog welcomes first-time users once, lists codes and the glossary", () => {
+  const { HelpDialog } = require("./HelpDialog") as typeof import("./HelpDialog");
+  const { useSettings } = require("./settings") as typeof import("./settings");
+  useSettings.setState({ helpSeen: false });
+  const onClose = mock(() => {});
+  const { rerender } = render(<HelpDialog open={true} onClose={onClose} />);
+  expect(document.body.textContent).toContain("Welcome to Divya Drishti");
+  expect(document.body.textContent).toContain("Energy Calendar"); // from the panel codes
+  expect(document.body.textContent).toContain("Open interest");
+  fireEvent.click(screen.getByText("Got it"));
+  expect(onClose).toHaveBeenCalled();
+  rerender(<HelpDialog open={false} onClose={onClose} />);
+  expect(useSettings.getState().helpSeen).toBe(true);
+});
