@@ -6,6 +6,7 @@ import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { OptionsWidget } from "./OptionsPanel";
 import { InsiderWidget } from "./InsiderPanel";
 import { CalendarWidget } from "./CalendarPanel";
+import { AlertsWidget } from "./AlertsPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -287,4 +288,5 @@ export const WIDGETS: Record<
   options: { title: "Options Chain", component: OptionsWidget, linked: true, showSymbol: true },
   insider: { title: "Insider Trades", component: InsiderWidget, linked: false, showSymbol: false },
   calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
+  alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
 };

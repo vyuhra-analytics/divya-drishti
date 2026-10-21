@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
+import { startAlertEngine } from "./alertEngine";
+import { Toasts } from "./AlertsPanel";
 import { HelpDialog } from "./HelpDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { StatusBar } from "./StatusBar";
@@ -37,6 +39,8 @@ export function App() {
   const [menuOpen, setMenuOpen] = useState(false); // phone-width sidebar overlay
   const helpSeen = useSettings((s) => s.helpSeen);
   const [helpOpen, setHelpOpen] = useState(!helpSeen); // first run shows the welcome sheet once
+
+  useEffect(() => startAlertEngine(), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,6 +103,7 @@ export function App() {
       </div>
       {paletteOpen && <Palette />}
       <StatusBar />
+      <Toasts />
       <SettingsDialog />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
