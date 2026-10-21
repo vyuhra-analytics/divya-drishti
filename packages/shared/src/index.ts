@@ -303,3 +303,4 @@ export * from "./curve";
 export * from "./continuous";
 export * from "./jodi";
 export * from "./eia";
+export * from "./recap";
