@@ -100,7 +100,7 @@ export function OptionsWidget({ widget }: { widget: Widget }) {
         </span>
         {error && <span className="down" title={error}>stale</span>}
       </div>
-      <div className="options-scroll">
+      <div className="options-scroll" tabIndex={0} role="region" aria-label="Options chain table">
         <table>
           <thead>
             <tr>

@@ -139,7 +139,7 @@ export function NewsWidget({ widget }: { widget: Widget }) {
         <input className="news-search" type="search" placeholder="Search" aria-label="Search headlines" value={query} onChange={(e) => setQuery(e.target.value)} />
         <span className="news-count muted">{list.length}</span>
       </div>
-      <div className="news-list">
+      <div className="news-list" tabIndex={0} role="region" aria-label="Headlines">
         {list.length === 0 && paging !== "loading" ? (
           <p className="empty muted">{news.length ? "No headlines for this filter yet." : "Loading headlines…"}</p>
         ) : (

@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import { dedupeNews, SYMBOLS, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
 import { streamUrl } from "./settings";
+import { pushTrail } from "./spark";
 
 /** Live market data. UI/layout state lives in workspace.ts. */
 interface MarketState {
   status: "connecting" | "open" | "closed";
   /** latest provider snapshot per symbol (price, day OHLC, volume, contract, source) */
   quotes: Record<string, Quote>;
+  /** recent distinct prices per symbol this session, for sparklines */
+  trail: Record<string, number[]>;
   /** previous price per symbol, for tick-direction colouring */
   prev: Record<string, number>;
   /** energy headlines, newest first (pushed by the stream service) */
@@ -22,6 +25,7 @@ interface MarketState {
 export const useStore = create<MarketState>()(() => ({
   status: "connecting",
   quotes: {},
+  trail: {},
   prev: {},
   news: [],
   epoch: 0,
@@ -62,6 +66,7 @@ export function connectStream() {
     useStore.setState((s) => ({
       seen: { ...s.seen, [q.symbol]: Date.now() },
       quotes: { ...s.quotes, [q.symbol]: q },
+      trail: { ...s.trail, [q.symbol]: pushTrail(s.trail[q.symbol], q.price) },
       prev: { ...s.prev, [q.symbol]: s.quotes[q.symbol]?.price ?? q.price },
     }));
   };

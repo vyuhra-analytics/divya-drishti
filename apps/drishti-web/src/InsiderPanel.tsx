@@ -44,7 +44,7 @@ export function InsiderWidget(_: { widget: Widget }) {
       ) : trades.length === 0 ? (
         <p className="empty muted">No recent insider transactions.</p>
       ) : (
-        <div className="insider-scroll">
+        <div className="insider-scroll" tabIndex={0} role="region" aria-label="Insider transactions">
           <table>
             <thead>
               <tr>

@@ -35,7 +35,7 @@ export function HeatmapWidget(_: { widget: Widget }) {
         const weight = (r: UniverseView) => (r.marketCap ? Math.max(1, Math.log10(r.marketCap) - 8) : 2); // mcap in log steps: no tile dwarfs the rest
         return (
           <section key={g} className="heat-group">
-            <h4>{g}</h4>
+            <h2>{g}</h2>
             <div className="heat-tiles">
               {items.map((r) => (
                 <button
@@ -96,7 +96,7 @@ export function ScreenerWidget(_: { widget: Widget }) {
         ))}
         <span className="news-count muted">{shown.length}</span>
       </div>
-      <div className="screener-scroll">
+      <div className="screener-scroll" tabIndex={0} role="region" aria-label="Screener table">
         <table>
           <thead>
             <tr>

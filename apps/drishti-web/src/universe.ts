@@ -35,5 +35,5 @@ export function heatColor(pct: number | undefined): string {
   if (pct === undefined) return "var(--hover)";
   const strength = Math.min(1, Math.abs(pct) / 3);
   const base = pct >= 0 ? "var(--up)" : "var(--down)";
-  return `color-mix(in srgb, ${base} ${Math.round(15 + strength * 70)}%, var(--panel))`;
+  return `color-mix(in srgb, ${base} ${Math.round(15 + strength * 55)}%, var(--panel))`;
 }

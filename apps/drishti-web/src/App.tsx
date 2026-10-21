@@ -74,7 +74,7 @@ export function App() {
         <button className="menu-btn" aria-label="Panels" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           ☰
         </button>
-        <strong className="brand">DIVYA DRISHTI</strong>
+        <h1 className="brand">DIVYA DRISHTI</h1>
         <button className="cmd" onClick={() => setPaletteOpen(true)}>
           <span className="muted">Command…</span> <kbd>Ctrl K</kbd>
         </button>
@@ -93,7 +93,9 @@ export function App() {
       </header>
       <div className="main-area">
         <Sidebar mobileOpen={menuOpen} onClose={() => setMenuOpen(false)} />
-        <Workspace />
+        <main className="workspace-main" aria-label="Panels">
+          <Workspace />
+        </main>
       </div>
       {paletteOpen && <Palette />}
       <StatusBar />

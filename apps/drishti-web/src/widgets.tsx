@@ -9,6 +9,7 @@ import { CalendarWidget } from "./CalendarPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
+import { sparkPoints } from "./spark";
 import { useClock, useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
 
@@ -239,6 +240,7 @@ function WatchRow({ symbol, active, onPick }: { symbol: string; active: boolean;
   const { pct, dir } = useChange(symbol);
   const contract = useStore((s) => s.quotes[symbol]?.contract);
   const delayed = useStore((s) => (s.quotes[symbol]?.delayedBy ?? 0) > 0);
+  const trail = useStore((s) => s.trail[symbol]);
   const inst = instrument(symbol);
   return (
     <button className={active ? "row active" : "row"} onClick={onPick} title={`${inst?.name} · ${symbol}`}>
@@ -249,6 +251,9 @@ function WatchRow({ symbol, active, onPick }: { symbol: string; active: boolean;
           {delayed && " · 10m delay"}
         </small>
       </span>
+      <svg className={`spark ${trail && trail[trail.length - 1] < trail[0] ? "down" : "up"}`} viewBox="0 0 56 18" aria-hidden="true">
+        <polyline points={sparkPoints(trail ?? [], 56, 18)} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      </svg>
       <Price symbol={symbol} />
       <span className={dir}>{pct !== undefined ? `${pct > 0 ? "+" : ""}${pct.toFixed(2)}%` : "—"}</span>
     </button>

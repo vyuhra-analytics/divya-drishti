@@ -71,11 +71,11 @@ export function CalendarWidget(_: { widget: Widget }) {
         ))}
         {error && <span className="down" title={error}>stale</span>}
       </div>
-      <div className="calendar-list">
+      <div className="calendar-list" tabIndex={0} role="region" aria-label="Calendar events">
         {days.length === 0 && <p className="empty muted">Nothing scheduled.</p>}
         {days.map(([day, list]) => (
           <section key={day}>
-            <h4>{day}</h4>
+            <h2>{day}</h2>
             {list.map((e) => (
               <div key={e.id} className={`cal-row${e.at < now ? " past" : ""}${e.id === next ? " next" : ""}`}>
                 <span className="cal-time">{e.kind === "holiday" ? "all day" : clock.time(e.at)}</span>
