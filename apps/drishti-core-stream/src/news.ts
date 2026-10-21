@@ -69,6 +69,12 @@ export function startNews(redis: RedisClient, sql: SQL, publish: (fresh: NewsIte
         .catch(() => {}),
     );
 
+  // archive retention: 180 days, trimmed at start and then daily
+  const RETENTION_DAYS = 180;
+  const trim = () => void sql`DELETE FROM news WHERE published_at < now() - ${RETENTION_DAYS} * interval '1 day'`.catch(() => {});
+  trim();
+  const trimmer = setInterval(trim, 24 * 3600_000);
+
   const stops = FEEDS.map((feed, i) => {
     const key = `${feed.name} ${i}`;
     const stats = (newsStats[key] = newStats());
@@ -98,5 +104,5 @@ export function startNews(redis: RedisClient, sql: SQL, publish: (fresh: NewsIte
       stop();
     };
   });
-  return () => stops.forEach((s) => s());
+  return () => (clearInterval(trimmer), stops.forEach((s) => s()));
 }

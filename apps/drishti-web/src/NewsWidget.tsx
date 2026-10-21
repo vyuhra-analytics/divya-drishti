@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { instrument, isSafeUrl, TOPIC_TAGS, type NewsItem, type NewsTag } from "@drishti/shared";
+import { instrument, isSafeUrl, matchesQuery, TOPIC_TAGS, type NewsItem, type NewsTag } from "@drishti/shared";
 import { useStore } from "./store";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -92,12 +92,15 @@ export function NewsWidget({ widget }: { widget: Widget }) {
   const flash = useSettings((s) => s.flash);
   const clock = useClock();
   const [filter, setFilter] = useState<Filter>("linked");
+  const [query, setQuery] = useState("");
   const now = useNow();
   const topic = instrument(symbol)?.topic;
   const linkedTags = topic ? TOPIC_TAGS[topic] : [];
 
-  const shown = news.filter((n) =>
-    filter === "all" ? true : filter === "linked" ? !topic || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter),
+  const shown = news.filter(
+    (n) =>
+      (filter === "all" ? true : filter === "linked" ? !topic || n.tags.some((t) => linkedTags.includes(t)) : n.tags.includes(filter)) &&
+      matchesQuery(n, query),
   );
 
   // archive paging: older stories from the API (Postgres), for the current filter
@@ -108,14 +111,14 @@ export function NewsWidget({ widget }: { widget: Widget }) {
   useEffect(() => {
     setOlder([]);
     setPaging("idle");
-  }, [tagKey]);
+  }, [tagKey, query]);
   const liveIds = new Set(shown.map((n) => n.id));
   const list = [...shown, ...older.filter((n) => !liveIds.has(n.id))];
   const loadOlder = async () => {
     setPaging("loading");
     const before = list.length ? list[list.length - 1].publishedAt : Date.now();
     try {
-      const res = await fetch(`${apiUrl()}/news?tags=${encodeURIComponent(tagKey)}&before=${before}&limit=100`);
+      const res = await fetch(`${apiUrl()}/news?tags=${encodeURIComponent(tagKey)}&before=${before}&limit=100&q=${encodeURIComponent(query.trim())}`);
       if (!res.ok) throw new Error(String(res.status));
       const page: NewsItem[] = await res.json();
       setOlder((o) => [...o, ...page]);
@@ -133,6 +136,7 @@ export function NewsWidget({ widget }: { widget: Widget }) {
             {f === "linked" && topic ? `${label}: ${topic === "crude" ? "Crude + Oil" : "Nat Gas"}` : label}
           </button>
         ))}
+        <input className="news-search" type="search" placeholder="Search" aria-label="Search headlines" value={query} onChange={(e) => setQuery(e.target.value)} />
         <span className="news-count muted">{list.length}</span>
       </div>
       <div className="news-list">

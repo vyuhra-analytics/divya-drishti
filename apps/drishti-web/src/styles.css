@@ -341,3 +341,5 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .insider td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); }
 .insider th:nth-child(-n+2), .insider td:nth-child(-n+2) { text-align: left; }
 .insider td a { color: inherit; text-decoration: none; }
+.news-search { width: 110px; margin-left: auto; font-size: 11px; }
+.news-search + .news-count { margin-left: 8px; }

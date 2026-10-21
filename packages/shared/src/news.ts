@@ -105,13 +105,26 @@ const RULES: [NewsTag, RegExp][] = [
   // oil-market vocabulary beyond the word itself: majors, inventories, rigs, the IEA
   ["oil", /\b(oils?|exxon(mobil)?|chevron|aramco|conocophillips|occidental|petrobras|totalenergies|shell plc|bp plc|inventor(y|ies)|stockpiles?|rig counts?|iea)\b/i],
   ["natgas", /\b(natural gas|nat ?gas|lng|henry hub|gas storage|gas prices?|ttf|natgas(mini)?)\b/i],
-  ["india", /\b(mcx|india|indian|rupee|ongc|reliance|nse|sebi)\b/i],
 ];
+
+// India tag: Indian energy names alone qualify; generic "India/rupee/NSE" words need an energy word beside them,
+// so gold prices and market-holiday stories stop matching.
+const INDIA_ENERGY_NAMES = /\b(ongc|oil india|iocl|indian oil|bpcl|hpcl|gail|petronet|reliance industries|nayara)\b/i;
+const INDIA_WORDS = /\b(mcx|india|indian|rupee|nse|sebi)\b/i;
+const ENERGY_WORDS = /\b(crude|oil|opec\+?|brent|wti|natural gas|nat ?gas|lng|petrol|diesel|fuel|refiner(y|ies)|energy|barrels?)\b/i;
+export const isIndiaEnergy = (title: string) => INDIA_ENERGY_NAMES.test(title) || (INDIA_WORDS.test(title) && ENERGY_WORDS.test(title));
+
+/** Case-insensitive headline/outlet match for the panel's search box (the archive's `q` does the same in SQL). Empty query matches all. */
+export const matchesQuery = (n: Pick<NewsItem, "title" | "source" | "copies">, q: string) => {
+  const needle = q.trim().toLowerCase();
+  return !needle || [n.title, n.source, ...(n.copies ?? []).map((c) => c.source)].some((t) => t.toLowerCase().includes(needle));
+};
 
 /** Keyword tags from the headline, plus the feed's own topic (a natural-gas search result is natgas news). */
 export function tagNews(title: string, feedTags: NewsTag[] = []): NewsTag[] {
   const tags = new Set(feedTags);
   for (const [tag, re] of RULES) if (re.test(title)) tags.add(tag);
+  if (isIndiaEnergy(title)) tags.add("india");
   // palm/edible oil stories aren't oil-market news, even from an "oil" search feed
   if (NOT_CRUDE_OIL.test(title)) {
     tags.delete("oil");

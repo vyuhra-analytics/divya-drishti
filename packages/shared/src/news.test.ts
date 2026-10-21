@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dedupeNews, isSafeUrl, newsFromRow, parseDate, parseRss, tagNews, type NewsItem } from "./news";
+import { dedupeNews, isIndiaEnergy, isSafeUrl, matchesQuery, newsFromRow, parseDate, parseRss, tagNews, type NewsItem } from "./news";
 
 // Trimmed real shapes: Google News (source tag, " - Publisher" suffix), Economic Times (CDATA + trailing space),
 // OilPrice (numeric entity), Investing-style zone-less date, plus junk that must be skipped.
@@ -102,4 +102,22 @@ test("newsFromRow maps archive rows and drops unknown tags", () => {
   expect(newsFromRow(row)).toEqual({ id: "x", title: "T", url: "https://a/x", source: "A", publishedAt: Date.UTC(2026, 9, 20, 10, 35), tags: ["oil"] });
   const copies = [{ source: "B", url: "https://b/x", publishedAt: 1 }];
   expect(newsFromRow({ ...row, copies }).copies).toEqual(copies);
+});
+
+test("india tag needs an energy context", () => {
+  expect(isIndiaEnergy("MCX crude oil futures edge higher")).toBe(true);
+  expect(isIndiaEnergy("ONGC Q2 profit beats estimates")).toBe(true);
+  expect(isIndiaEnergy("India cuts fuel import duty")).toBe(true);
+  expect(isIndiaEnergy("Gold price today: rupee weakens, MCX gold rises")).toBe(false);
+  expect(isIndiaEnergy("Gold rate in India today")).toBe(false);
+  expect(isIndiaEnergy("Stock market holiday: NSE, BSE closed for Diwali")).toBe(false);
+  expect(tagNews("Gold rate in India today")).toEqual([]);
+});
+
+test("matchesQuery looks at headline, outlet and copy outlets, ignoring case", () => {
+  const n = { title: "Brent slips", source: "Reuters", copies: [{ source: "Zawya", url: "u", publishedAt: 1 }] };
+  expect(matchesQuery(n, "")).toBe(true);
+  expect(matchesQuery(n, " BRENT ")).toBe(true);
+  expect(matchesQuery(n, "zawya")).toBe(true);
+  expect(matchesQuery(n, "wti")).toBe(false);
 });
