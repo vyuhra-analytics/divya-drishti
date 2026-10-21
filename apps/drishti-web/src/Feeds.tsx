@@ -6,6 +6,7 @@ interface Health {
   feed: "live" | "demo";
   providers: Record<string, { ok: number; failed: number; lastError: string | null; lastOkAt: number | null }>;
   active: Record<string, string>;
+  mcxPrimary?: "upstox" | "tradingview" | "auto";
 }
 interface UpstoxStatus {
   configured: boolean;
@@ -42,6 +43,11 @@ export function Feeds() {
   const upstox = usePoll<UpstoxStatus>(`${apiUrl()}/auth/upstox/status`, 10_000);
   const health = usePoll<Health>(streamHttpUrl("/health"), 3_000);
   const clock = useClock();
+  const [primary, setPrimary] = useState<string | null>(null); // optimistic: shown until the next health poll agrees
+  const setMcxPrimary = (source: string) => {
+    setPrimary(source);
+    fetch(streamHttpUrl("/primary"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) }).catch(() => setPrimary(null));
+  };
 
   return (
     <>
@@ -68,6 +74,18 @@ export function Feeds() {
         >
           {upstox?.via === "login" ? "Reconnect" : "Connect Upstox"}
         </button>
+      </div>
+
+      <div className="field">
+        <span>
+          MCX primary source
+          <small className="muted">Preferred feed for MCX prices; the other takes over if it goes quiet for 15 s</small>
+        </span>
+        <select aria-label="MCX primary source" value={primary ?? health?.mcxPrimary ?? "auto"} disabled={!health} onChange={(e) => setMcxPrimary(e.target.value)}>
+          <option value="auto">Auto (Upstox, then TradingView)</option>
+          <option value="tradingview">TradingView first</option>
+          <option value="upstox">Upstox first</option>
+        </select>
       </div>
 
       {health?.feed === "demo" && <p className="hint down">Demo feed (FEED=demo): prices are simulated.</p>}

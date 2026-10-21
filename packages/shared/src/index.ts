@@ -178,6 +178,11 @@ export function pickSource(
   return priority.filter((s) => lastSeen[s] !== undefined).sort((a, b) => lastSeen[b]! - lastSeen[a]!)[0];
 }
 
+/** `preferred` moved to the front of `sources` (unchanged when it isn't one of them), keeping the rest in order. */
+export function prioritize(sources: Source[], preferred?: Source): Source[] {
+  return preferred && sources.includes(preferred) ? [preferred, ...sources.filter((s) => s !== preferred)] : sources;
+}
+
 /** Upstox instrument master row (subset). expiry = epoch ms. */
 export interface MasterRow {
   instrument_key: string;

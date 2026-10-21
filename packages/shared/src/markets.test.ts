@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   applyTick,
+  prioritize,
   contractExpiry,
   daysToExpiry,
   frontMonth,
@@ -119,4 +120,11 @@ test("contract expiry from the Upstox label, days counted in IST", () => {
   expect(daysToExpiry("NATURALGAS FUT 27 OCT 26", Date.parse("2026-10-21T08:00:00+05:30"))).toBe(6);
   expect(daysToExpiry("NATURALGAS FUT 27 OCT 26", Date.parse("2026-10-27T23:00:00+05:30"))).toBe(0);
   expect(daysToExpiry("CRUDEOIL FUT 19 NOV 26", Date.parse("2026-10-20T23:00:00Z"))).toBe(29); // 04:30 IST on 21 Oct
+});
+
+test("prioritize moves the preferred source first and ignores unknown ones", () => {
+  expect(prioritize(["upstox", "tradingview"], "tradingview")).toEqual(["tradingview", "upstox"]);
+  expect(prioritize(["upstox", "tradingview"], "upstox")).toEqual(["upstox", "tradingview"]);
+  expect(prioritize(["yahoo", "tradingview"], "upstox")).toEqual(["yahoo", "tradingview"]);
+  expect(prioritize(["upstox"], undefined)).toEqual(["upstox"]);
 });

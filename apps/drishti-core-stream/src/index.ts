@@ -9,6 +9,7 @@ import {
   SYMBOLS,
   instrument,
   pickSource,
+  prioritize,
   quoteToTick,
   tvContract,
   type ClientMessage,
@@ -46,6 +47,11 @@ const stats: Partial<Record<Source, ProviderStats>> = DEMO ? { demo: demoStats }
 // ---- routing: every provider quote goes through here; only the active source per symbol is published ----
 const lastSeen = new Map<string, Partial<Record<Source, number>>>();
 const latest = new Map<string, Quote>();
+// Which source MCX quotes prefer (the others stay as fallback). Set from Settings → Data feeds (POST /primary),
+// kept in Redis so a restart remembers it; MCX_PRIMARY in .env is the default.
+const PRIMARY_CHOICES: Source[] = ["upstox", "tradingview"];
+let mcxPrimary: Source | undefined = PRIMARY_CHOICES.find((s) => s === process.env.MCX_PRIMARY);
+redis.get("primary:mcx").then((v) => { const s = PRIMARY_CHOICES.find((c) => c === v); if (s) mcxPrimary = s; }).catch(() => {});
 const active = new Map<string, Source>();
 
 /**
@@ -69,7 +75,7 @@ function accept(q: Quote) {
   const seen = lastSeen.get(q.symbol) ?? {};
   seen[q.source] = now;
   lastSeen.set(q.symbol, seen);
-  const winner = pickSource(seen, DEMO ? ["demo"] : inst.sources, now, STALE_MS);
+  const winner = pickSource(seen, DEMO ? ["demo"] : prioritize(inst.sources, inst.exchange === "MCX" ? mcxPrimary : undefined), now, STALE_MS);
   if (winner) active.set(q.symbol, winner);
   if (q.source !== winner) return;
 
@@ -131,6 +137,33 @@ function upstoxTargets() {
 const app = new Elysia()
   // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
   .get("/fronts", () => Object.fromEntries(fronts))
+  // preflight for the JSON POST below
+  .options("/primary", ({ request, set }) => {
+    const origin = request.headers.get("origin");
+    if (origin && isAllowedOrigin(origin, ORIGINS)) {
+      set.headers["access-control-allow-origin"] = origin;
+      set.headers["access-control-allow-methods"] = "POST";
+      set.headers["access-control-allow-headers"] = "content-type";
+    }
+    set.status = 204;
+  })
+  // body {source: "upstox" | "tradingview" | "auto"}; browser origins on the allow-list only
+  .post("/primary", async ({ request, set, body }) => {
+    const origin = request.headers.get("origin");
+    if (!isAllowedOrigin(origin, ORIGINS)) {
+      set.status = 403;
+      return { error: "Forbidden origin" };
+    }
+    set.headers["access-control-allow-origin"] = origin!;
+    const source = (body as { source?: string } | null)?.source;
+    if (source !== "auto" && !PRIMARY_CHOICES.includes(source as Source)) {
+      set.status = 400;
+      return { error: "source must be upstox, tradingview or auto" };
+    }
+    mcxPrimary = source === "auto" ? undefined : (source as Source);
+    redis.set("primary:mcx", mcxPrimary ?? "auto").catch(() => {});
+    return { mcxPrimary: mcxPrimary ?? "auto" };
+  })
   .get("/health", async ({ request, set }) => {
     // read by the web app / Tauri (Settings → Data feeds); other web pages may not read it
     const origin = request.headers.get("origin");
@@ -143,6 +176,7 @@ const app = new Elysia()
       feed: DEMO ? "demo" : "live",
       providers: stats,
       active: Object.fromEntries(active),
+      mcxPrimary: mcxPrimary ?? "auto",
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
       news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
       universe: { rows: currentUniverse().length, stats: universeStats },
