@@ -1,5 +1,5 @@
 import type { RedisClient, SQL } from "bun";
-import { dedupeNews, NEWS_MAX, newsFromRow, parseRss, tagNews, type NewsItem, type NewsRow, type NewsTag } from "@drishti/shared";
+import { dedupeNews, NEWS_MAX, newsFromRow, parseRss, tagNews, uaHeader, type NewsItem, type NewsRow, type NewsTag } from "@drishti/shared";
 import { newStats, poll, type ProviderStats } from "./providers/provider";
 
 // Energy news from free RSS feeds, polled here once and pushed to every client (not polled per panel).
@@ -32,7 +32,7 @@ const FEEDS: { name: string; url: string; tags: NewsTag[]; everyMs: number; stri
   { name: "Economic Times", url: "https://economictimes.indiatimes.com/markets/commodities/rssfeeds/1808152121.cms", tags: ["india"], everyMs: 60_000 },
   { name: "EIA", url: "https://www.eia.gov/rss/press_rss.xml", tags: [], everyMs: 300_000 },
 ];
-const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0 Safari/537.36" };
+
 
 export const newsStats: Record<string, ProviderStats> = {};
 /** Postgres archive writes (shows "Failed to connect" in /health when running without a database) */
@@ -82,7 +82,7 @@ export function startNews(redis: RedisClient, sql: SQL, publish: (fresh: NewsIte
     let stop = () => {};
     const timer = setTimeout(() => {
       stop = poll(feed.everyMs, stats, async () => {
-        const res = await fetch(feed.url, { headers: UA, signal: AbortSignal.timeout(15_000) });
+        const res = await fetch(feed.url, { headers: uaHeader(feed.url), signal: AbortSignal.timeout(15_000) });
         if (!res.ok) throw new Error(`${res.status}`);
         const parsed = parseRss(await res.text(), feed.name, feed.tags).filter((n) => !feed.strict || tagNews(n.title).length > 0);
         const known = new Set(items.map((n) => n.id));

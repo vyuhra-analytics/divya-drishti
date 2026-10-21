@@ -5,6 +5,7 @@ import { COT_DATASET, COT_MARKETS, parseCot, type CotMarketId, type CotRow } fro
 import { curveCodes, curveInstruments, parseCurve, type CurvePoint } from "./curve";
 import type { Fetcher } from "./fetcher";
 import { JODI_COUNTRIES, parseJodi, type JodiPoint } from "./jodi";
+import { userAgentFor } from "./userAgents";
 
 const HOUR = 3600_000;
 const timeout = (ms: number) => AbortSignal.timeout(ms);
@@ -73,7 +74,7 @@ export const curveFetcher: Fetcher<{ symbol: string }, unknown, CurvePoint[]> = 
     const inst = curveInstruments().find((i) => i.symbol === q.symbol)!;
     const res = await io.fetch("https://scanner.tradingview.com/global/scan", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "https://www.tradingview.com", Referer: "https://www.tradingview.com/", "User-Agent": "Mozilla/5.0" },
+      headers: { "Content-Type": "application/json", Origin: "https://www.tradingview.com", Referer: "https://www.tradingview.com/", "User-Agent": userAgentFor("scanner.tradingview.com") },
       body: JSON.stringify({ symbols: { tickers: curveCodes(inst.root, io.now(), 12) }, columns: ["close", "volume", "expiration"] }),
       signal: timeout(10_000),
     });
@@ -108,19 +109,49 @@ export const jodiFetcher: Fetcher<Record<string, never>, string[], JodiPoint[]> 
   isUsable: (points) => points.length > 0,
 };
 
-/** Every external source we depend on, with what it needs: for docs now, and for canaries and a data-quality console later. */
-export const SOURCES = [
-  { id: "upstox", label: "Upstox", website: "https://upstox.com", kind: "prices, history, options, positions", credentials: ["UPSTOX_ACCESS_TOKEN or login"], fetcher: false },
-  { id: "tradingview", label: "TradingView scanner", website: "https://www.tradingview.com", kind: "prices, options, curve", credentials: [], fetcher: "tv-curve (curve only)" },
-  { id: "yahoo", label: "Yahoo Finance", website: "https://finance.yahoo.com", kind: "NYMEX prices and history", credentials: [], fetcher: false },
-  { id: "cftc-cot", label: "CFTC positioning", website: cotFetcher.website, kind: "weekly positioning", credentials: [], fetcher: "cftc-cot" },
-  { id: "imf-portwatch", label: "IMF PortWatch", website: chokepointFetcher.website, kind: "chokepoint transits", credentials: [], fetcher: "imf-portwatch" },
-  { id: "jodi", label: "JODI Oil World", website: jodiFetcher.website, kind: "country oil balances", credentials: [], fetcher: "jodi" },
-  { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: false },
-  { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: false },
-  { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: false },
-  { id: "forex-factory", label: "Forex Factory calendar", website: "https://nfs.faireconomy.media", kind: "forecast and previous", credentials: [], fetcher: false },
-  { id: "sec-edgar", label: "SEC EDGAR", website: "https://www.sec.gov", kind: "insider trades", credentials: ["SEC_EDGAR_CONTACT"], fetcher: false },
-  { id: "rss", label: "News feeds (Google News, OilPrice, CNBC...)", website: "", kind: "headlines", credentials: [], fetcher: false },
-  { id: "anthropic", label: "Anthropic API", website: "https://www.anthropic.com", kind: "AI briefing", credentials: ["ANTHROPIC_API_KEY"], fetcher: false },
-] as const;
+export type SourceRisk = "low" | "medium" | "high";
+
+export interface SourceInfo {
+  id: string;
+  label: string;
+  website: string;
+  kind: string;
+  credentials: readonly string[];
+  /** the Fetcher that serves it, when it follows the contract */
+  fetcher: string | false;
+  /** how likely the source is to throttle or block us: official and authenticated feeds are low, unofficial public endpoints medium, ones that already throttle us high */
+  risk: SourceRisk;
+  /** "auto": may be used as a fallback without asking. "explicit": only when the user turns it on, because it would show a misleading series or costs money */
+  fallback: "auto" | "explicit";
+  /** why, in a line */
+  note: string;
+}
+
+/** Every external source we depend on, with what it needs, how risky it is and whether it may be a silent fallback: for docs, canaries (high-risk sources are probed less often) and the data-quality console. */
+export const SOURCES: readonly SourceInfo[] = [
+  { id: "upstox", label: "Upstox", website: "https://upstox.com", kind: "prices, history, options, positions", credentials: ["UPSTOX_ACCESS_TOKEN or login"], fetcher: false, risk: "low", fallback: "auto", note: "your own authenticated broker feed" },
+  { id: "tradingview", label: "TradingView scanner", website: "https://www.tradingview.com", kind: "prices, options, curve", credentials: [], fetcher: "tv-curve (curve only)", risk: "medium", fallback: "auto", note: "unofficial public endpoint; dated MCX contracts only" },
+  { id: "tradingview-mcx-continuous", label: "TradingView MCX continuous (1!)", website: "https://www.tradingview.com", kind: "MCX prices by continuous code", credentials: [], fetcher: false, risk: "medium", fallback: "explicit", note: "rolls late, so in the last days before expiry it shows the wrong contract: enable with TV_MCX_CONTINUOUS=1 if you accept that" },
+  { id: "yahoo", label: "Yahoo Finance", website: "https://finance.yahoo.com", kind: "NYMEX prices and history", credentials: [], fetcher: false, risk: "medium", fallback: "auto", note: "unofficial, 10 minutes delayed; its continuous history has roll jumps" },
+  { id: "cftc-cot", label: "CFTC positioning", website: cotFetcher.website, kind: "weekly positioning", credentials: [], fetcher: "cftc-cot", risk: "low", fallback: "auto", note: "official government data" },
+  { id: "imf-portwatch", label: "IMF PortWatch", website: chokepointFetcher.website, kind: "chokepoint transits", credentials: [], fetcher: "imf-portwatch", risk: "low", fallback: "auto", note: "official public dataset" },
+  { id: "jodi", label: "JODI Oil World", website: jodiFetcher.website, kind: "country oil balances", credentials: [], fetcher: "jodi", risk: "low", fallback: "auto", note: "official data; large downloads, so fetched rarely" },
+  { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: false, risk: "low", fallback: "auto", note: "official API with a free key; the shared DEMO_KEY is never used" },
+  { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official files" },
+  { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official keyless CSV" },
+  { id: "forex-factory", label: "Forex Factory calendar", website: "https://nfs.faireconomy.media", kind: "forecast and previous", credentials: [], fetcher: false, risk: "high", fallback: "auto", note: "answers HTTP 429 after a few requests: cached 30 minutes, last good copy kept, 5-minute back-off" },
+  { id: "sec-edgar", label: "SEC EDGAR", website: "https://www.sec.gov", kind: "insider trades", credentials: ["SEC_EDGAR_CONTACT"], fetcher: false, risk: "low", fallback: "auto", note: "official; asks for an honest contact in the User-Agent, so it never uses the browser pool" },
+  { id: "rss", label: "News feeds (Google News, OilPrice, CNBC...)", website: "", kind: "headlines", credentials: [], fetcher: false, risk: "medium", fallback: "auto", note: "public feeds, polled every 1 to 5 minutes; Google News is the most likely to throttle" },
+  { id: "anthropic", label: "Anthropic API", website: "https://www.anthropic.com", kind: "AI briefing", credentials: ["ANTHROPIC_API_KEY"], fetcher: false, risk: "low", fallback: "explicit", note: "costs money: only ever called when you press the button, never as a silent fallback" },
+];
+
+/** How much longer than its normal interval a source is left alone between canary probes. */
+export const CANARY_SPACING: Record<SourceRisk, number> = { low: 1, medium: 2, high: 6 };
+
+/** Registry entry for a source id. */
+export const sourceInfo = (id: string) => SOURCES.find((s) => s.id === id);
+
+/** Canary interval for a sample: its own interval (default hourly) stretched by the risk of the source behind it. */
+export function canaryInterval(sourceId: string, baseMs: number): number {
+  return baseMs * CANARY_SPACING[sourceInfo(sourceId)?.risk ?? "medium"];
+}

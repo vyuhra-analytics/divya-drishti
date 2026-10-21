@@ -11,6 +11,7 @@ import {
   parseWngsr,
   parseWpsr,
   releasePending,
+  withUserAgent,
   type CalEvent,
   type FFRow,
   type HolidayRow,
@@ -19,7 +20,6 @@ import { Db } from "./db";
 
 const TTL_MS = 15 * 60_000;
 const TTL_PENDING_MS = 60_000; // while a release is due or just out, look again every minute so its number appears when published
-const UA = { "User-Agent": "Mozilla/5.0" };
 const FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 const FF_TTL_MS = 30 * 60_000;
 const FF_RETRY_MS = 5 * 60_000; // after a failed or throttled request, leave the feed alone this long (hammering it keeps the throttle on)
@@ -63,7 +63,7 @@ export class CalendarController {
     if (due.length === 0) return events;
     const text = async (url: string) => {
       try {
-        const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(10_000) });
+        const res = await fetch(url, { ...withUserAgent(url), signal: AbortSignal.timeout(10_000) });
         return res.ok ? await res.text() : undefined;
       } catch {
         return undefined; // an unreachable source just means no actual yet
@@ -102,7 +102,7 @@ export class CalendarController {
     }
     if (Date.now() < ffNextTry) return ffCache?.rows ?? [];
     try {
-      const res = await fetch(FF_URL, { headers: UA, signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(FF_URL, { ...withUserAgent(FF_URL), signal: AbortSignal.timeout(10_000) });
       const rows = res.ok ? ((await res.json()) as FFRow[]) : null;
       if (Array.isArray(rows) && rows.length) {
         ffCache = { at: Date.now(), rows };

@@ -1,3 +1,4 @@
+import { userAgentFor } from "@drishti/shared";
 import { futuresByExpiry, INSTRUMENTS, rollByVolume, tvContract, type MasterRow } from "@drishti/shared";
 
 const MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/MCX.json.gz";
@@ -6,7 +7,7 @@ const TV_HEADERS = {
   "Content-Type": "application/json",
   Origin: "https://www.tradingview.com",
   Referer: "https://www.tradingview.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0 Safari/537.36",
+  "User-Agent": userAgentFor("scanner.tradingview.com"),
 };
 
 /** Traded MCX contract per underlying (CRUDEOIL → CRUDEOIL FUT 19 NOV 26). Public file, no login needed. */

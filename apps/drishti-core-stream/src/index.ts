@@ -15,6 +15,7 @@ import {
   quoteProblem,
   quoteToTick,
   tvContract,
+  tvTickerFor,
   type ClientMessage,
   type Instrument,
   type Quote,
@@ -164,7 +165,8 @@ function tvTargets() {
   const out = new Map<string, { inst: Instrument; contract?: string }>();
   for (const inst of INSTRUMENTS) {
     const front = inst.upstox ? fronts.get(inst.upstox) : undefined;
-    const ticker = front?.expiry ? tvContract(inst.tv, front.expiry) : inst.tv.endsWith("1!") ? inst.tv : `${inst.tv}1!`;
+    const ticker = tvTickerFor(inst, front?.expiry, process.env.TV_MCX_CONTINUOUS === "1");
+    if (!ticker) continue; // MCX without a known front month: the continuous code would show the wrong contract, so no TradingView price rather than a misleading one
     out.set(ticker, { inst, contract: front?.trading_symbol });
   }
   return out;
@@ -295,11 +297,11 @@ if (DEMO) {
   );
 }
 
-// MCX roots → the traded dated contract (TradingView's MCX 1! rolls late), else the 1! fallback
+// MCX roots → the traded dated contract (TradingView's MCX 1! rolls late, so it is explicit-only: TV_MCX_CONTINUOUS=1)
 const mcxTicker = (root: string) => {
   const inst = INSTRUMENTS.find((i) => i.tv === root);
   const front = inst?.upstox ? fronts.get(inst.upstox) : undefined;
-  return front?.expiry ? tvContract(root, front.expiry) : `${root}1!`;
+  return tvTickerFor({ tv: root, exchange: "MCX" }, front?.expiry, process.env.TV_MCX_CONTINUOUS === "1");
 };
 startUniverse(mcxTicker, (changed) => app.server?.publish("universe", JSON.stringify({ type: "universe", rows: changed })));
 

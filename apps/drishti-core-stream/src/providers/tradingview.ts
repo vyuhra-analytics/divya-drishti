@@ -1,3 +1,4 @@
+import { userAgentFor } from "@drishti/shared";
 import type { Instrument, Quote } from "@drishti/shared";
 import { getJson, poll, type Emit, type ProviderStats } from "./provider";
 
@@ -7,7 +8,7 @@ const HEADERS = {
   "Content-Type": "application/json",
   Origin: "https://www.tradingview.com",
   Referer: "https://www.tradingview.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0 Safari/537.36",
+  "User-Agent": userAgentFor("scanner.tradingview.com"),
 };
 const COLUMNS = ["close", "open", "high", "low", "volume", "change", "update_mode", "bid", "ask", "open_interest", "VWAP"] as const;
 const POLL_MS = 2000;

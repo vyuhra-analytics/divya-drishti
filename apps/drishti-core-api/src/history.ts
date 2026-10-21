@@ -1,9 +1,10 @@
+import { userAgentFor } from "@drishti/shared";
 import { mergeBars, normalizeBars, parseUpstoxCandles, validateBars, parseYahooCandles, TIMEFRAMES, type Bar, type Instrument, type MasterRow, type Timeframe } from "@drishti/shared";
 import type { RedisClient } from "bun";
 
 // Provider history for charts. Yahoo for NYMEX (no login, 10 min delayed), Upstox for MCX (needs today's token).
 
-const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0 Safari/537.36" };
+const UA = { "User-Agent": userAgentFor("query1.finance.yahoo.com") };
 const YAHOO: Record<Timeframe, { interval: string; range: string }> = {
   "1m": { interval: "1m", range: "5d" },
   "5m": { interval: "5m", range: "1mo" },

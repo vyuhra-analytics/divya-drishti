@@ -227,6 +227,17 @@ export function tvContract(root: string, expiryMs: number): string {
   return `${root}${MONTH_CODES[d.getUTCMonth()]}${d.getUTCFullYear()}`;
 }
 
+/**
+ * TradingView ticker for an instrument. MCX uses the dated contract when the front month is known; its continuous `1!` rolls late
+ * (the wrong contract in the last days before expiry), so it is explicit-only: without a front month an MCX instrument gets no
+ * TradingView ticker unless `allowMcxContinuous` is set (env TV_MCX_CONTINUOUS=1). NYMEX's own `1!` is the right contract.
+ */
+export function tvTickerFor(inst: Pick<Instrument, "tv" | "exchange">, frontExpiry: number | undefined, allowMcxContinuous = false): string | undefined {
+  if (inst.exchange !== "MCX") return inst.tv;
+  if (frontExpiry) return tvContract(inst.tv, frontExpiry);
+  return allowMcxContinuous ? (inst.tv.endsWith("1!") ? inst.tv : `${inst.tv}1!`) : undefined;
+}
+
 /** Upstox access tokens die at 03:30 IST (UTC+5:30) the next morning, whenever they were issued. */
 export function upstoxTokenExpiry(now: number): number {
   const IST = 5.5 * 3600_000;
@@ -321,3 +332,4 @@ export * from "./drift";
 export * from "./provenance";
 export * from "./notify";
 export * from "./serverAlerts";
+export * from "./userAgents";

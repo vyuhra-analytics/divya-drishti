@@ -1,3 +1,4 @@
+import { userAgentFor } from "@drishti/shared";
 import { BadRequestException, Controller, Get, HttpException, Query, ServiceUnavailableException } from "@nestjs/common";
 import {
   atmStrike,
@@ -30,7 +31,7 @@ const TV_HEADERS = {
   "Content-Type": "application/json",
   Origin: "https://www.tradingview.com",
   Referer: "https://www.tradingview.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0 Safari/537.36",
+  "User-Agent": userAgentFor("scanner.tradingview.com"),
 };
 const STRIKES_EACH_SIDE = 12; // 25 strikes → 50 option keys = Upstox's greeks limit per call
 const CHAIN_TTL_MS = 3000;

@@ -1,9 +1,10 @@
+import { userAgentFor } from "@drishti/shared";
 import type { Instrument, Quote } from "@drishti/shared";
 import { getJson, poll, type Emit, type ProviderStats } from "./provider";
 
 // Yahoo Finance chart endpoint (unofficial, no key). CME futures here are ~10 min delayed.
 const BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
-const HEADERS = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0 Safari/537.36" };
+const HEADERS = { "User-Agent": userAgentFor("query1.finance.yahoo.com") };
 const POLL_MS = 5000;
 
 export function parseChartQuote(json: any, inst: Instrument): Quote | null {

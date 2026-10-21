@@ -5,6 +5,7 @@
 //   transform raw response -> our standard model (the shapes in cot.ts, curve.ts, jodi.ts ... are the standard models)
 // `fetch`, the environment and the clock are injected, so the same code runs against recorded responses in tests.
 import { LruCache } from "./lru";
+import { withUserAgent } from "./userAgents";
 
 export interface FetchIO {
   fetch: (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -51,7 +52,7 @@ export interface Served<R> {
 const RETRY_MS = 5 * 60_000; // after a failure with a copy in hand, leave the source alone this long
 
 /** One runner per process: a capped cache, one request per key in flight, and the last good copy when the source is down. */
-export function createRunner(io: FetchIO = { fetch: (input, init) => fetch(input, init), env: process.env, now: Date.now }, cacheSize = 64) {
+export function createRunner(io: FetchIO = { fetch: (input, init) => fetch(input, withUserAgent(input, init)), env: process.env, now: Date.now }, cacheSize = 64) {
   const cache = new LruCache<{ at: number; data: unknown; nextTry?: number }>(cacheSize);
   const inflight = new Map<string, Promise<Served<unknown>>>();
 

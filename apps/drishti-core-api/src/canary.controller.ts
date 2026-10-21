@@ -1,5 +1,5 @@
 import { Controller, Get, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { FIXTURE_SAMPLES, formatCanaryTable, mapLimit, runCanary, SOURCES, type CanaryResult, type FixtureSample } from "@drishti/shared";
+import { canaryInterval, FIXTURE_SAMPLES, formatCanaryTable, mapLimit, runCanary, SOURCES, withUserAgent, type CanaryResult, type FixtureSample } from "@drishti/shared";
 
 const HOUR = 3600_000;
 const HISTORY = 24; // results kept per source
@@ -14,7 +14,7 @@ const HEAVY_DELAY_MS = 10 * 60_000; // daily-sized downloads (JODI) do not run o
 export class CanaryService implements OnModuleInit, OnModuleDestroy {
   private history = new Map<string, CanaryResult[]>();
   private timers: ReturnType<typeof setTimeout>[] = [];
-  private readonly io = { fetch: (input: string | URL, init?: RequestInit) => fetch(input, init), env: process.env, now: Date.now };
+  private readonly io = { fetch: (input: string | URL, init?: RequestInit) => fetch(input, withUserAgent(input, init)), env: process.env, now: Date.now };
 
   onModuleInit() {
     if (process.env.CANARIES?.trim().toLowerCase() === "off") return;
@@ -34,12 +34,13 @@ export class CanaryService implements OnModuleInit, OnModuleDestroy {
     this.timers.forEach(clearTimeout);
   }
 
+  /** The next probe waits longer for riskier sources: low-risk hourly, medium 2 h, high 6 h (see SOURCES). */
   private schedule(s: FixtureSample) {
     this.timers.push(
       setTimeout(async () => {
         await this.check(s);
         this.schedule(s);
-      }, s.everyMs ?? HOUR),
+      }, canaryInterval(s.source, s.everyMs ?? HOUR)),
     );
   }
 

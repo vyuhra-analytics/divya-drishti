@@ -9,6 +9,7 @@ const io = (respond: () => Response | Promise<Response>, env: Record<string, str
 };
 const sample = (over: Partial<FixtureSample> = {}): FixtureSample => ({
   id: "demo",
+  source: "demo",
   run: async (i) => (await i.fetch("https://example.com")).text(),
   check: (txt) => (txt === "good" ? undefined : "expected the word good"),
   ...over,
