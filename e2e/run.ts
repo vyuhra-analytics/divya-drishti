@@ -254,6 +254,49 @@ test("Detailed option chain: every column of the Upstox-style chain, spot marker
   await shot(again, "option-chain-detailed");
 });
 
+test("Instruments: add a NYMEX future in Settings, see it priced in the watchlist and known to the API, then remove it", async ({ page }) => {
+  const symbol = "NYMEX:RB";
+  const drop = () => fetch(`${STREAM}/instruments/${encodeURIComponent(symbol)}`, { method: "DELETE" }).catch(() => undefined);
+  await drop(); // a leftover from an aborted run
+  await page.goto(WEB);
+  await page.locator("h1").first().waitFor();
+  try {
+    await page.keyboard.press("Control+,");
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    const form = dialog.getByRole("form", { name: "Add instrument" });
+    await form.getByLabel("Exchange").selectOption("NYMEX");
+    await form.getByLabel("Symbol", { exact: true }).fill("rb");
+    await form.getByLabel("Name").fill("RBOB Gasoline");
+    await form.getByLabel("Lot").fill("42000 gal");
+    await form.getByLabel("Price decimals").selectOption("4");
+    await form.scrollIntoViewIfNeeded();
+    await shot(form, "instruments-form");
+    await form.getByRole("button", { name: "Add instrument" }).click();
+    await dialog.getByText("RBOB Gasoline").waitFor({ timeout: 15_000 });
+    await dialog.getByText(/added by you/).waitFor();
+    await page.keyboard.press("Escape");
+    // the stream prices it from Yahoo and TradingView within a few seconds, and the watchlist lists it
+    await page.waitForFunction(() => [...document.querySelectorAll(".watchlist")].some((w) => /RB/.test(w.textContent ?? "") && /\d\.\d{4}/.test(w.textContent ?? "")), undefined, { timeout: 30_000 });
+    await shot(page.locator(".watchlist").first(), "instruments-watchlist");
+    // the API learns of it within 30 s (it asks the stream), after which history works
+    const until = Date.now() + 45_000;
+    let status = 0;
+    while (Date.now() < until) {
+      status = (await fetch(`${API}/bars?symbol=${encodeURIComponent(symbol)}&tf=5m`)).status;
+      if (status === 200) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    assert(status === 200, `the API never accepted ${symbol} (last status ${status})`);
+    // removing it takes it out of the watchlist
+    await page.keyboard.press("Control+,");
+    page.once("dialog", (d) => void d.accept());
+    await dialog.locator(".field", { hasText: "RBOB Gasoline" }).getByRole("button", { name: "Remove" }).click();
+    await page.waitForFunction(() => ![...document.querySelectorAll(".watchlist")].some((w) => /RBOB|NYMEX:RB\b/.test(w.textContent ?? "")), undefined, { timeout: 15_000 });
+  } finally {
+    await drop();
+  }
+});
+
 test("Data quality: feed health, price agreement and source checks", async ({ page }) => {
   const root = await openPanel(page, "DQ", ".dq");
   await root.getByText("Live feeds").waitFor();

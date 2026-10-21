@@ -42,10 +42,19 @@ export async function tvCloses(codes: string[]): Promise<Map<string, number>> {
   }
 }
 
-export async function loadFronts(now = Date.now()): Promise<Fronts> {
+async function fetchMaster(): Promise<MasterRow[]> {
   const res = await fetch(MASTER_URL, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`instrument master ${res.status}`);
-  const rows: MasterRow[] = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await res.arrayBuffer()))));
+  return JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await res.arrayBuffer()))));
+}
+
+/** Does Upstox's public MCX master list an unexpired future for this underlying? Checked when an instrument is added. */
+export async function upstoxHasFuture(underlying: string, now = Date.now()): Promise<boolean> {
+  return futuresByExpiry(await fetchMaster(), underlying, now).length > 0;
+}
+
+export async function loadFronts(now = Date.now()): Promise<Fronts> {
+  const rows = await fetchMaster();
 
   // two nearest contracts per underlying, then roll to whichever is actually traded today
   const candidates = new Map<string, { tv: string; rows: MasterRow[] }>();

@@ -16,6 +16,7 @@ import { EiaController } from "./eia.controller";
 import { CanaryController, CanaryService } from "./canary.controller";
 import { ServerAlertsController } from "./server-alerts.controller";
 import { PositionsController } from "./positions.controller";
+import { InstrumentSync } from "./instruments.sync";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync] })
 export class AppModule {}

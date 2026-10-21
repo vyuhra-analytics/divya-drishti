@@ -23,6 +23,8 @@ interface MarketState {
   universe: Record<string, UniverseRow>;
   /** +1 whenever the server says a paper account changed (a trade from any client, an agent over MCP, a stop firing): the Paper panel re-reads */
   paperRev: number;
+  /** +1 when the tracked instruments change (one added or removed in Settings, here or in another tab): the app remounts so every list and picker re-reads SYMBOLS */
+  instrumentsRev: number;
 }
 
 export const useStore = create<MarketState>()(() => ({
@@ -35,6 +37,7 @@ export const useStore = create<MarketState>()(() => ({
   seen: {},
   universe: {},
   paperRev: 0,
+  instrumentsRev: 0,
 }));
 
 // The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
@@ -86,6 +89,11 @@ export function connectStream() {
     useStore.setState({ status: "closed" });
     setTimeout(() => ws === sock && connectStream(), 1000);
   };
+}
+
+/** Ask the stream for every tracked symbol again (after one was added); symbols already subscribed just get their snapshot re-sent. */
+export function resubscribeSymbols() {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ subscribe: [...SYMBOLS] }));
 }
 
 /** Drop the current socket and connect again (e.g. after the stream URL changed). */

@@ -23,10 +23,11 @@ export function parseChartQuote(json: any, inst: Instrument): Quote | null {
   };
 }
 
-export function startYahoo(instruments: Instrument[], emit: Emit, stats: ProviderStats) {
+/** `instruments` is read on every poll, so an instrument added in Settings gets a price without a restart. */
+export function startYahoo(instruments: () => Instrument[], emit: Emit, stats: ProviderStats) {
   return poll(POLL_MS, stats, async () => {
     const results = await Promise.allSettled(
-      instruments.map(async (inst) => {
+      instruments().map(async (inst) => {
         const json = await getJson(`${BASE}${encodeURIComponent(inst.yahoo!)}?interval=1m&range=1d`, { headers: HEADERS });
         const q = parseChartQuote(json, inst);
         if (q) emit(q);

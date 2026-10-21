@@ -17,6 +17,8 @@ import {
   RateLimiter,
   SYMBOLS,
   instrument,
+  parseCustomInstrument,
+  setCustomInstruments,
   pickSource,
   prioritize,
   quoteProblem,
@@ -30,7 +32,8 @@ import {
   type Source,
   type Tick,
 } from "@drishti/shared";
-import { loadFronts, tvCloses, type Fronts } from "./contracts";
+import { loadFronts, tvCloses, upstoxHasFuture, type Fronts } from "./contracts";
+import { formOf, instrumentRoutes } from "./instrumentRoutes";
 import { newStats, type ProviderStats } from "./providers/provider";
 import { startServerAlerts } from "./serverAlerts";
 import { PgPaperStore } from "./paperStore";
@@ -46,7 +49,8 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const TOPICS = new Set<string>([...SYMBOLS, "news", "universe", "alerts", "paper"]);
+const EXTRA_TOPICS = new Set<string>(["news", "universe", "alerts", "paper"]);
+const isTopic = (t: string) => EXTRA_TOPICS.has(t) || SYMBOLS.includes(t); // SYMBOLS grows when an instrument is added in Settings
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
 const DEMO = process.env.FEED === "demo";
@@ -230,7 +234,40 @@ void loadPaper();
 setInterval(() => void loadPaper(), 15_000);
 const paperLimiter = new RateLimiter(240, 60_000); // requests a minute to /paper: the panel polls and the MCP server calls through here
 
+// ---- instruments the user added (Settings → Instruments): Postgres is the source of truth, the catalogue in shared is changed in place ----
+const instrumentLimiter = new RateLimiter(60, 60_000);
+async function loadCustomInstruments() {
+  const rows = (await sql`SELECT data FROM custom_instruments ORDER BY created_at`) as { data: unknown }[];
+  const accepted: Instrument[] = [];
+  const builtins = INSTRUMENTS.filter((i) => !i.custom);
+  for (const row of rows) {
+    const r = parseCustomInstrument(row.data, [...builtins, ...accepted]); // validated again on every load, so a bad row in the table cannot reach the feeds
+    if ("instrument" in r) accepted.push(r.instrument);
+    else console.warn(`ignored stored instrument: ${r.error}`);
+  }
+  const before = new Set(SYMBOLS);
+  setCustomInstruments(accepted);
+  for (const s of before) {
+    if (SYMBOLS.includes(s)) continue; // removed: forget its prices so nothing stale is served
+    for (const m of [latest, active, lastSeen, lastPrice] as Map<string, unknown>[]) m.delete(s);
+  }
+  if (!DEMO && SYMBOLS.some((s) => !before.has(s))) await refreshFronts(); // an added MCX future gets its front month (and so its Upstox and TradingView codes) now, not at the next hourly refresh
+}
+void loadCustomInstruments().catch((e) => console.warn(`no added instruments loaded (is the database migrated? bun run db:migrate): ${(e as Error).message}`));
+setInterval(() => void loadCustomInstruments().catch(() => undefined), 60_000);
+
 const app = new Elysia()
+  .use(
+    instrumentRoutes({
+      origins: ORIGINS,
+      limiter: instrumentLimiter,
+      upstoxHasFuture: (u) => upstoxHasFuture(u).catch(() => true), // master file unreachable: don't block the add, the next refresh will tell
+      hasOpenPosition: async (symbol) => ((await sql`SELECT 1 FROM paper_positions WHERE data->>'symbol' = ${symbol} LIMIT 1`) as unknown[]).length > 0,
+      save: async (i) => void (await sql`INSERT INTO custom_instruments (symbol, data) VALUES (${i.symbol}, ${JSON.stringify(formOf(i))}::text::jsonb)`),
+      remove: async (symbol) => void (await sql`DELETE FROM custom_instruments WHERE symbol = ${symbol}`),
+      changed: loadCustomInstruments,
+    }),
+  )
   .use(paperRoutes({ engine: paperEngine, store: paperStore, quote: (s) => latest.get(s), origins: ORIGINS, limiter: paperLimiter, publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })) }))
   // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
   .get("/fronts", () => Object.fromEntries(fronts))
@@ -304,7 +341,7 @@ const app = new Elysia()
       }
       if (!msg || typeof msg !== "object") return;
       const list = (("subscribe" in msg ? msg.subscribe : msg?.unsubscribe) ?? []) as unknown[];
-      const topics = (Array.isArray(list) ? list : []).filter((t): t is string => typeof t === "string" && TOPICS.has(t));
+      const topics = (Array.isArray(list) ? list : []).filter((t): t is string => typeof t === "string" && isTopic(t));
       if ("subscribe" in msg) {
         for (const s of topics) {
           if (s === "news") {
@@ -340,7 +377,7 @@ if (DEMO) {
   startUpstox(redis, upstoxTargets, accept, stats.upstox!);
   startTradingView(tvTargets, accept, stats.tradingview!);
   startYahoo(
-    INSTRUMENTS.filter((i) => i.yahoo),
+    () => INSTRUMENTS.filter((i) => i.yahoo),
     accept,
     stats.yahoo!,
   );

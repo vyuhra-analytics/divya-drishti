@@ -4,6 +4,7 @@ import { reconnect, useStore } from "./store";
 import { DEFAULTS, useSettings, validateUrl, type Settings } from "./settings";
 import { BUILTIN_CHANNELS } from "./TvWidget";
 import { Feeds } from "./Feeds";
+import { InstrumentsSettings } from "./InstrumentsSettings";
 
 function TvChannels() {
   const channels = useSettings((s) => s.tvChannels);
@@ -222,6 +223,11 @@ export function SettingsDialog() {
           <section>
             <h3>Live TV</h3>
             <TvChannels />
+          </section>
+
+          <section>
+            <h3>Instruments</h3>
+            <InstrumentsSettings />
           </section>
 
           <section>

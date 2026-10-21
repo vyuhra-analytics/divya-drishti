@@ -55,7 +55,7 @@ await check("API health: postgres up", async () => {
   need(h.postgres === true, "postgres is down (bun run infra:up)");
   return `redis ${h.redis ? "up" : "off (optional)"}`;
 });
-await check("symbols", async () => need((await ok("/symbols")).length === 6, "expected 6 instruments"));
+await check("symbols", async () => need((await ok("/symbols")).length >= 6, "expected the 6 built-in instruments"));
 await check("bars: crude 5m history is consistent", async () => {
   const bars = await ok("/bars?symbol=MCX:CRUDEOIL&tf=5m");
   need(bars.length > 100, `only ${bars.length} bars`);
@@ -244,6 +244,21 @@ await check("refuses: a foreign website using the paper API", async () => {
   need(r.status === 403, `a foreign origin got HTTP ${r.status}`);
   const mine = await fetch(`${STREAM}/paper/accounts`, { headers: { Origin: WEB_ORIGIN } });
   need(mine.status === 200 && mine.headers.get("access-control-allow-origin") === WEB_ORIGIN, "our own origin is not allowed");
+});
+
+await check("instruments API: list, bad input is a 400, built-ins cannot be removed, a foreign website is refused (nothing added)", async () => {
+  const list = await (await fetch(`${STREAM}/instruments`, { headers: { Origin: WEB_ORIGIN } })).json();
+  need(list.instruments.length >= 6, "the six built-in instruments are missing");
+  const post = (body: unknown, origin = WEB_ORIGIN) => fetch(`${STREAM}/instruments`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  for (const bad of [{}, { exchange: "NSE", root: "X", name: "Xx", decimals: 2, lot: "1 kg", topic: "crude" }, { exchange: "MCX", root: "CRUDEOIL", name: "Dupe", decimals: 0, lot: "1 bbl", topic: "crude" }]) {
+    const r = await post(bad);
+    need(r.status === 400, `bad body got HTTP ${r.status}`);
+  }
+  need((await fetch(`${STREAM}/instruments/${encodeURIComponent("MCX:CRUDEOIL")}`, { method: "DELETE", headers: { Origin: WEB_ORIGIN } })).status === 403, "a built-in could be removed");
+  const foreign = await post({ exchange: "NYMEX", root: "RB", name: "RBOB", decimals: 4, lot: "42000 gal", topic: "crude" }, "https://evil.example");
+  need(foreign.status === 403, `a foreign origin got HTTP ${foreign.status}`);
+  const after = await (await fetch(`${STREAM}/instruments`)).json();
+  need(after.instruments.length === list.instruments.length, "the catalogue changed");
 });
 
 console.log(results.join("\n"));

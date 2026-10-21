@@ -23,6 +23,8 @@ export interface Instrument {
   tv: string;
   /** Yahoo chart symbol (NYMEX) */
   yahoo?: string;
+  /** added by the user (Settings → Instruments), stored in Postgres; the six built-ins are never custom */
+  custom?: boolean;
 }
 
 export const INSTRUMENTS: Instrument[] = [
@@ -37,6 +39,21 @@ export const INSTRUMENTS: Instrument[] = [
 export const SYMBOLS = INSTRUMENTS.map((i) => i.symbol);
 const BY_SYMBOL = new Map(INSTRUMENTS.map((i) => [i.symbol, i]));
 export const instrument = (symbol: string) => BY_SYMBOL.get(symbol);
+
+const BUILTIN_COUNT = INSTRUMENTS.length;
+/**
+ * Replace the user's instruments (see customInstruments.ts) in place: INSTRUMENTS and SYMBOLS keep their identity, so every module that
+ * imported them sees the change. Input is trusted to be validated already; anything with a built-in's symbol is ignored.
+ */
+export function setCustomInstruments(list: Instrument[]) {
+  const builtin = new Set(INSTRUMENTS.slice(0, BUILTIN_COUNT).map((i) => i.symbol));
+  INSTRUMENTS.length = BUILTIN_COUNT;
+  for (const i of list) if (!builtin.has(i.symbol) && !INSTRUMENTS.some((x) => x.symbol === i.symbol)) INSTRUMENTS.push({ ...i, custom: true });
+  SYMBOLS.length = 0;
+  SYMBOLS.push(...INSTRUMENTS.map((i) => i.symbol));
+  BY_SYMBOL.clear();
+  for (const i of INSTRUMENTS) BY_SYMBOL.set(i.symbol, i);
+}
 
 /** Latest snapshot for a symbol as published by the stream. time = exchange trade time, epoch ms. */
 export interface Quote {
@@ -299,6 +316,7 @@ export function daysToExpiry(contract: string | undefined, now: number): number 
   return Math.round((exp - istToday) / 86_400_000);
 }
 export * from "./universe";
+export * from "./customInstruments";
 export * from "./options";
 export * from "./insider";
 export * from "./calendar";
