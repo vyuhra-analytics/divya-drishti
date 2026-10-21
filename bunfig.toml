@@ -1,0 +1,3 @@
+[test]
+# happy-dom gives the web app's component tests a DOM (registered once for every test file; shared tests ignore it)
+preload = ["./apps/drishti-web/test/setup.ts"]

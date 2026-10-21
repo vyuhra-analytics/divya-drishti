@@ -12,7 +12,7 @@ Divya Drishti — personal Bloomberg-style market terminal, built incrementally.
 - Dev (stream + api + web via Turborepo): `bun run dev`
 - Desktop (needs web dev server running): `bun run desktop`
 - Typecheck all: `bun run typecheck`
-- Tests (bun:test, whole repo): `bun test`
+- Tests (bun:test, whole repo; web component tests use happy-dom + Testing Library via `bunfig.toml` preload `apps/drishti-web/test/setup.ts`): `bun test`
 - Single test file: `bun test packages/shared/src/markets.test.ts`
 - Simulated prices (offline/weekends): `FEED=demo` in `.env`
 - Infra via Docker: `bun run infra:up` / `bun run infra:down`
@@ -44,6 +44,6 @@ Security defaults (keep them): API and stream bind `HOST` (default 127.0.0.1); b
 
 Market status: shared `sessions.ts` (`mcxSession` Mon–Fri 09:00 IST to 23:30/23:55 by US DST, overridden by Upstox's day timings from API `GET /market/sessions`; `nymexSession` CME Globex Sun 18:00–Fri 17:00 ET with the 17:00–18:00 break; `freshness` live/stale/closed). Heartbeats carry `seen` (when each symbol's active source was last heard from, incl. unchanged polls), which `useFreshness` (web `market.ts`) combines with the session: STALE/CLOSED badges + dimmed prices; `StatusBar.tsx` (bottom) shows sessions, IST/NY/London clocks and feed ages.
 
-Reliability: the stream publishes `{type:"hb"}` every 15 s; the web store reconnects after 45 s of silence and bumps `epoch`, which makes every `Chart` re-fetch history (fills gaps from the outage). Each panel body is wrapped in `PanelBoundary` (Grid.tsx), so one crashing panel shows a retry instead of blanking the app. Charts get local wall-clock times (`chartTime.ts`) so day/month ticks fall on local midnight. MCX front month rolls by volume (`rollByVolume`: next contract once it out-trades the nearest; checked hourly via TradingView dated-contract volumes).
+Reliability: the stream publishes `{type:"hb"}` every 15 s; the web store reconnects after 45 s of silence and bumps `epoch`, which makes every `Chart` re-fetch history (fills gaps from the outage). Each panel body is wrapped in `PanelBoundary` (PanelBoundary.tsx), so one crashing panel shows a retry instead of blanking the app. Charts get local wall-clock times (`chartTime.ts`) so day/month ticks fall on local midnight. MCX front month rolls by volume (`rollByVolume`: next contract once it out-trades the nearest; checked hourly via TradingView dated-contract volumes).
 
 Env lives in root `.env`; Bun apps load it with `--env-file=../../.env`, Vite via `envDir`. Apps must keep working with Docker and native infra — never hardcode container hostnames.
