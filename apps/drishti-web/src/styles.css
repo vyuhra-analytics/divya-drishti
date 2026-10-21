@@ -403,3 +403,27 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .toast b { color: var(--accent); }
 
 .adv-chart { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+
+.brief { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.brief-note { font-size: 11px; margin-left: 8px; }
+.brief-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px 12px; font-size: 12px; }
+.brief-body h2 { margin: 12px 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.brief-body ul { margin: 0; padding-left: 16px; }
+.brief-body li { margin: 3px 0; }
+.brief-error { margin: 4px 0 8px; }
+.brief-head { display: flex; align-items: center; gap: 10px; }
+.brief-time { margin-left: auto; font-size: 11px; }
+.brief-bias { padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: .4px; border-radius: 3px; border: 1px solid var(--line); text-transform: uppercase; }
+.brief-bias.bullish { color: var(--up); border-color: color-mix(in srgb, var(--up) 50%, transparent); }
+.brief-bias.bearish { color: var(--down); border-color: color-mix(in srgb, var(--down) 50%, transparent); }
+.brief-summary { margin: 8px 0; font-size: 13px; line-height: 1.4; }
+.brief-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .brief-cols { grid-template-columns: 1fr; } }
+.brief-col.bull h2 { color: var(--up); }
+.brief-col.bear h2 { color: var(--down); }
+.brief-foot { margin-top: 12px; font-size: 11px; }
+.brief-journal { margin-top: 16px; }
+.journal-row { display: grid; grid-template-columns: 1fr auto auto 1.3fr; gap: 8px; align-items: center; width: 100%; padding: 4px 0; text-align: left; border-bottom: 1px solid var(--line); font-size: 11px; }
+.journal-row.active { background: var(--hover); }
+.journal-score { text-align: right; }
+.linklike { color: var(--muted); font-size: 10px; text-decoration: underline; margin-left: 6px; }

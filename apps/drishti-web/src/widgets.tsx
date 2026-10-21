@@ -8,6 +8,7 @@ import { InsiderWidget } from "./InsiderPanel";
 import { CalendarWidget } from "./CalendarPanel";
 import { AlertsWidget } from "./AlertsPanel";
 import { AdvancedChartWidget } from "./AdvancedChart";
+import { BriefingWidget } from "./BriefingPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -291,4 +292,5 @@ export const WIDGETS: Record<
   calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
   advchart: { title: "Advanced Chart", component: AdvancedChartWidget, linked: true, showSymbol: true },
+  briefing: { title: "AI Briefing", component: BriefingWidget, linked: true, showSymbol: true },
 };

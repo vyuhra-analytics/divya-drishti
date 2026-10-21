@@ -290,3 +290,4 @@ export * from "./options";
 export * from "./insider";
 export * from "./calendar";
 export * from "./alerts";
+export * from "./briefing";

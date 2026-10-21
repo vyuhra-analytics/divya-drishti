@@ -7,6 +7,7 @@ import { SessionsController } from "./sessions.controller";
 import { OptionsController } from "./options.controller";
 import { InsiderController } from "./insider.controller";
 import { CalendarController } from "./calendar.controller";
+import { BriefingController } from "./briefing.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController], providers: [Db] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController], providers: [Db] })
 export class AppModule {}
