@@ -13,6 +13,8 @@ interface MarketState {
   news: NewsItem[];
   /** +1 on every (re)connect: charts re-fetch history so candles missed while disconnected get filled */
   epoch: number;
+  /** per symbol: when the server last heard from its active source (heartbeat), for STALE detection */
+  seen: Record<string, number>;
 }
 
 export const useStore = create<MarketState>()(() => ({
@@ -21,6 +23,7 @@ export const useStore = create<MarketState>()(() => ({
   prev: {},
   news: [],
   epoch: 0,
+  seen: {},
 }));
 
 // The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
@@ -44,13 +47,15 @@ export function connectStream() {
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb" } = JSON.parse(e.data);
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number> } = JSON.parse(e.data);
     if ("type" in msg) {
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
+      if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));
       return;
     }
     const q = msg;
     useStore.setState((s) => ({
+      seen: { ...s.seen, [q.symbol]: Date.now() },
       quotes: { ...s.quotes, [q.symbol]: q },
       prev: { ...s.prev, [q.symbol]: s.quotes[q.symbol]?.price ?? q.price },
     }));

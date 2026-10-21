@@ -111,14 +111,25 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .group-dot.green { background: var(--g-green); border-color: var(--g-green); }
 .group-dot.red { background: var(--g-red); border-color: var(--g-red); }
 
-.toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
 .tf { padding: 2px 8px; color: var(--muted); border-radius: 4px; }
 .tf:hover { color: var(--text); }
 .tf.active { color: var(--on-accent); background: var(--accent); font-weight: 700; }
-.chart-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
-.chart { flex: 1; min-height: 0; }
+.chart-wrap { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
+.chart { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .chart-legend { position: absolute; left: 8px; top: 4px; z-index: 2; display: flex; flex-wrap: wrap; gap: 2px 12px; max-width: calc(100% - 80px); padding: 2px 6px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); border-radius: 4px; pointer-events: none; }
 .chart-legend b { font-weight: 600; color: var(--text); }
+.statusbar { display: flex; align-items: center; gap: 14px; height: 24px; flex: none; padding: 0 12px; font-size: 11px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
+.statusbar b { font-weight: 600; color: var(--text); }
+.sb-item { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.sb-sep { flex: none; width: 1px; height: 12px; background: var(--line); }
+.sb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.sb-dot.open { background: var(--up); }
+.sb-dot.closed { background: var(--muted); }
+.sb-dot.stale { background: var(--g-amber); }
+.badge.closed { color: var(--muted); }
+.badge.stale { color: var(--down); border-color: color-mix(in srgb, var(--down) 50%, transparent); }
+.not-live { opacity: 0.55; }
 .chart-legend b.up { color: var(--up); }
 .chart-legend b.down { color: var(--down); }
 .toolbar .tf { white-space: nowrap; }

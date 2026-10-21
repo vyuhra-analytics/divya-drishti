@@ -46,6 +46,19 @@ const stats: Partial<Record<Source, ProviderStats>> = DEMO ? { demo: demoStats }
 const lastSeen = new Map<string, Partial<Record<Source, number>>>();
 const latest = new Map<string, Quote>();
 const active = new Map<string, Source>();
+
+/**
+ * Heartbeat + freshness: when each symbol's active source was last heard from (any poll/feed message, even with
+ * no price change). Clients can't infer this themselves: unchanged prices aren't re-sent.
+ */
+const heartbeat = () => {
+  const seen: Record<string, number> = {};
+  for (const [symbol, src] of active) {
+    const at = lastSeen.get(symbol)?.[src];
+    if (at) seen[symbol] = at;
+  }
+  return JSON.stringify({ type: "hb", t: Date.now(), seen });
+};
 let buffer: Tick[] = [];
 
 function accept(q: Quote) {
@@ -142,6 +155,7 @@ const app = new Elysia()
     },
     open(ws) {
       ws.subscribe("hb");
+      ws.send(heartbeat()); // freshness known immediately, not after the first 15 s tick
     },
     message(ws, raw) {
       if (!wsLimiter.take(ws.id)) return ws.close(1008, "rate limit");
@@ -170,7 +184,7 @@ const app = new Elysia()
   })
   .listen({ port: PORT, hostname: HOST });
 
-setInterval(() => app.server?.publish("hb", JSON.stringify({ type: "hb", t: Date.now() })), HEARTBEAT_MS);
+setInterval(() => app.server?.publish("hb", heartbeat()), HEARTBEAT_MS);
 
 if (DEMO) {
   startDemo(accept);

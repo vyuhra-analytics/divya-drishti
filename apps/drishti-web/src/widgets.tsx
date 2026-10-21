@@ -2,6 +2,7 @@ import { instrument, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@dr
 import type { ComponentType } from "react";
 import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
+import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
 import { useClock, useFormat, useSettings } from "./settings";
@@ -27,10 +28,12 @@ export function Price({ symbol }: { symbol: string }) {
   const prev = useStore((s) => s.prev[symbol]);
   const flash = useSettings((s) => s.flash);
   const fmt = useFormat(symbol);
+  const fresh = useFreshness(symbol);
   if (price === undefined) return <span className="muted">—</span>;
   const dir = price > prev ? "up" : price < prev ? "down" : "";
+  const cls = [flash && dir ? `${dir} flash-${dir}` : dir, fresh !== "live" && "not-live"].filter(Boolean).join(" ");
   return (
-    <span key={flash ? price : undefined} className={flash && dir ? `${dir} flash-${dir}` : dir}>
+    <span key={flash ? price : undefined} className={cls} title={fresh === "live" ? undefined : fresh === "closed" ? "Market closed: last price" : "No update from the feed for over a minute"}>
       {fmt.price(price)}
     </span>
   );
@@ -40,9 +43,20 @@ export function Price({ symbol }: { symbol: string }) {
 export function SourceBadge({ symbol }: { symbol: string }) {
   const source = useStore((s) => s.quotes[symbol]?.source);
   const delayedBy = useStore((s) => s.quotes[symbol]?.delayedBy ?? 0);
+  const fresh = useFreshness(symbol);
   if (!source) return null;
   return (
     <span className="badges">
+      {fresh === "closed" && (
+        <span className="badge closed" title="Exchange closed: showing the last price">
+          CLOSED
+        </span>
+      )}
+      {fresh === "stale" && (
+        <span className="badge stale" title="Market open, but no update from the feed for over a minute">
+          STALE
+        </span>
+      )}
       <span className={`badge src-${source}`} title={`Source: ${source}`}>
         {SOURCE_LABEL[source]}
       </span>

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { SYMBOLS } from "@drishti/shared";
 import { Palette } from "./Palette";
 import { SettingsDialog } from "./SettingsDialog";
+import { StatusBar } from "./StatusBar";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
 import { Price, WIDGETS } from "./widgets";
@@ -54,6 +55,7 @@ export function App() {
       </header>
       <Workspace />
       {paletteOpen && <Palette />}
+      <StatusBar />
       <SettingsDialog />
     </div>
   );
