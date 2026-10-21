@@ -186,3 +186,26 @@ test("OptionsWidget lets you pick the feed and says which one built the chain", 
   expect(await screen.findByText("TV")).toBeTruthy();
   expect(urls.some((u) => u.includes("source=tradingview"))).toBe(true);
 });
+
+test("CotWidget shows managed-money positioning, its change and rank, and switches market", async () => {
+  const g = (long: number, short: number, cl = 0, cs = 0) => ({ long, short, net: long - short, changeLong: cl, changeShort: cs });
+  const row = (i: number, net: number) => ({
+    date: Date.UTC(2026, 0, 6 + i * 7), openInterest: 1_000_000,
+    managedMoney: { ...g(200_000 + net, 200_000, 8_000, -2_000), spread: 5 }, producers: g(300, 200), swapDealers: g(100, 50), otherReportable: g(10, 20), nonReportable: g(5, 5),
+  });
+  const history = Array.from({ length: 40 }, (_, i) => row(i, i * 1000));
+  const urls: string[] = [];
+  globalThis.fetch = mock(async (url: string) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ rows: history }) };
+  }) as never;
+  const { CotWidget } = require("./CotPanel") as typeof import("./CotPanel");
+  render(<CotWidget widget={widget("cot")} />);
+  expect(await screen.findByText(/Managed money net/)).toBeTruthy();
+  expect(document.body.textContent).toContain("+39,000"); // last row: net 39,000
+  expect(document.body.textContent).toContain("+10,000 this week"); // 8,000 long change minus -2,000 short change
+  expect(document.body.textContent).toContain("100th percentile"); // the newest row is the highest of the history
+  fireEvent.click(screen.getByText("Nat gas"));
+  await screen.findByText(/Managed money net/);
+  expect(urls.some((u) => u.includes("market=natgas"))).toBe(true);
+});
