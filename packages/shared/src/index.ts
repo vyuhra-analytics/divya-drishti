@@ -282,3 +282,4 @@ export function daysToExpiry(contract: string | undefined, now: number): number 
 }
 export * from "./universe";
 export * from "./options";
+export * from "./insider";
