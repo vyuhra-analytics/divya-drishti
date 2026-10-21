@@ -15,12 +15,14 @@ type Spec = [string, WidgetType, Group | null, string, Timeframe, number, number
 
 const GROUPS = { amber: "MCX:CRUDEOIL", blue: "NYMEX:CL", green: "MCX:NATURALGAS", red: "NYMEX:NG" } as const;
 
-function snapshot(specs: Spec[], groups: Partial<Record<Group, string>> = {}): Snapshot {
+/** Widget ids are prefixed with the desk key: panels keep saved state (drawings, indicators) under their id, and two desks must not share it. */
+function snapshot(desk: string, specs: Spec[], groups: Partial<Record<Group, string>> = {}): Snapshot {
+  const id = (raw: string) => `${desk}-${raw}`;
   return {
-    widgets: specs.map(([id, type, group, symbol, tf]) => ({ id, type, group, symbol, tf })),
-    layout: specs.map(([i, , , , , x, y, w, h]) => ({ i, x, y, w, h })),
+    widgets: specs.map(([raw, type, group, symbol, tf]) => ({ id: id(raw), type, group, symbol, tf })),
+    layout: specs.map(([raw, , , , , x, y, w, h]) => ({ i: id(raw), x, y, w, h })),
     groups: { ...GROUPS, ...groups },
-    focusedId: specs[0][0],
+    focusedId: id(specs[0][0]),
   };
 }
 
@@ -38,7 +40,7 @@ export const PRESETS: Preset[] = [
     name: "MCX crude",
     hint: "Chart, quote and watchlist on top; news and calendar below",
     build: () =>
-      snapshot([
+      snapshot("crude", [
         ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 16],
         ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 9],
         ["watch-1", "watchlist", "amber", "MCX:CRUDEOIL", "5m", 8, 9, 4, 7],
@@ -51,7 +53,7 @@ export const PRESETS: Preset[] = [
     name: "Natural gas",
     hint: "MCX and Henry Hub charts side by side, with gas news and the EIA storage report",
     build: () =>
-      snapshot([
+      snapshot("gas", [
         ["chart-1", "advchart", "green", "MCX:NATURALGAS", "5m", 0, 0, 6, 12],
         ["chart-2", "advchart", "red", "NYMEX:NG", "5m", 6, 0, 6, 12],
         ["quote-1", "quote", "green", "MCX:NATURALGAS", "5m", 0, 12, 4, 10],
@@ -64,7 +66,7 @@ export const PRESETS: Preset[] = [
     name: "Options",
     hint: "Options chain beside its underlying chart and quote",
     build: () =>
-      snapshot([
+      snapshot("options", [
         ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 5, 12],
         ["options-1", "options", "amber", "MCX:CRUDEOIL", "5m", 5, 0, 7, 14],
         ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 0, 12, 5, 10],
@@ -75,7 +77,7 @@ export const PRESETS: Preset[] = [
     name: "Research",
     hint: "Energy heatmap and screener, news and the calendar",
     build: () =>
-      snapshot([
+      snapshot("research", [
         ["heat-1", "heatmap", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 12],
         ["screen-1", "screener", null, "MCX:CRUDEOIL", "5m", 6, 0, 6, 12],
         ["news-1", "news", null, "MCX:CRUDEOIL", "5m", 0, 12, 6, 10],
@@ -87,7 +89,7 @@ export const PRESETS: Preset[] = [
     name: "Live watch",
     hint: "Live TV and news over a crude chart",
     build: () =>
-      snapshot([
+      snapshot("watch", [
         ["tv-1", "tv", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 10],
         ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 10],
         ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 10, 12, 10],

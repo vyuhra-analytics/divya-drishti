@@ -3,6 +3,7 @@ import { instrument, type Bar } from "@drishti/shared";
 import type { Widget as OaWidget } from "openalgo-charts/widget";
 import type { ReplayController, ReplayState } from "openalgo-charts";
 import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
+import { advStorage } from "./advStorage";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -10,6 +11,17 @@ const SPEEDS = [1, 2, 5, 10, 25];
 const REPLAY_BARS = 150; // replay starts this many bars before the end of the stored history
 const BAR_MS = 800; // wall-clock per bar at 1x
 
+/**
+ * The view a freshly loaded chart should have: the last ~60 bars plus a little room. A restored or half-loaded chart can be
+ * left looking at indexes that don't exist (the viewport of a 3,600-bar history applied to the 175 bars actually loaded) and
+ * draws nothing. Returns the range to apply, or null when the current one is fine.
+ */
+export function healedRange(range: { from: number; to: number } | null, bars: number): { from: number; to: number } | null {
+  if (bars < 2 || !range) return null;
+  const sane = range.to >= bars - 3 && range.from <= bars + 5; // the latest bars are in view
+  return sane ? null : { from: Math.max(0, bars - 60), to: bars + 3 };
+}
+const SETTLE_MS = 8000; // after (re)creation and after a symbol or interval change the view is checked this long
 const stored = async (symbol: string, tf: string): Promise<Bar[]> => {
   const res = await fetch(`${apiUrl()}/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}&source=db`);
   return res.ok ? ((await res.json()) as Bar[]) : [];
@@ -27,6 +39,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
   const host = useRef<HTMLDivElement>(null);
   const oa = useRef<OaWidget | null>(null);
   const replay = useRef<ReplayController | null>(null);
+  const settleUntil = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [replayState, setReplayState] = useState<ReplayState | null>(null);
   const [replayBusy, setReplayBusy] = useState(false);
@@ -49,9 +62,13 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           intervals: ADV_INTERVALS,
           theme: first.current.theme,
           mobile: "auto",
-          persist: `drishti-adv-${widget.id}`, // drawings, indicators and layout survive reloads
+          persist: `drishti-adv-${widget.id}`, // drawings, indicators and layout survive reloads; the view does not (advStorage)
+          storage: advStorage(first.current.symbol, instrument(first.current.symbol)?.exchange ?? "MCX"),
+          branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
         });
         oa.current = created;
+        settleUntil.current = Date.now() + SETTLE_MS;
+        if (import.meta.env.DEV) ((window as unknown as { __adv?: Record<string, OaWidget> }).__adv ??= {})[widget.id] = created; // dev-only handle for debugging in the console
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -67,6 +84,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
     const w = oa.current;
     if (w && !w.isDestroyed && w.symbol() !== symbol) {
       stopReplay();
+      settleUntil.current = Date.now() + SETTLE_MS;
       w.setSymbol(symbol, instrument(symbol)?.exchange);
     }
   }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -75,9 +93,27 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
     if (w && !w.isDestroyed && w.theme() !== theme) w.setTheme(theme);
   }, [theme]);
 
+  // while a chart is settling, put the view back on the latest bars if it was left pointing at nothing
+  useEffect(() => {
+    let interval = "";
+    const id = setInterval(() => {
+      const w = oa.current;
+      if (!w || w.isDestroyed || replay.current) return;
+      if (w.interval() !== interval) {
+        if (interval) settleUntil.current = Date.now() + SETTLE_MS; // the user (or the library) changed the interval
+        interval = w.interval();
+      }
+      if (Date.now() > settleUntil.current) return;
+      const fix = healedRange(w.chart.getVisibleLogicalRange(), w.series.getData().length);
+      if (fix) w.chart.setVisibleLogicalRange(fix);
+    }, 700);
+    return () => clearInterval(id);
+  }, []);
+
   function stopReplay() {
     replay.current?.stop(); // puts the full history and the viewport back
     replay.current = null;
+    settleUntil.current = Date.now() + SETTLE_MS;
     setReplayState(null);
   }
 
@@ -100,7 +136,11 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
         ...(sub.length ? { subBars: sub } : {}),
         startIndex: Math.max(0, bars.length - REPLAY_BARS),
         barMs: BAR_MS,
-        onFrame: setReplayState,
+        onFrame: (st) => {
+          setReplayState(st);
+          // at the last bar there is nothing left to play: show Play again, not Pause
+          if (st.playing && st.index >= st.total - 1 && st.subIndex >= st.subSteps - 1) replay.current?.pause();
+        },
       });
       replay.current = rc;
       setReplayState(rc.state());

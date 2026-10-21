@@ -33,11 +33,11 @@ test("saved workspaces round-trip, are copies, and can be deleted", () => {
   expect(ws.saveWorkspace("  My   desk ")).toBe(true);
   expect(Object.keys(useWorkspace.getState().saved)).toEqual(["My desk"]);
 
-  useWorkspace.getState().removeWidget("chart-1"); // editing the live layout must not touch the stored one
-  expect(useWorkspace.getState().saved["My desk"].widgets.some((w) => w.id === "chart-1")).toBe(true);
+  useWorkspace.getState().removeWidget("crude-chart-1"); // editing the live layout must not touch the stored one
+  expect(useWorkspace.getState().saved["My desk"].widgets.some((w) => w.id === "crude-chart-1")).toBe(true);
 
   useWorkspace.getState().loadWorkspace("saved:My desk");
-  expect(useWorkspace.getState().widgets.some((w) => w.id === "chart-1")).toBe(true);
+  expect(useWorkspace.getState().widgets.some((w) => w.id === "crude-chart-1")).toBe(true);
   expect(workspaceList(useWorkspace.getState().saved).map((w) => w.name).slice(-1)).toEqual(["My desk"]);
 
   useWorkspace.getState().deleteWorkspace("My desk");
