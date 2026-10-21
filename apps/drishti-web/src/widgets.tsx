@@ -18,6 +18,7 @@ import { RecapWidget } from "./RecapPanel";
 import { CostsWidget } from "./CostsPanel";
 import { BacktestWidget } from "./BacktestPanel";
 import { PaperWidget } from "./PaperPanel";
+import { QualityWidget } from "./QualityPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -311,4 +312,5 @@ export const WIDGETS: Record<
   costs: { title: "Costs and size", component: CostsWidget, linked: true, showSymbol: true },
   backtest: { title: "Strategy tester", component: BacktestWidget, linked: true, showSymbol: true },
   paper: { title: "Paper trading", component: PaperWidget, linked: true, showSymbol: true },
+  quality: { title: "Data quality", component: QualityWidget, linked: false, showSymbol: false },
 };

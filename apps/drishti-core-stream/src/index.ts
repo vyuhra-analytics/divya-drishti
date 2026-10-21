@@ -17,6 +17,7 @@ import {
   type ClientMessage,
   type Instrument,
   type Quote,
+  type SourcePrices,
   type Source,
   type Tick,
 } from "@drishti/shared";
@@ -70,6 +71,7 @@ const heartbeat = () => {
 };
 let buffer: Tick[] = [];
 
+const lastPrice = new Map<string, SourcePrices>();
 const rejected = { count: 0, last: undefined as undefined | { symbol: string; source: string; reason: string; at: number } };
 
 function accept(q: Quote) {
@@ -84,6 +86,10 @@ function accept(q: Quote) {
     return;
   }
   const now = Date.now();
+  // every source's latest price, active or not: the data-quality console compares them (shared `agreement`)
+  const bySource = lastPrice.get(q.symbol) ?? {};
+  bySource[q.source] = { price: q.price, at: now, delayedBy: q.delayedBy };
+  lastPrice.set(q.symbol, bySource);
   const seen = lastSeen.get(q.symbol) ?? {};
   seen[q.source] = now;
   lastSeen.set(q.symbol, seen);
@@ -205,6 +211,7 @@ const app = new Elysia()
       feed: DEMO ? "demo" : "live",
       providers: stats,
       rejected,
+      prices: Object.fromEntries(lastPrice),
       active: Object.fromEntries(active),
       mcxPrimary: mcxPrimary ?? "auto",
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),

@@ -17,7 +17,7 @@ interface UpstoxStatus {
 }
 
 /** Poll a JSON endpoint while mounted (Settings dialog open). */
-function usePoll<T>(url: string, ms: number) {
+export function usePoll<T>(url: string, ms: number) {
   const [data, setData] = useState<T | null>(null);
   useEffect(() => {
     let alive = true;

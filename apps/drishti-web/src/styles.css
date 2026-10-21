@@ -564,3 +564,17 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .paper-note-text { margin: 10px 0 0; font-size: 11px; }
 .paper details { margin: 10px 0; }
 .paper summary { cursor: pointer; color: var(--muted); }
+.dq { height: 100%; min-height: 0; }
+.dq-body { height: 100%; overflow: auto; padding: 8px 12px 12px; font-size: 12px; }
+.dq-body h2 { margin: 12px 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.dq-body h2:first-child { margin-top: 0; }
+.dq table { width: 100%; border-collapse: collapse; }
+.dq th { text-align: left; font-weight: 600; font-size: 11px; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.dq td { padding: 3px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.dq-err { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dq-note { margin: 6px 0 0; font-size: 11px; }
+.dq-dots { display: inline-flex; gap: 2px; }
+.dq-dots i { width: 6px; height: 10px; border-radius: 1px; background: var(--muted); display: block; }
+.dq-dots i.dq-ok { background: var(--up); }
+.dq-dots i.dq-bad { background: var(--down); }
+.dq-dots i.dq-skip { background: var(--muted); opacity: .4; }
