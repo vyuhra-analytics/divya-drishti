@@ -15,6 +15,7 @@ import { CurveWidget } from "./CurvePanel";
 import { JodiWidget } from "./JodiPanel";
 import { EiaWidget } from "./EiaPanel";
 import { RecapWidget } from "./RecapPanel";
+import { CostsWidget } from "./CostsPanel";
 import { useFreshness } from "./market";
 import { NewsWidget } from "./NewsWidget";
 import { useStore } from "./store";
@@ -305,4 +306,5 @@ export const WIDGETS: Record<
   jodi: { title: "JODI oil balance", component: JodiWidget, linked: false, showSymbol: false },
   eia: { title: "EIA petroleum data", component: EiaWidget, linked: false, showSymbol: false },
   recap: { title: "Energy recap", component: RecapWidget, linked: true, showSymbol: true },
+  costs: { title: "Costs and size", component: CostsWidget, linked: true, showSymbol: true },
 };
