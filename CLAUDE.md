@@ -12,7 +12,7 @@ Divya Drishti — personal Bloomberg-style market terminal, built incrementally.
 - Dev (stream + api + web via Turborepo): `bun run dev`
 - Desktop (needs web dev server running): `bun run desktop`
 - Typecheck all: `bun run typecheck`
-- Tests (bun:test, whole repo; web component tests use happy-dom + Testing Library via `bunfig.toml` preload `apps/drishti-web/test/setup.ts`): `bun test`
+- Tests (bun:test, whole repo; web component tests use happy-dom + Testing Library via `bunfig.toml` preload `apps/drishti-web/test/setup.ts`; the chart and live-TV tests fake `lightweight-charts` / `hls.js/light` with `mock.module`): `bun test`
 - Single test file: `bun test packages/shared/src/markets.test.ts`
 - Simulated prices (offline/weekends): `FEED=demo` in `.env`
 - Infra via Docker: `bun run infra:up` / `bun run infra:down`
