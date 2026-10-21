@@ -20,7 +20,7 @@ const toOa = (b: Bar): OaBar => ({ time: b.time, open: b.open, high: b.high, low
  * Our data behind openalgo-charts' DataFeed: history from the API's /bars (provider history, written through to
  * Timescale) and live candles built from the same quote stream our own chart uses.
  */
-export function ourFeed(): DataFeed {
+export function ourFeed(isPaused: () => boolean = () => false): DataFeed {
   // newest bar per symbol+timeframe, seeded by history and advanced by live ticks (the stream's volume deltas need the previous quote)
   const last = new Map<string, Bar>();
   const key = (symbol: string, tf: Timeframe) => `${symbol}|${tf}`;
@@ -59,7 +59,7 @@ export function ourFeed(): DataFeed {
         const bar = applyTick(prev, tick, TIMEFRAMES[tf], tz ? tzOffsetSec(tz, tick.time) : 0);
         if (bar === prev) return;
         last.set(key(req.symbol, tf), bar);
-        onBar(toOa(bar));
+        if (!isPaused()) onBar(toOa(bar)); // during replay the chart shows the past: live candles are still tracked, not drawn
       });
     },
   };

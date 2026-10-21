@@ -1,5 +1,5 @@
 import { beforeEach, expect, mock, test } from "bun:test";
-import { ema as oaEma, rsi as oaRsi } from "openalgo-charts";
+import { ReplayController, ema as oaEma, rsi as oaRsi } from "openalgo-charts";
 import { ema, rsi, type Bar } from "@drishti/shared";
 import { ourFeed, timeframeOf } from "./advFeed";
 import { useStore } from "./store";
@@ -67,4 +67,44 @@ test("overlapping history requests for the same window share one fetch", async (
   expect(calls.length - before).toBe(1);
   await feed.getBars(req); // after it settled, a new request is allowed
   expect(calls.length - before).toBe(2);
+});
+
+test("live candles are tracked but not drawn while the feed is paused (replay)", async () => {
+  let paused = false;
+  const feed = ourFeed(() => paused);
+  await feed.getBars({ symbol: "MCX:CRUDEOIL", exchange: "MCX", interval: "1m" });
+  const seen: number[] = [];
+  const stop = feed.subscribeBars!({ symbol: "MCX:CRUDEOIL", exchange: "MCX", interval: "1m" }, (b) => seen.push(b.close));
+  const q = (price: number, atSec: number) => ({ "MCX:CRUDEOIL": { symbol: "MCX:CRUDEOIL", price, time: atSec * 1000, volume: 1, delayedBy: 0, source: "upstox" } as never });
+  const lastBar = bars[bars.length - 1];
+  paused = true;
+  useStore.setState({ quotes: q(9201, lastBar.time + 10) });
+  paused = false;
+  useStore.setState({ quotes: q(9202, lastBar.time + 20) });
+  stop();
+  expect(seen).toEqual([9202]);
+});
+
+test("replay over stored candles: every bar plays back exactly as stored, forming from 1m sub-bars, and stop restores the chart", () => {
+  const five: Bar[] = Array.from({ length: 12 }, (_, i) => ({ time: T0 + i * 300, open: 9000 + i, high: 9010 + i, low: 8990 + i, close: 9005 + i, volume: 500 }));
+  // five 1m bars per 5m bar that stay inside it and open/close like it
+  const one: Bar[] = five.flatMap((b) =>
+    Array.from({ length: 5 }, (_, k) => ({ time: b.time + k * 60, open: k === 0 ? b.open : b.close - 1, high: k === 0 ? b.high : b.close, low: k === 4 ? b.low : b.close - 3, close: k === 4 ? b.close : b.close - 1, volume: 100 })),
+  );
+  let shown: { time: number }[] = [];
+  const series: any = { setData: (d: any[]) => (shown = d), update: (b: any) => (shown = [...shown.slice(0, -1), b]), getData: () => five, applyOptions() {}, remove() {}, priceScale: () => ({}) };
+  const host: any = { emit() {}, timeScale: { barSpacing: 6, rightOffset: 0, setBarSpacing() {}, setRightOffset() {} }, primarySeries: () => series, on: () => () => {} };
+  const rc = new ReplayController(host, { bars: five, subBars: one, series, startIndex: 0, barMs: 1 });
+  const closed: any[] = [];
+  for (let i = 0; i < 200; i++) {
+    rc.step();
+    const st = rc.state();
+    if (st.subIndex >= st.subSteps - 1) closed.push(shown[shown.length - 1]);
+    if (st.index >= st.total - 1 && st.subIndex >= st.subSteps - 1) break;
+  }
+  expect(new Set(closed.map((c) => c.time)).size).toBeGreaterThanOrEqual(11); // all but the bar it opened on
+  expect(closed[closed.length - 1].time).toBe(five[five.length - 1].time); // ends on the last stored bar
+  for (const c of closed) expect(c).toMatchObject(five.find((b) => b.time === c.time)!); // identical to the stored bar
+  rc.stop();
+  expect(shown).toHaveLength(12);
 });

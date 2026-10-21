@@ -1,20 +1,36 @@
 import { useEffect, useRef, useState } from "react";
-import { instrument } from "@drishti/shared";
+import { instrument, type Bar } from "@drishti/shared";
 import type { Widget as OaWidget } from "openalgo-charts/widget";
-import { ADV_INTERVALS, ourFeed } from "./advFeed";
-import { useSettings } from "./settings";
+import type { ReplayController, ReplayState } from "openalgo-charts";
+import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
+import { apiUrl, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
+const SPEEDS = [1, 2, 5, 10, 25];
+const REPLAY_BARS = 150; // replay starts this many bars before the end of the stored history
+const BAR_MS = 800; // wall-clock per bar at 1x
+
+const stored = async (symbol: string, tf: string): Promise<Bar[]> => {
+  const res = await fetch(`${apiUrl()}/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}&source=db`);
+  return res.ok ? ((await res.json()) as Bar[]) : [];
+};
+
 /**
- * Advanced chart: openalgo-charts' full terminal (drawing tools, 100+ indicators, replay, chart types such as Heikin Ashi)
- * running on our history and live feed. Loaded on first use (a separate ~0.4 MB chunk); the standard Chart stays the default.
+ * Advanced chart: openalgo-charts' full terminal (drawing tools, 100+ indicators, chart types such as Heikin Ashi)
+ * running on our history and live feed, with a replay mode over the candles stored in our own database.
+ * Loaded on first use (separate chunks); the Simple Chart stays available.
  */
 export function AdvancedChartWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const theme = useSettings((s) => s.theme);
+  const clock = useClock();
   const host = useRef<HTMLDivElement>(null);
   const oa = useRef<OaWidget | null>(null);
+  const replay = useRef<ReplayController | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [replayState, setReplayState] = useState<ReplayState | null>(null);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayNote, setReplayNote] = useState<string | null>(null);
   // the widget is created once; later symbol/theme changes go through its API (refs hold the values it was created with)
   const first = useRef({ symbol, theme });
   first.current = { symbol, theme };
@@ -26,7 +42,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
       .then(([{ createWidget }]) => {
         if (cancelled || !host.current) return;
         created = createWidget(host.current, {
-          feed: ourFeed(),
+          feed: ourFeed(() => replay.current !== null),
           symbol: first.current.symbol,
           exchange: instrument(first.current.symbol)?.exchange ?? "MCX",
           interval: widget.tf === "1d" ? "1D" : widget.tf,
@@ -40,6 +56,8 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
+      replay.current?.stop();
+      replay.current = null;
       oa.current = null;
       created?.destroy();
     };
@@ -47,13 +65,93 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
 
   useEffect(() => {
     const w = oa.current;
-    if (w && !w.isDestroyed && w.symbol() !== symbol) w.setSymbol(symbol, instrument(symbol)?.exchange);
-  }, [symbol]);
+    if (w && !w.isDestroyed && w.symbol() !== symbol) {
+      stopReplay();
+      w.setSymbol(symbol, instrument(symbol)?.exchange);
+    }
+  }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const w = oa.current;
     if (w && !w.isDestroyed && w.theme() !== theme) w.setTheme(theme);
   }, [theme]);
 
+  function stopReplay() {
+    replay.current?.stop(); // puts the full history and the viewport back
+    replay.current = null;
+    setReplayState(null);
+  }
+
+  async function startReplay() {
+    const w = oa.current;
+    if (!w || w.isDestroyed) return;
+    setReplayBusy(true);
+    setReplayNote(null);
+    try {
+      const tf = timeframeOf(w.interval());
+      if (!tf) throw new Error("Pick 1m, 5m, 15m, 1h or 1D to replay");
+      const bars = await stored(w.symbol(), tf);
+      if (bars.length < 20) throw new Error(`Only ${bars.length} stored ${tf} candles for ${w.symbol()}: replay needs a longer stored history`);
+      // finer stored candles (1m under a 5m chart) make each bar form step by step like a live one
+      const sub = tf === "5m" || tf === "15m" ? await stored(w.symbol(), "1m") : [];
+      const { ReplayController } = await import("openalgo-charts");
+      const rc = new ReplayController(w.chart, {
+        series: w.series,
+        bars,
+        ...(sub.length ? { subBars: sub } : {}),
+        startIndex: Math.max(0, bars.length - REPLAY_BARS),
+        barMs: BAR_MS,
+        onFrame: setReplayState,
+      });
+      replay.current = rc;
+      setReplayState(rc.state());
+      setReplayNote(sub.length ? `Stored ${tf} candles, formed from stored 1m candles` : `Stored ${tf} candles`);
+    } catch (e) {
+      setReplayNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReplayBusy(false);
+    }
+  }
+
   if (error) return <p className="empty muted">Advanced chart failed to load: {error}</p>;
-  return <div ref={host} className="adv-chart no-drag" />;
+  const rs = replayState;
+  const rc = replay.current;
+  return (
+    <div className="adv-wrap">
+      <div className="adv-replay no-drag">
+        {!rs ? (
+          <button className="btn" onClick={startReplay} disabled={replayBusy} title="Replay the stored candles from our database, bar by bar">
+            {replayBusy ? "Loading…" : "⏮ Replay"}
+          </button>
+        ) : (
+          <>
+            <button className="btn" aria-label={rs.playing ? "Pause replay" : "Play replay"} onClick={() => (rs.playing ? rc?.pause() : rc?.play({ speed: rs.speed }))}>
+              {rs.playing ? "❚❚" : "▶"}
+            </button>
+            <button className="btn" aria-label="Back one bar" onClick={() => rc?.stepBack()} disabled={rs.index <= 0}>
+              ◀
+            </button>
+            <button className="btn" aria-label="Forward one bar" onClick={() => rc?.step()} disabled={rs.index >= rs.total - 1}>
+              ▶|
+            </button>
+            <select aria-label="Replay speed" value={rs.speed} onChange={(e) => (rs.playing ? rc?.play({ speed: Number(e.target.value) }) : setReplayState({ ...rs, speed: Number(e.target.value) }))}>
+              {SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
+            <span className="muted adv-replay-pos">
+              bar {rs.index + 1} / {rs.total}
+              {rs.bar ? ` · ${clock.stamp(rs.bar.time * 1000)}` : ""}
+            </span>
+            <button className="btn" onClick={stopReplay}>
+              Stop · back to live
+            </button>
+          </>
+        )}
+        {replayNote && <span className="muted adv-replay-note">{replayNote}</span>}
+      </div>
+      <div ref={host} className="adv-chart no-drag" />
+    </div>
+  );
 }

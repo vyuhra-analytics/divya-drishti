@@ -32,12 +32,15 @@ export class MarketController {
   /**
    * Chart history: provider first (fresh, deep), written through to Timescale; when the provider can't answer
    * (no Upstox login, network down) fall back to what we stored before plus candles built from our own ticks.
+   * ?source=db skips the provider and returns that stored history only (used by chart replay).
    */
   @Get("bars")
-  async bars(@Query("symbol") symbol: string, @Query("tf") tf: string = "1m"): Promise<Bar[]> {
+  async bars(@Query("symbol") symbol: string, @Query("tf") tf: string = "1m", @Query("source") source?: string): Promise<Bar[]> {
     const inst = instrument(symbol);
     if (!inst) throw new BadRequestException(`unknown symbol ${symbol}`);
     if (!(tf in TIMEFRAMES)) throw new BadRequestException(`tf must be one of ${Object.keys(TIMEFRAMES)}`);
+    // source=db: only what we have stored (replay: a fixed past, no provider call, no write-through)
+    if (source === "db") return this.fromDb(symbol, tf as Timeframe).catch(() => []);
     const key = `${symbol}|${tf}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.bars;
