@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EiaPoint, EiaSummary } from "@drishti/shared";
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import type { Widget } from "./workspace";
@@ -14,6 +14,7 @@ export function EiaWidget(_: { widget: Widget }) {
   const clockSetting = useSettings((s) => s.clock);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const missing = useRef(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -23,14 +24,18 @@ export function EiaWidget(_: { widget: Widget }) {
           const json = await res.json();
           if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
           setRows(json.series);
+          missing.current = json.series.some((r: Row) => !r.latest);
           setError(null);
         })
         .catch((e) => e.name !== "AbortError" && setError(e.message));
     load();
+    // EIA can take up to a minute for a series: while some are still missing, ask again every 5 s
     const id = setInterval(load, REFRESH_MS);
+    const fill = setInterval(() => missing.current && load(), 5_000);
     return () => {
       ctrl.abort();
       clearInterval(id);
+      clearInterval(fill);
     };
   }, []);
 

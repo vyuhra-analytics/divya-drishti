@@ -2,9 +2,31 @@ import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
 import { EIA_SERIES, parseEia, summarizeEia, type EiaSummary } from "@drishti/shared";
 
 const TTL_MS = 3600_000; // weekly data (spot prices daily): an hourly look is plenty, and keeps us far under EIA's limits
-const RETRY_MS = 5 * 60_000;
+const RETRY_MS = 5 * 60_000; // after a failed series, leave it alone this long
+const WAIT_MS = 8_000; // how long one request waits for stragglers; a slow series keeps loading and shows on the next request
 const LENGTH = { weekly: 320, daily: 400 } as const; // ~6 weekly years for the five-year average, ~1.5 daily years
-let cache: { at: number; rows: EiaSummary[] } | null = null;
+const entries = new Map<string, { at: number; summary: EiaSummary }>();
+const nextTry = new Map<string, number>();
+const inflight = new Map<string, Promise<void>>();
+
+/** EIA's routes vary from 1 s to 45 s for the same call (natural gas worst), so each series loads on its own and never blocks the others. */
+function refresh(s: (typeof EIA_SERIES)[number], key: string): Promise<void> {
+  const running = inflight.get(s.id);
+  if (running) return running;
+  const url = new URL(`https://api.eia.gov/v2/seriesid/${s.route}`);
+  url.searchParams.set("api_key", key);
+  url.searchParams.set("length", String(LENGTH[s.freq]));
+  const p = fetch(url, { signal: AbortSignal.timeout(90_000) })
+    .then(async (res) => {
+      const points = res.ok ? parseEia(await res.json().catch(() => null)) : [];
+      if (points.length) entries.set(s.id, { at: Date.now(), summary: summarizeEia(s.id, points) });
+      else nextTry.set(s.id, Date.now() + RETRY_MS);
+    })
+    .catch(() => void nextTry.set(s.id, Date.now() + RETRY_MS))
+    .finally(() => inflight.delete(s.id));
+  inflight.set(s.id, p);
+  return p;
+}
 
 /**
  * EIA Open Data v2: US crude, Cushing, gasoline, distillate and SPR stocks, refinery utilisation, product supplied and
@@ -17,32 +39,18 @@ export class EiaController {
   async eia() {
     const key = process.env.EIA_API_KEY?.trim();
     if (!key) throw new ServiceUnavailableException("Set EIA_API_KEY in .env (free key at https://www.eia.gov/opendata/)");
-    if (cache && Date.now() - cache.at < TTL_MS) return this.reply(cache.rows, cache.at);
-
-    const rows = await Promise.all(
-      EIA_SERIES.map(async (s) => {
-        const url = new URL(`https://api.eia.gov/v2/seriesid/${s.route}`);
-        url.searchParams.set("api_key", key);
-        url.searchParams.set("length", String(LENGTH[s.freq]));
-        url.searchParams.set("sort[0][column]", "period");
-        url.searchParams.set("sort[0][direction]", "desc");
-        const res = await fetch(url, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
-        const points = res?.ok ? parseEia(await res.json().catch(() => null)) : [];
-        return summarizeEia(s.id, points);
-      }),
-    );
-    if (rows.every((r) => !r.latest)) {
-      if (cache) {
-        cache = { ...cache, at: Date.now() - TTL_MS + RETRY_MS }; // EIA down or key rejected: serve the last copy, retry in 5 minutes
-        return this.reply(cache.rows, cache.at, true);
-      }
-      throw new ServiceUnavailableException("EIA returned no data (check EIA_API_KEY)");
-    }
-    cache = { at: Date.now(), rows };
-    return this.reply(rows, cache.at);
-  }
-
-  private reply(rows: EiaSummary[], at: number, stale?: boolean) {
-    return { series: EIA_SERIES.map((s) => ({ ...s, ...rows.find((r) => r.id === s.id)! })), fetchedAt: at, ...(stale ? { stale } : {}) };
+    const now = Date.now();
+    const loading = EIA_SERIES.filter((s) => {
+      const e = entries.get(s.id);
+      return (!e || now - e.at > TTL_MS) && now >= (nextTry.get(s.id) ?? 0);
+    }).map((s) => refresh(s, key));
+    if (loading.length) await Promise.race([Promise.all(loading), new Promise((r) => setTimeout(r, WAIT_MS))]);
+    if (entries.size === 0 && inflight.size === 0) throw new ServiceUnavailableException("EIA returned no data (check EIA_API_KEY)");
+    const stale = EIA_SERIES.some((s) => { const e = entries.get(s.id); return !!e && e.at < now - TTL_MS - RETRY_MS; }); // a copy we could not refresh
+    return {
+      series: EIA_SERIES.map((s) => ({ ...s, ...(entries.get(s.id)?.summary ?? { id: s.id }) })),
+      fetchedAt: Math.max(0, ...[...entries.values()].map((e) => e.at)),
+      ...(stale ? { stale } : {}),
+    };
   }
 }
