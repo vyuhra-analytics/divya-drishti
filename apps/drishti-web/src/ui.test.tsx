@@ -129,3 +129,18 @@ test("Quote and Watchlist panels render with no data and with a live quote", () 
   render(<WatchlistWidget widget={widget("watchlist")} />);
   expect(document.body.textContent).toContain("CRUDEOIL");
 });
+
+test("CalendarWidget groups events by day and filters by kind", async () => {
+  const at = Date.now() + 3600_000;
+  mockFetch([
+    { id: "e1", title: "EIA crude inventories", at, kind: "energy", impact: "high", forecast: "-1M", previous: "2M" },
+    { id: "h1", title: "MCX closed: Diwali", at: at + 86_400_000, kind: "holiday", impact: "medium" },
+  ]);
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  expect(await screen.findByText("EIA crude inventories")).toBeTruthy();
+  expect(document.body.textContent).toContain("forecast -1M");
+  fireEvent.click(screen.getByText("Holidays"));
+  expect(screen.queryByText("EIA crude inventories")).toBeNull();
+  expect(screen.getByText("MCX closed: Diwali")).toBeTruthy();
+});

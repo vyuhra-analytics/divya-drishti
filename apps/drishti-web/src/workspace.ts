@@ -5,7 +5,7 @@ import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar";
 export const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -52,6 +52,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   screener: { w: 7, h: 12 },
   options: { w: 7, h: 14 },
   insider: { w: 7, h: 12 },
+  calendar: { w: 6, h: 14 },
 };
 
 const defaults = () => ({
