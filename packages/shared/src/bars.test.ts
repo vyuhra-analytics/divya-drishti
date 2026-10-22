@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { barCloseTime, barProblem, completedBars, quoteProblem, validateBars } from "./bars";
-import type { Bar, Quote } from "./index";
+import { normalizeBars, parseUpstoxCandles, type Bar, type Quote } from "./index";
 
 const ok: Bar = { time: 1_760_000_000, open: 100, high: 105, low: 98, close: 103, volume: 10 };
 
@@ -46,4 +46,40 @@ test("a bar is available only at its close: completedBars drops the forming bar"
   expect(completedBars(bars, 300, t0 + 600).map((b) => b.time)).toEqual([t0, t0 + 300]);
   expect(completedBars(bars, 300, t0 + 10_000)).toHaveLength(3);
   expect(completedBars(bars, 300, t0)).toEqual([]);
+});
+
+// ---- open interest in candles: Upstox sends it as the seventh field of every futures and options candle
+const candles = {
+  data: {
+    candles: [
+      ["2026-10-21T23:29:00+05:30", 9197.0, 9200.0, 9194.0, 9200.0, 79, 13493], // a real futures candle: [time, o, h, l, c, volume, open interest]
+      ["2026-10-21T23:28:00+05:30", 9196.0, 9199.0, 9195.0, 9197.0, 40],
+    ],
+  },
+};
+
+test("parseUpstoxCandles keeps the open interest of a candle and leaves it out when the provider sent none", () => {
+  const bars = parseUpstoxCandles(candles);
+  expect(bars.map((b) => b.time)).toEqual([Date.parse("2026-10-21T23:28:00+05:30") / 1000, Date.parse("2026-10-21T23:29:00+05:30") / 1000]);
+  expect(bars[0]).not.toHaveProperty("oi"); // absent, not zero and not null
+  expect(bars[1].oi).toBe(13493);
+  expect(parseUpstoxCandles({ data: { candles: [["2026-10-21T23:29:00+05:30", 1, 2, 1, 2, 5, null]] } })[0]).not.toHaveProperty("oi");
+});
+
+test("normalizeBars carries the open interest through; a bar without it stays without", () => {
+  const out = normalizeBars(parseUpstoxCandles(candles), 60, "Asia/Kolkata", 0);
+  expect(out[1].oi).toBe(13493);
+  expect(out[0]).not.toHaveProperty("oi");
+});
+
+test("validateBars drops an impossible open interest from the bar but keeps the bar and its prices", () => {
+  const { bars, dropped } = validateBars([{ ...ok, oi: -5 }, { ...ok, time: ok.time + 60, oi: NaN }, { ...ok, time: ok.time + 120, oi: 0 }, { ...ok, time: ok.time + 180, oi: 13493 }, { ...ok, time: ok.time + 240 }]);
+  expect(dropped).toEqual([]);
+  expect(bars).toHaveLength(5);
+  expect(bars[0]).not.toHaveProperty("oi");
+  expect(bars[1]).not.toHaveProperty("oi");
+  expect(bars[2].oi).toBe(0); // zero is a real reading
+  expect(bars[3].oi).toBe(13493);
+  expect(bars[4]).not.toHaveProperty("oi");
+  expect(bars[0].close).toBe(103);
 });

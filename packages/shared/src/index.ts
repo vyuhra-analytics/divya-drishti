@@ -103,6 +103,8 @@ export interface Bar {
   low: number;
   close: number;
   volume: number;
+  /** open interest at the bar's close (a level, not a flow), when the provider sends it: Upstox does for futures and options, Yahoo does not */
+  oi?: number;
 }
 
 export const TIMEFRAMES = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 } as const;
@@ -126,6 +128,7 @@ export function normalizeBars(bars: Bar[], tfSeconds: number, timeZone: string, 
       low: r(b.low),
       close: r(b.close),
       volume: b.volume,
+      ...(b.oi !== undefined ? { oi: b.oi } : {}),
     })),
   );
 }
@@ -282,7 +285,7 @@ export function parseYahooCandles(json: any): Bar[] {
 export function parseUpstoxCandles(json: any): Bar[] {
   const rows: any[][] = json?.data?.candles ?? [];
   return rows
-    .map(([ts, open, high, low, close, volume]) => ({ time: Date.parse(ts) / 1000, open, high, low, close, volume: volume ?? 0 }))
+    .map(([ts, open, high, low, close, volume, oi]) => ({ time: Date.parse(ts) / 1000, open, high, low, close, volume: volume ?? 0, ...(typeof oi === "number" ? { oi } : {}) }))
     .filter((b) => Number.isFinite(b.time))
     .sort((a, b) => a.time - b.time);
 }

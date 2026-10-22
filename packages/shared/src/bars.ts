@@ -29,7 +29,7 @@ export function validateBars(bars: Bar[]): { bars: Bar[]; dropped: DroppedBar[] 
   for (const b of bars) {
     const reason = barProblem(b);
     if (reason) dropped.push({ time: b.time, reason });
-    else kept.push(b);
+    else kept.push(b.oi !== undefined && !(Number.isFinite(b.oi) && b.oi >= 0) ? (({ oi: _bad, ...rest }) => rest)(b) : b); // an impossible open interest is dropped from the bar, the prices stay
   }
   return { bars: kept, dropped };
 }

@@ -14,7 +14,7 @@ export function timeframeOf(code: string): Timeframe | undefined {
   return (Object.keys(TIMEFRAMES) as Timeframe[]).find((tf) => TIMEFRAMES[tf] === sec);
 }
 
-const toOa = (b: Bar): OaBar => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
+const toOa = (b: Bar): OaBar => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume, ...(b.oi !== undefined ? { oi: b.oi } : {}) });
 
 /**
  * Our data behind openalgo-charts' DataFeed: history from the API's /bars (provider history, written through to
