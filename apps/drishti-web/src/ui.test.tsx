@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import type { NewsItem } from "@drishti/shared";
 import { PanelBoundary } from "./PanelBoundary";
 import { NewsWidget } from "./NewsWidget";
-import { ScreenerWidget } from "./EnergyPanels";
 import { Palette } from "./Palette";
 import { useStore } from "./store";
 import { useWorkspace, type Widget } from "./workspace";
@@ -11,7 +10,7 @@ import { useWorkspace, type Widget } from "./workspace";
 const widget = (type: Widget["type"]): Widget => ({ id: `w-${type}`, type, symbol: "CRUDEOIL", group: null }) as Widget;
 
 beforeEach(() => {
-  useStore.setState({ news: [], quotes: {}, universe: {} });
+  useStore.setState({ news: [], quotes: {} });
 });
 afterEach(cleanup);
 
@@ -51,15 +50,6 @@ test("NewsWidget filters by tag and by search text", () => {
   fireEvent.change(screen.getByLabelText("Search headlines"), { target: { value: "bloomberg" } });
   expect(screen.getAllByRole("link")).toHaveLength(1);
   expect(screen.getByText("Henry Hub gas climbs")).toBeTruthy();
-});
-
-test("Screener sorts by column", () => {
-  useStore.setState({ universe: { "NYMEX:CL1!": { price: 90, changePct: 1 }, "NYMEX:NG1!": { price: 3, changePct: -2 } } as never });
-  render(<ScreenerWidget widget={widget("screener")} />);
-  const rows = () => [...document.querySelectorAll(".screener tbody tr")].map((r) => r.querySelector("td")!.textContent);
-  const first = rows()[0];
-  fireEvent.click(screen.getByText(/Chg %/)); // default is already Chg % descending → toggles to ascending
-  expect(rows()[0]).not.toBe(first);
 });
 
 test("Palette runs a command and closes", () => {

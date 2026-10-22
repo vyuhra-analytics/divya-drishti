@@ -1,7 +1,7 @@
 import type { WidgetType } from "./workspace";
 
 /** Bloomberg-style function mnemonics. */
-export const MNEMONICS: Record<string, WidgetType> = { GP: "advchart", Q: "quote", W: "watchlist", TV: "tv", N: "news", SCR: "screener", CAL: "calendar", AL: "alerts", BR: "briefing", COT: "cot", CHK: "chokepoints", CRV: "curve", EIA: "eia", RCP: "recap", COST: "costs", BT: "backtest", PT: "paper", DQ: "quality", OCX: "optionchain" };
+export const MNEMONICS: Record<string, WidgetType> = { GP: "advchart", Q: "quote", W: "watchlist", TV: "tv", N: "news", CAL: "calendar", AL: "alerts", BR: "briefing", COT: "cot", CHK: "chokepoints", CRV: "curve", EIA: "eia", RCP: "recap", COST: "costs", BT: "backtest", PT: "paper", DQ: "quality", OCX: "optionchain" };
 
 export interface Command {
   symbol?: string;

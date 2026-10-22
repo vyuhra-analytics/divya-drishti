@@ -28,7 +28,7 @@ Desks: **Evening** (the one-monitor trading screens, see `EIA_SCREENS.md`) and *
 | GS | Simple chart | **Cut, deleted** | Duplicate of GP. |
 | OC | Option chain (compact) | **Cut, deleted** | Duplicate of OCX. |
 | HM | Energy heatmap | **Cut, deleted** | Not used by either strategy. |
-| SCR | Energy screener | **Cut** | Not used by either strategy. |
+| SCR | Energy screener | **Cut, deleted** | Not used by either strategy. |
 | INS | Insider trades | **Cut, deleted** | Not used by either strategy. |
 | (ticker tape) | Ticker tape | **Cut, deleted** | A scrolling strip is noise on a one-monitor trading screen. |
 

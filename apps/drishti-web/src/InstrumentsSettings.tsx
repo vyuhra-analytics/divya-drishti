@@ -128,7 +128,7 @@ export function InstrumentsSettings() {
         </div>
       </form>
       <p className="muted hint">
-        Energy futures on MCX and NYMEX only. MCX symbols are checked against Upstox's instrument list. An added instrument gets a live price, chart history, options (MCX), alerts and paper trading; the heatmap and the built-in desks stay as they are.
+        Energy futures on MCX and NYMEX only. MCX symbols are checked against Upstox's instrument list. An added instrument gets a live price, chart history, options (MCX), alerts and paper trading; the built-in desks stay as they are.
       </p>
     </>
   );

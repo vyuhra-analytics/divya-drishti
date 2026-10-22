@@ -21,7 +21,7 @@ test("every preset is a valid grid: unique ids, one layout item per widget, insi
 test("loading a preset replaces the layout and marks it active", () => {
   useWorkspace.getState().loadWorkspace("preset:research");
   const s = useWorkspace.getState();
-  expect(s.widgets.map((w) => w.type)).toEqual(["screener", "news", "calendar"]);
+  expect(s.widgets.map((w) => w.type)).toEqual(["news", "calendar"]);
   expect(s.activeWorkspace).toBe("Research");
   useWorkspace.getState().loadWorkspace("preset:nope"); // unknown key: no change
   expect(useWorkspace.getState().activeWorkspace).toBe("Research");

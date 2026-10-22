@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { dedupeNews, SYMBOLS, type NewsItem, type Quote, type UniverseRow } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type NewsItem, type Quote } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { streamUrl } from "./settings";
 import { pushTrail } from "./spark";
@@ -19,8 +19,6 @@ interface MarketState {
   epoch: number;
   /** per symbol: when the server last heard from its active source (heartbeat), for STALE detection */
   seen: Record<string, number>;
-  /** energy universe (heatmap/screener) by TradingView ticker, ~10 s fresh */
-  universe: Record<string, UniverseRow>;
   /** +1 whenever the server says a paper account changed (a trade from any client, an agent over MCP, a stop firing): the Paper panel re-reads */
   paperRev: number;
   /** +1 when an agent (Claude over MCP) submits a briefing: the Briefing panel re-reads what was submitted */
@@ -37,7 +35,6 @@ export const useStore = create<MarketState>()(() => ({
   news: [],
   epoch: 0,
   seen: {},
-  universe: {},
   paperRev: 0,
   instrumentsRev: 0,
   briefingRev: 0,
@@ -60,11 +57,11 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper", "briefing"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "alerts", "paper", "briefing"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
@@ -80,7 +77,6 @@ export function connectStream() {
         useAlerts.getState().push(`briefing-${msg.id}`, `Claude wrote a ${msg.bias} briefing on ${msg.symbol.split(":")[1]}: ${msg.verified} of ${msg.total} points checked against the data${msg.wrong ? `, ${msg.wrong} contradict it` : ""}`);
       }
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
-      if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));
       return;
     }

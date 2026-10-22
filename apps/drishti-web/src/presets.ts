@@ -75,12 +75,11 @@ export const PRESETS: Preset[] = [
   {
     key: "research",
     name: "Research",
-    hint: "Energy screener, news and the calendar",
+    hint: "News and the calendar",
     build: () =>
       snapshot("research", [
-        ["screen-1", "screener", null, "MCX:CRUDEOIL", "5m", 0, 0, 12, 12],
-        ["news-1", "news", null, "MCX:CRUDEOIL", "5m", 0, 12, 6, 10],
-        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 12, 6, 10],
+        ["news-1", "news", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 16],
+        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 0, 6, 16],
       ]),
   },
   {
