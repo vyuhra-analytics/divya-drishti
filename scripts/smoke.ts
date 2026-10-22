@@ -119,6 +119,15 @@ await check("costs check: bad input is a 400; a futures leg agrees with Upstox's
   need(r.status === 200, `HTTP ${r.status}`);
   need(r.json.agree === true, `our table differs from Upstox by Rs ${r.json.diff} (Upstox ${r.json.upstox?.total}, ours ${r.json.ours?.total}): re-record with bun run fixtures:upstox-charges and fix costs.ts`);
 });
+await check("market status: the API reads the exchange's own MCX status and the stream carries it", async () => {
+  const s = await ok("/market/status");
+  need("mcx" in s, "no mcx field");
+  if (s.mcx === null) throw new Error("SKIP: Upstox status not available (no token, or Upstox did not answer)");
+  need(typeof s.mcx.state === "string" && s.mcx.state.length > 0 && typeof s.mcx.at === "number", "state or time missing");
+  const h: any = await (await fetch(`${STREAM}/health`)).json();
+  need("mcxStatus" in h, "the stream health does not carry the status");
+  return `MCX ${s.mcx.state}`;
+});
 await check("server alerts: channels, create, list, delete (never fires, sends nothing)", async () => {
   const ch = await ok("/alerts/channels");
   need("telegram" in ch && "webhook" in ch, "channel status missing");

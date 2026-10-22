@@ -1,8 +1,16 @@
 import { Controller, Get } from "@nestjs/common";
-import type { DayOverride } from "@drishti/shared";
+import { knownStatus, type DayOverride, type MarketStatus } from "@drishti/shared";
 import { Db } from "./db";
 
 const CACHE_MS = 3600_000;
+const STATUS_CACHE_MS = 30_000;
+let statusCache: { at: number; mcx: MarketStatus | null } | null = null;
+const seenStates = new Set<string>();
+/** Tests only: forget the cached status so each test starts from a cold cache. */
+export const resetStatusCache = () => {
+  statusCache = null;
+  seenStates.clear();
+};
 let cache: { at: number; day: string; mcx: DayOverride | null } | null = null;
 
 const istDate = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10);
@@ -39,5 +47,37 @@ export class SessionsController {
     }
     cache = { at: Date.now(), day, mcx };
     return { date: day, mcx };
+  }
+
+  /**
+   * The exchange's own MCX status from Upstox (cached 30 s). `mcx: null` = unknown (no token, or Upstox did not answer): the rules decide.
+   * Every distinct status value is logged once, so a value we do not handle shows up instead of being silently ignored.
+   */
+  @Get("status")
+  async status(): Promise<{ mcx: MarketStatus | null }> {
+    if (statusCache && Date.now() - statusCache.at < STATUS_CACHE_MS) return { mcx: statusCache.mcx };
+    const token = (await this.db.redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim();
+    let mcx: MarketStatus | null = null;
+    if (token) {
+      try {
+        const res = await fetch("https://api.upstox.com/v2/market/status/MCX", {
+          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        const json: any = await res.json();
+        const state = json?.data?.status;
+        if (res.ok && typeof state === "string" && state) {
+          mcx = { state, at: Date.now() };
+          if (!seenStates.has(state)) {
+            seenStates.add(state);
+            console.log(`[market status] MCX status value seen: ${state}${knownStatus(state) ? "" : " (not handled: the session rules decide)"}`);
+          }
+        }
+      } catch {
+        mcx = null;
+      }
+    }
+    statusCache = { at: Date.now(), mcx };
+    return { mcx };
   }
 }

@@ -10,6 +10,34 @@ export interface SessionState {
 /** Upstox's official MCX window for one day (from /v2/market/timings and /holidays), or "closed" for a holiday. */
 export type DayOverride = { start: number; end: number } | "closed";
 
+/**
+ * The exchange's own status as Upstox reports it (`GET /v2/market/status/MCX`), and when we asked. Only two values are known to
+ * us (NORMAL_OPEN, NORMAL_CLOSE); any other is "no opinion", never closed, and the API logs each new value it sees.
+ */
+export interface MarketStatus {
+  state: string;
+  /** epoch ms when the status was read from Upstox */
+  at: number;
+}
+/** A status older than this is ignored: the rules decide again. */
+export const STATUS_MAX_AGE_MS = 120_000;
+const STATUS_OPEN = "NORMAL_OPEN";
+const STATUS_CLOSED = "NORMAL_CLOSE";
+
+/** Whether a status value is one we know how to read. */
+export const knownStatus = (state: string) => state === STATUS_OPEN || state === STATUS_CLOSED;
+
+/**
+ * The rule-based session corrected by the exchange's own status: an early close, a halt or a special session is what the rules cannot see.
+ * A fresh known status wins in both directions; a stale, missing or unknown one changes nothing. The next boundary is kept as the rules give it.
+ */
+export function withStatus(session: SessionState, status: MarketStatus | undefined | null, now: number): SessionState {
+  if (!status || now - status.at > STATUS_MAX_AGE_MS || now < status.at - STATUS_MAX_AGE_MS) return session;
+  if (status.state === STATUS_OPEN) return session.open ? session : { ...session, open: true };
+  if (status.state === STATUS_CLOSED) return session.open ? { ...session, open: false } : session;
+  return session;
+}
+
 const H = 3600_000;
 const MIN = 60_000;
 

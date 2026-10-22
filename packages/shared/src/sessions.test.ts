@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { freshness, mcxCloseMinutes, mcxSession, nymexSession } from "./sessions";
+import { freshness, knownStatus, mcxCloseMinutes, mcxSession, nymexSession, STATUS_MAX_AGE_MS, withStatus } from "./sessions";
 
 const ist = (iso: string) => Date.parse(`${iso}+05:30`);
 const et = (iso: string, offset = "-04:00") => Date.parse(`${iso}${offset}`);
@@ -53,4 +53,26 @@ test("spot FX: open Sunday 17:00 to Friday 17:00 New York time, round the clock 
   expect(at("2026-10-24T15:00:00Z")).toBe(false); // Saturday
   expect(at("2026-10-25T20:59:00Z")).toBe(false); // Sunday 16:59
   expect(at("2026-10-25T21:01:00Z")).toBe(true); // Sunday 17:01
+});
+
+test("withStatus: the exchange's own fresh status corrects the rules in both directions; old, missing or unknown ones change nothing", () => {
+  const now = ist("2026-10-21T20:00:00");
+  const rulesOpen = mcxSession(now); // the rules say open (Wednesday evening)
+  expect(rulesOpen.open).toBe(true);
+  // a halt or early close the rules cannot see: Upstox says closed
+  expect(withStatus(rulesOpen, { state: "NORMAL_CLOSE", at: now - 10_000 }, now)).toEqual({ ...rulesOpen, open: false });
+  // a special session the calendar missed: the rules say closed, Upstox says open
+  const rulesClosed = mcxSession(ist("2026-10-24T12:00:00")); // Saturday
+  expect(withStatus(rulesClosed, { state: "NORMAL_OPEN", at: ist("2026-10-24T12:00:00") - 5_000 }, ist("2026-10-24T12:00:00")).open).toBe(true);
+  // agreeing statuses change nothing (same object, no churn)
+  expect(withStatus(rulesOpen, { state: "NORMAL_OPEN", at: now }, now)).toBe(rulesOpen);
+  expect(withStatus(rulesClosed, { state: "NORMAL_CLOSE", at: ist("2026-10-24T12:00:00") }, ist("2026-10-24T12:00:00"))).toBe(rulesClosed);
+  // old, missing, unknown or from the future: no opinion, the rules decide
+  expect(withStatus(rulesOpen, { state: "NORMAL_CLOSE", at: now - STATUS_MAX_AGE_MS - 1 }, now)).toBe(rulesOpen);
+  expect(withStatus(rulesOpen, undefined, now)).toBe(rulesOpen);
+  expect(withStatus(rulesOpen, null, now)).toBe(rulesOpen);
+  expect(withStatus(rulesOpen, { state: "PRE_OPEN_START", at: now }, now)).toBe(rulesOpen); // never read as closed
+  expect(withStatus(rulesOpen, { state: "NORMAL_CLOSE", at: now + STATUS_MAX_AGE_MS + 1 }, now)).toBe(rulesOpen);
+  expect(knownStatus("NORMAL_OPEN") && knownStatus("NORMAL_CLOSE")).toBe(true);
+  expect(knownStatus("PRE_OPEN_START")).toBe(false);
 });

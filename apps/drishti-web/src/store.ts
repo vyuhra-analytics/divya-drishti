@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { dedupeNews, SYMBOLS, type NewsItem, type Quote } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type MarketStatus, type NewsItem, type Quote } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { streamUrl } from "./settings";
 import { pushTrail } from "./spark";
@@ -15,6 +15,8 @@ interface MarketState {
   prev: Record<string, number>;
   /** energy headlines, newest first (pushed by the stream service) */
   news: NewsItem[];
+  /** the exchange's own MCX status from Upstox (heartbeat); the session rules decide when it is missing or old */
+  mcxStatus?: MarketStatus;
   /** +1 on every (re)connect: charts re-fetch history so candles missed while disconnected get filled */
   epoch: number;
   /** per symbol: when the server last heard from its active source (heartbeat), for STALE detection */
@@ -33,6 +35,7 @@ export const useStore = create<MarketState>()(() => ({
   trail: {},
   prev: {},
   news: [],
+  mcxStatus: undefined,
   epoch: 0,
   seen: {},
   paperRev: 0,
@@ -61,7 +64,7 @@ export function connectStream() {
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number>; mcxStatus?: MarketStatus | null } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
@@ -77,7 +80,7 @@ export function connectStream() {
         useAlerts.getState().push(`briefing-${msg.id}`, `Claude wrote a ${msg.bias} briefing on ${msg.symbol.split(":")[1]}: ${msg.verified} of ${msg.total} points checked against the data${msg.wrong ? `, ${msg.wrong} contradict it` : ""}`);
       }
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
-      if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen } }));
+      if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen }, mcxStatus: msg.mcxStatus ?? undefined }));
       return;
     }
     const q = msg;

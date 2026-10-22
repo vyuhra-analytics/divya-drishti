@@ -10,6 +10,8 @@ import {
   PaperEngine,
   UPSTOX_MCX_RATES,
   type DayOverride,
+  type MarketStatus,
+  withStatus,
   allowedOrigins,
   changedFronts,
   REDIS_OPTIONS,
@@ -83,7 +85,7 @@ const heartbeat = () => {
     const at = lastSeen.get(symbol)?.[src];
     if (at) seen[symbol] = at;
   }
-  return JSON.stringify({ type: "hb", t: Date.now(), seen });
+  return JSON.stringify({ type: "hb", t: Date.now(), seen, mcxStatus: mcxStatus ?? null });
 };
 let buffer: Tick[] = [];
 
@@ -206,11 +208,18 @@ const refreshMcxDay = () =>
     .catch(() => undefined);
 void refreshMcxDay();
 setInterval(() => void refreshMcxDay(), 30 * 60_000);
+let mcxStatus: MarketStatus | undefined; // the exchange's own status from Upstox, via the API (halts, early closes); the rules decide when it is unknown or old
+const refreshMcxStatus = () =>
+  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/status`, { signal: AbortSignal.timeout(5000) })
+    .then(async (r) => void (mcxStatus = r.ok ? ((await r.json()) as { mcx: MarketStatus | null }).mcx ?? undefined : undefined))
+    .catch(() => void (mcxStatus = undefined));
+void refreshMcxStatus();
+setInterval(() => void refreshMcxStatus(), 30_000);
 /** Exchange open and the active source heard from in the last minute: the same rule the browser uses (`useFreshness`). */
 const symbolLive = (symbol: string) => {
   const exchange = instrument(symbol)?.exchange;
   const now = Date.now();
-  const open = exchange === "MCX" ? mcxSession(now, mcxDay).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : true;
+  const open = exchange === "MCX" ? withStatus(mcxSession(now, mcxDay), mcxStatus, now).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : true;
   const src = active.get(symbol);
   return freshness(open, src ? lastSeen.get(symbol)?.[src] : undefined, now) === "live";
 };
@@ -328,6 +337,7 @@ const app = new Elysia()
       prices: Object.fromEntries(lastPrice),
       active: Object.fromEntries(active),
       mcxPrimary: mcxPrimary ?? "auto",
+      mcxStatus: mcxStatus ?? null,
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
       news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
     };
