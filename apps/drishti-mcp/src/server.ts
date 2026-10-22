@@ -8,6 +8,8 @@ export interface McpConfig {
   api: string;
   /** may agents place, close and change paper trades? Off unless MCP_PAPER_WRITE=1 */
   write: boolean;
+  /** may agents submit a written briefing to the app's Briefing panel? Off unless MCP_BRIEFING_WRITE=1 */
+  briefingWrite: boolean;
   /** the paper account used when a tool call does not name one */
   account: string;
   fetch?: typeof fetch;
@@ -39,9 +41,23 @@ export function createServer(cfg: McpConfig) {
     }).catch(() => null);
     if (!res) return { ok: false as const, error: "the Divya Drishti service is not reachable (is `bun run dev` running?)" };
     const json: any = await res.json().catch(() => ({}));
-    return res.ok ? { ok: true as const, json } : { ok: false as const, error: json?.error ?? json?.message ?? `HTTP ${res.status}` };
+    return res.ok ? { ok: true as const, json } : { ok: false as const, error: typeof json?.message === "string" ? json.message : json?.error ?? `HTTP ${res.status}` };
   }
   const account = (a?: string) => encodeURIComponent(a || cfg.account);
+
+  // ---- briefings: the agent reads the app's facts, writes the briefing itself, and hands it back
+  server.registerTool(
+    "get_briefing_context",
+    {
+      description:
+        "The facts for a research briefing on one instrument: live price, indicators computed from completed bars, volatility, recent headlines, scheduled releases, options positioning, and where each fact comes from (feed, live or delayed). Also returns `citable` (every fact you may cite, by field), the rules, and a context_id for submit_briefing. Write the briefing from these facts only.",
+      inputSchema: { symbol: z.string().describe("e.g. MCX:CRUDEOIL, NYMEX:CL, FX:USDINR"), timeframe: z.enum(["1m", "5m", "15m", "1h", "1d"]).optional() },
+    },
+    async ({ symbol, timeframe }) => {
+      const r = await call(cfg.api, `/briefing/context?symbol=${encodeURIComponent(symbol)}&tf=${timeframe ?? "5m"}`);
+      return r.ok ? ok(r.json) : err(r.error);
+    },
+  );
 
   // ---- read tools
   server.registerTool(
@@ -146,15 +162,42 @@ export function createServer(cfg: McpConfig) {
     );
   }
 
+  if (cfg.briefingWrite) {
+    const Point = z.object({ point: z.string(), evidence: z.string(), cites: z.array(z.object({ field: z.string(), value: z.string() })).max(3) });
+    server.registerTool(
+      "submit_briefing",
+      {
+        description:
+          "Hand your written briefing to the Divya Drishti app, where it appears in the Briefing panel. Every cited figure is checked by code against the facts from get_briefing_context (same context_id) and each point is marked checked, contradicted or unchecked. The reply lists the points that did not check out: correct them and submit again. This stores a research note only; it places no order.",
+        inputSchema: {
+          symbol: z.string(),
+          context_id: z.string(),
+          bias: z.enum(["bullish", "bearish", "neutral"]),
+          confidence: z.enum(["low", "medium", "high"]),
+          summary: z.string(),
+          bull: z.array(Point).max(6),
+          bear: z.array(Point).max(6),
+          watch: z.array(z.string()).max(6).optional(),
+          data_gaps: z.array(z.string()).max(6).optional(),
+        },
+      },
+      async (args) => {
+        const r = await call(cfg.api, "/briefing/submit", "POST", args);
+        return r.ok ? ok(r.json) : err(r.error);
+      },
+    );
+  }
+
   return server;
 }
 
-/** Settings from the environment. Writes are OFF unless MCP_PAPER_WRITE=1. */
+/** Settings from the environment. Paper writes are OFF unless MCP_PAPER_WRITE=1, briefing submissions unless MCP_BRIEFING_WRITE=1. */
 export function configFromEnv(env: Record<string, string | undefined> = process.env): McpConfig {
   return {
     stream: env.DRISHTI_STREAM_URL?.replace(/\/$/, "") || `http://127.0.0.1:${env.STREAM_PORT ?? 3002}`,
     api: env.DRISHTI_API_URL?.replace(/\/$/, "") || `http://127.0.0.1:${env.API_PORT ?? 3001}`,
     write: env.MCP_PAPER_WRITE === "1",
+    briefingWrite: env.MCP_BRIEFING_WRITE === "1",
     account: env.MCP_PAPER_ACCOUNT?.trim() || "main",
   };
 }

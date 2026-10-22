@@ -270,6 +270,22 @@ await check("instruments API: list, bad input is a 400, built-ins cannot be remo
   need(after.instruments.length === list.instruments.length, "the catalogue changed");
 });
 
+await check("agent briefings: bad requests are refused, a foreign website cannot submit or announce (nothing stored)", async () => {
+  need((await get("/briefing/context?symbol=MCX:GOLD")).status === 400, "unknown symbol was not a 400");
+  need((await get("/briefing/context?symbol=MCX:CRUDEOIL&tf=2h")).status === 400, "unknown timeframe was not a 400");
+  const post = (body: string, type: string) => get("/briefing/submit", { method: "POST", headers: { "Content-Type": type, Origin: "https://evil.example" }, body });
+  const valid = JSON.stringify({ symbol: "MCX:CRUDEOIL", context_id: "ctx-x", bias: "bullish", confidence: "low", summary: "x", bull: [], bear: [] });
+  need((await post("{}", "application/json")).status === 400, "an empty submission was not a 400");
+  need((await post(valid, "application/json")).status !== 201, "a foreign website could submit a briefing");
+  need((await post(valid, "text/plain")).status === 400, "a text/plain (no-preflight) submission was accepted");
+  const unknown = await get("/briefing/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: valid });
+  need(unknown.status === 410, `an unknown context was HTTP ${unknown.status}, not 410`);
+  const announce = (origin?: string, body: unknown = { id: "x", symbol: "MCX:CRUDEOIL", bias: "bullish", verified: 1, total: 1, wrong: 0 }) =>
+    fetch(`${STREAM}/briefings/announce`, { method: "POST", headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body) });
+  need((await announce("https://evil.example")).status === 403, "a foreign origin could announce");
+  need((await announce(undefined, { id: "x", symbol: "MCX:GOLD", bias: "bullish", verified: 1, total: 1, wrong: 0 })).status === 400, "a bad announcement was accepted");
+});
+
 console.log(results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped`);
 process.exit(fail ? 1 : 0);

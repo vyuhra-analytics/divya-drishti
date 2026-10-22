@@ -8,6 +8,7 @@ import { OptionsController } from "./options.controller";
 import { InsiderController } from "./insider.controller";
 import { CalendarController } from "./calendar.controller";
 import { BriefingController } from "./briefing.controller";
+import { BriefingFactsController } from "./briefing-facts.controller";
 import { CotController } from "./cot.controller";
 import { ChokepointsController } from "./chokepoints.controller";
 import { CurveController } from "./curve.controller";
@@ -18,5 +19,5 @@ import { ServerAlertsController } from "./server-alerts.controller";
 import { PositionsController } from "./positions.controller";
 import { InstrumentSync } from "./instruments.sync";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, BriefingFactsController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync] })
 export class AppModule {}

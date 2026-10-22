@@ -10,6 +10,7 @@ async function connect(over: Partial<McpConfig> = {}, respond: (url: string, ini
     stream: "http://stream.test",
     api: "http://api.test",
     write: false,
+    briefingWrite: false,
     account: "main",
     fetch: (async (url: string, init: RequestInit = {}) => {
       calls.push({ url: String(url), method: init.method ?? "GET", headers: (init.headers ?? {}) as Record<string, string>, body: init.body ? JSON.parse(String(init.body)) : undefined });
@@ -34,13 +35,13 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
-  expect(await names(client)).toEqual(["get_futures_curve", "get_paper_account", "get_quote", "get_speculator_positioning", "list_paper_positions", "list_paper_trades"]);
+  expect(await names(client)).toEqual(["get_briefing_context", "get_futures_curve", "get_paper_account", "get_quote", "get_speculator_positioning", "list_paper_positions", "list_paper_trades"]);
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(9);
+  expect((await names(client)).length).toBe(10);
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {
@@ -106,4 +107,65 @@ test("settings come from the environment, and writes need MCP_PAPER_WRITE=1 exac
   expect(configFromEnv({})).toMatchObject({ stream: "http://127.0.0.1:3002", api: "http://127.0.0.1:3001", write: false, account: "main" });
   expect(configFromEnv({ MCP_PAPER_WRITE: "1", MCP_PAPER_ACCOUNT: "claude", DRISHTI_STREAM_URL: "http://x:9/" })).toMatchObject({ write: true, account: "claude", stream: "http://x:9" });
   expect(configFromEnv({ MCP_PAPER_WRITE: "true" }).write).toBe(false); // not "1": stays off
+});
+
+const submission = {
+  symbol: "MCX:CRUDEOIL",
+  context_id: "ctx-1",
+  bias: "bullish",
+  confidence: "medium",
+  summary: "Crude is firm.",
+  bull: [{ point: "Momentum", evidence: "rsi14 71", cites: [{ field: "technicals.rsi14", value: "71" }] }],
+  bear: [],
+};
+
+test("get_briefing_context is always offered and reads the API's context for the symbol and timeframe", async () => {
+  const { call, calls } = await connect({}, () => ({ body: { context_id: "ctx-1", citable: { price: 9158 }, context: { symbol: "MCX:CRUDEOIL" } } }));
+  const r = await call("get_briefing_context", { symbol: "MCX:CRUDEOIL", timeframe: "15m" });
+  expect(r.isError).toBe(false);
+  expect(JSON.parse(r.text).context_id).toBe("ctx-1");
+  expect(calls[0]!.url).toBe("http://api.test/briefing/context?symbol=MCX%3ACRUDEOIL&tf=15m");
+});
+
+test("an API refusal comes back with its reason, not the HTTP error class name", async () => {
+  const { call } = await connect({}, () => ({ status: 503, body: { statusCode: 503, error: "Service Unavailable", message: "no live price for MCX:CRUDEOIL yet" } }));
+  const r = await call("get_briefing_context", { symbol: "MCX:CRUDEOIL" });
+  expect(r.isError).toBe(true);
+  expect(r.text).toBe("no live price for MCX:CRUDEOIL yet");
+});
+
+test("submit_briefing is not offered unless briefing submissions are switched on", async () => {
+  const { client } = await connect();
+  expect(await names(client)).not.toContain("submit_briefing");
+  const on = await connect({ briefingWrite: true });
+  expect(await names(on.client)).toContain("submit_briefing");
+});
+
+test("submit_briefing posts the briefing and returns the per-point verdicts so the agent can correct itself", async () => {
+  const verdict = { id: "bm-1", stored: true, verified: 0, total: 1, wrong: 1, points: [{ section: "bull", point: 1, verdict: "wrong", issues: ["technicals.rsi14 is 64.2, not 71."] }], next: "Correct those points and submit again" };
+  const { call, calls } = await connect({ briefingWrite: true }, () => ({ status: 201, body: verdict }));
+  const r = await call("submit_briefing", submission);
+  expect(r.isError).toBe(false);
+  expect(JSON.parse(r.text).points[0].issues[0]).toContain("64.2");
+  expect(calls[0]).toMatchObject({ url: "http://api.test/briefing/submit", method: "POST" });
+  expect(calls[0]!.body.context_id).toBe("ctx-1");
+});
+
+test("submit_briefing validates before any request: a bad bias or an over-long list never reaches the API", async () => {
+  const { call, calls } = await connect({ briefingWrite: true });
+  expect((await call("submit_briefing", { ...submission, bias: "up" })).isError).toBe(true);
+  expect((await call("submit_briefing", { ...submission, bull: Array.from({ length: 7 }, () => submission.bull[0]) })).isError).toBe(true);
+  expect(calls).toHaveLength(0);
+});
+
+test("an expired context is reported plainly", async () => {
+  const { call } = await connect({ briefingWrite: true }, () => ({ status: 410, body: { statusCode: 410, error: "Gone", message: "That context has expired or is unknown: call get_briefing_context again" } }));
+  const r = await call("submit_briefing", submission);
+  expect(r.isError).toBe(true);
+  expect(r.text).toContain("call get_briefing_context again");
+});
+
+test("briefing submissions are enabled only by MCP_BRIEFING_WRITE=1 exactly", () => {
+  expect(configFromEnv({ MCP_BRIEFING_WRITE: "1" }).briefingWrite).toBe(true);
+  for (const v of [undefined, "", "0", "true", "yes"]) expect(configFromEnv({ MCP_BRIEFING_WRITE: v }).briefingWrite).toBe(false);
 });

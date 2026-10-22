@@ -23,6 +23,8 @@ interface MarketState {
   universe: Record<string, UniverseRow>;
   /** +1 whenever the server says a paper account changed (a trade from any client, an agent over MCP, a stop firing): the Paper panel re-reads */
   paperRev: number;
+  /** +1 when an agent (Claude over MCP) submits a briefing: the Briefing panel re-reads what was submitted */
+  briefingRev: number;
   /** +1 when the tracked instruments change (one added or removed in Settings, here or in another tab): the app remounts so every list and picker re-reads SYMBOLS */
   instrumentsRev: number;
 }
@@ -38,6 +40,7 @@ export const useStore = create<MarketState>()(() => ({
   universe: {},
   paperRev: 0,
   instrumentsRev: 0,
+  briefingRev: 0,
 }));
 
 // The stream sends a heartbeat every 15 s. A socket can die without a close event (laptop sleep, Wi-Fi switch,
@@ -57,11 +60,11 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "universe", "alerts", "paper", "briefing"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "universe"; rows: UniverseRow[] } | { type: "hb"; seen?: Record<string, number> } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
@@ -70,6 +73,11 @@ export function connectStream() {
       if (msg.type === "paper") {
         useStore.setState((s) => ({ paperRev: s.paperRev + 1 }));
         if (msg.actor !== "ui") useAlerts.getState().push("paper", msg.text);
+      }
+      // an agent submitted a briefing: the panel re-reads, and every open browser shows a notice
+      if (msg.type === "briefing") {
+        useStore.setState((s) => ({ briefingRev: s.briefingRev + 1 }));
+        useAlerts.getState().push(`briefing-${msg.id}`, `Claude wrote a ${msg.bias} briefing on ${msg.symbol.split(":")[1]}: ${msg.verified} of ${msg.total} points checked against the data${msg.wrong ? `, ${msg.wrong} contradict it` : ""}`);
       }
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "universe") useStore.setState((s) => ({ universe: { ...s.universe, ...Object.fromEntries(msg.rows.map((r) => [r.tv, r])) } }));

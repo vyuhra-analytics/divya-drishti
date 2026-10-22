@@ -265,6 +265,58 @@ test("MCP -> UI: a paper order Claude places over MCP appears in the Paper panel
   });
 });
 
+test("MCP -> UI: Claude reads the app's facts over MCP, submits a briefing, the checks catch a wrong figure, and the corrected one shows as verified", async ({ page }) => {
+  const root = await openPanel(page, "BR", ".brief");
+  const transport = new StdioClientTransport({
+    command: "bun",
+    args: ["src/index.ts"],
+    cwd: join(import.meta.dir, "../apps/drishti-mcp"),
+    env: { ...(process.env as Record<string, string>), MCP_BRIEFING_WRITE: "1", MCP_PAPER_WRITE: "", TELEGRAM_BOT_TOKEN: "" },
+    stderr: "ignore",
+  });
+  const mcp = new Client({ name: "e2e", version: "1" });
+  await mcp.connect(transport);
+  try {
+    const got: any = await mcp.callTool({ name: "get_briefing_context", arguments: { symbol: "MCX:CRUDEOIL" } });
+    if (got.isError && /no live price/.test(got.content?.[0]?.text)) skip("no live price yet");
+    assert(!got.isError, `get_briefing_context failed: ${got.content?.[0]?.text}`);
+    const facts = JSON.parse(got.content[0].text);
+    assert(facts.context_id && facts.citable?.price !== undefined && facts.instructions, "the context lacks an id, the citable fields or the instructions");
+    const rsi = facts.citable["technicals.rsi14"];
+    const submit = async (price: string, summary: string) => {
+      const r: any = await mcp.callTool({
+        name: "submit_briefing",
+        arguments: {
+          symbol: "MCX:CRUDEOIL",
+          context_id: facts.context_id,
+          bias: "bullish",
+          confidence: "low",
+          summary,
+          bull: [{ point: `Price is ${price}`, evidence: `price ${price}`, cites: [{ field: "price", value: price }] }],
+          bear: rsi === undefined ? [] : [{ point: `RSI is ${rsi}`, evidence: `rsi14 ${rsi}`, cites: [{ field: "technicals.rsi14", value: String(rsi) }] }],
+        },
+      });
+      assert(!r.isError, `submit_briefing refused: ${r.content?.[0]?.text}`);
+      return JSON.parse(r.content[0].text);
+    };
+    // 1) a wrong figure: stored, and the agent is told which point and what the data holds
+    const wrong = await submit(String(facts.citable.price + 777), "[e2e] wrong figure");
+    assert(wrong.wrong === 1 && wrong.points[0].issues[0].includes(`price is ${facts.citable.price}`), `the wrong figure was not caught: ${JSON.stringify(wrong)}`);
+    await root.getByText("[e2e] wrong figure").waitFor({ timeout: 6000 });
+    await root.getByText(/Data says: price is/).waitFor({ timeout: 2000 });
+    await page.getByText(/Claude wrote a bullish briefing on CRUDEOIL/).first().waitFor({ timeout: 3000 }); // the notice
+    // 2) the agent corrects it: verified
+    const fixed = await submit(String(facts.citable.price), "[e2e] corrected");
+    assert(fixed.wrong === 0, `the corrected briefing still has wrong points: ${JSON.stringify(fixed)}`);
+    await root.getByText("[e2e] corrected").waitFor({ timeout: 6000 });
+    await root.getByText(/points checked against the data/).waitFor({ timeout: 2000 });
+    await root.getByText(/Written by Claude over MCP/).waitFor({ timeout: 2000 });
+    await shot(root, "mcp-briefing-in-ui");
+  } finally {
+    await mcp.close();
+  }
+});
+
 test("Detailed option chain: every column of the Upstox-style chain, spot marker, load more, column chooser that persists", async ({ page }) => {
   const root = await openPanel(page, "OCX", ".ocx");
   await root.locator("tbody tr").nth(8).waitFor({ timeout: 30_000 });

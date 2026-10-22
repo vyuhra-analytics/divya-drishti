@@ -21,6 +21,11 @@ const steps: { what: string; n: number; table?: string; run: () => Promise<unkno
     n: await count(sql`SELECT count(*) AS n FROM paper_audit WHERE account IN ${sql(TEST_ACCOUNTS)}`),
     run: () => sql`DELETE FROM paper_audit WHERE account IN ${sql(TEST_ACCOUNTS)}`,
   },
+  {
+    what: "briefings written by the e2e test (summary starts with [e2e])",
+    n: await count(sql`SELECT count(*) AS n FROM briefings WHERE result->>'summary' LIKE '[e2e]%'`),
+    run: () => sql`DELETE FROM briefings WHERE result->>'summary' LIKE '[e2e]%'`,
+  },
   ...(["candles", "ticks", "rolls"] as const).map((table) => ({
     what: `${table} of symbols that are no longer tracked`,
     n: 0, // counted below

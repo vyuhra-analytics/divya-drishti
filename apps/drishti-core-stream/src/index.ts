@@ -50,7 +50,7 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const EXTRA_TOPICS = new Set<string>(["news", "universe", "alerts", "paper"]);
+const EXTRA_TOPICS = new Set<string>(["news", "universe", "alerts", "paper", "briefing"]);
 const isTopic = (t: string) => EXTRA_TOPICS.has(t) || SYMBOLS.includes(t); // SYMBOLS grows when an instrument is added in Settings
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
@@ -269,6 +269,21 @@ const app = new Elysia()
       changed: loadCustomInstruments,
     }),
   )
+  // the API tells us a briefing from an agent was stored, so open browsers show a notice (localhost / allowed origins only, tiny fixed shape)
+  .post("/briefings/announce", ({ request, body, set }) => {
+    if (!isAllowedOrigin(request.headers.get("origin"), ORIGINS)) {
+      set.status = 403;
+      return { error: "forbidden origin" };
+    }
+    const b = (body ?? {}) as Record<string, unknown>;
+    const n = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1000 ? v : undefined);
+    if (typeof b.id !== "string" || b.id.length > 40 || typeof b.symbol !== "string" || !SYMBOLS.includes(b.symbol) || !["bullish", "bearish", "neutral"].includes(b.bias as string) || n(b.verified) === undefined || n(b.total) === undefined || n(b.wrong) === undefined) {
+      set.status = 400;
+      return { error: "bad announcement" };
+    }
+    app.server?.publish("briefing", JSON.stringify({ type: "briefing", id: b.id, symbol: b.symbol, bias: b.bias, verified: b.verified, total: b.total, wrong: b.wrong, at: Date.now() }));
+    return { ok: true };
+  })
   .use(paperRoutes({ engine: paperEngine, store: paperStore, quote: (s) => latest.get(s), origins: ORIGINS, limiter: paperLimiter, publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })) }))
   // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
   .get("/fronts", () => Object.fromEntries(fronts))
@@ -355,7 +370,7 @@ const app = new Elysia()
             ws.send(JSON.stringify({ type: "universe", rows: currentUniverse() }));
             continue;
           }
-          if (s === "alerts" || s === "paper") {
+          if (s === "alerts" || s === "paper" || s === "briefing") {
             ws.subscribe(s);
             continue;
           }
@@ -363,7 +378,7 @@ const app = new Elysia()
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" || s === "alerts" || s === "paper" ? s : `quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "universe" || s === "alerts" || s === "paper" || s === "briefing" ? s : `quotes:${s}`));
     },
   })
   .listen({ port: PORT, hostname: HOST });

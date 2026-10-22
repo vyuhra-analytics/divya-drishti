@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
@@ -33,6 +33,8 @@ interface Entry {
   grounding?: GroundingReport;
   /** model calls used; 2 = the first answer cited something wrong and was corrected once */
   attempts?: number;
+  /** "mcp" = written by Claude over MCP and submitted to the app, not by our own model call */
+  via?: "mcp";
 }
 
 /** Past briefings, kept in this browser so they can be graded later against what price did. */
@@ -48,6 +50,34 @@ export const useJournal = create<{ entries: Entry[]; add: (e: Entry) => void; cl
 );
 
 const GRADE_AFTER_MS = 30 * 60_000;
+
+/** Briefings Claude submitted over MCP (stored by the API with their checked verdicts) join the journal, here and in any other open browser. */
+function useSubmittedBriefings() {
+  const rev = useStore((s) => s.briefingRev);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`${apiUrl()}/briefing/submitted?limit=10`);
+        if (!res.ok || !alive) return;
+        const rows = (await res.json()) as { id: string; symbol: string; at: number; priceThen: number; result: BriefingResult; grounding: GroundingReport }[];
+        useJournal.setState((s) => {
+          const have = new Set(s.entries.map((e) => e.id));
+          const fresh: Entry[] = rows.filter((r) => !have.has(r.id)).map((r) => ({ id: r.id, symbol: r.symbol, at: r.at, priceThen: r.priceThen, model: "Claude (MCP)", result: r.result, grounding: r.grounding, via: "mcp" }));
+          return fresh.length ? { entries: [...fresh, ...s.entries].sort((a, b) => b.at - a.at).slice(0, 30) } : s;
+        });
+      } catch {
+        /* the API is not reachable: nothing new to show */
+      }
+    };
+    void load();
+    const t = setInterval(load, 60_000); // the stream announces a submission at once; this only covers a missed announcement
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [rev]);
+}
 const json = async <T,>(path: string): Promise<T | undefined> => {
   try {
     const res = await fetch(`${apiUrl()}${path}`);
@@ -150,6 +180,7 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
   const now = useNow(60_000);
   const price = useStore((s) => s.quotes[symbol]?.price);
   const { entries, add, clear } = useJournal();
+  useSubmittedBriefings();
   const sharePosition = useSettings((s) => s.briefingPositions);
   const set = useSettings((s) => s.set);
   const [busy, setBusy] = useState(false);
@@ -220,7 +251,7 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
                 <ul className="muted">{r.data_gaps.map((w, i) => <li key={i}>{w}</li>)}</ul>
               </section>
             )}
-            <p className="muted brief-foot">Written by {shown.model} from data as of {clock.stamp(shown.at)}. May be wrong: check the evidence.</p>
+            <p className="muted brief-foot">{shown.via === "mcp" ? "Written by Claude over MCP and submitted to the app" : `Written by ${shown.model}`} from data as of {clock.stamp(shown.at)}. May be wrong: check the evidence.</p>
           </>
         )}
 

@@ -147,3 +147,23 @@ test("a briefing saved before checking existed says so instead of looking verifi
   expect(screen.getByText(/Not checked against the data/)).toBeTruthy();
   expect(screen.queryByLabelText("Checked against the data")).toBeNull();
 });
+
+test("a briefing Claude submitted over MCP appears in the journal and the panel, with its checked verdicts, and is not added twice", async () => {
+  const row = {
+    id: "bm-9",
+    symbol: "MCX:CRUDEOIL",
+    at: Date.now() - 60_000,
+    priceThen: 9100,
+    result: { ...grounded, summary: "Written over MCP." },
+    grounding: { total: 1, verified: 1, wrong: 0, other: [], points: [{ section: "bull", index: 0, verdict: "verified", issues: [] }] },
+  };
+  globalThis.fetch = mock(async (url: string) => (String(url).includes("/briefing/submitted") ? { ok: true, status: 200, json: async () => [row] } : { ok: false, status: 404, json: async () => ({}) })) as never;
+  render(<BriefingWidget widget={widget} />);
+  expect(await screen.findByText("Written over MCP.")).toBeTruthy();
+  expect(screen.getByText(/Written by Claude over MCP and submitted to the app/)).toBeTruthy();
+  expect(screen.getByText(/1 of 1 points checked against the data/)).toBeTruthy();
+  expect(useJournal.getState().entries.filter((e) => e.id === "bm-9")).toHaveLength(1);
+  useStore.setState((s) => ({ briefingRev: s.briefingRev + 1 })); // the stream announces it again: no duplicate
+  await new Promise((r) => setTimeout(r, 30));
+  expect(useJournal.getState().entries.filter((e) => e.id === "bm-9")).toHaveLength(1);
+});
