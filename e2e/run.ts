@@ -153,6 +153,33 @@ test("live prices reach the top bar", async ({ page }) => {
   await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+/.test(document.body.innerText), undefined, { timeout: 20_000 });
 });
 
+test("Several charts, each on its own symbol: a chart added beside a linked one is pinned and keeps its own symbol", async ({ page }) => {
+  const palette = async (text: string) => {
+    await page.keyboard.press("Control+k");
+    await page.keyboard.type(text);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+  };
+  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem("drishti-workspace")!).state);
+  await page.locator(".panel").first().click({ position: { x: 120, y: 120 } }).catch(() => undefined); // a click focuses the first panel (the default workspace's linked chart) and makes the workspace persist
+  await page.waitForTimeout(400);
+  const before = await state();
+  const first = before.widgets.find((w: any) => w.id === before.focusedId);
+  assert(first && first.type === "advchart" && first.group === "amber", `the focused panel should be the linked chart, got ${JSON.stringify(first)}`);
+  const amberSymbol = before.groups.amber;
+  await palette("GP");
+  await palette("NG");
+  await palette("GP");
+  await palette("NATGASMINI");
+  const after = await state();
+  const added = after.widgets.filter((w: any) => !before.widgets.some((b: any) => b.id === w.id) && w.type === "advchart");
+  assert(added.length === 2, `expected two new charts, got ${added.length}`);
+  assert(added.every((w: any) => w.group === null), "a chart added next to a linked chart must start pinned");
+  assert(new Set(added.map((w: any) => w.symbol)).size === 2, `the two new charts show ${added.map((w: any) => w.symbol)}: each should keep its own symbol`);
+  assert(after.groups.amber === amberSymbol, "pointing a new chart elsewhere moved the linked group");
+  assert(after.widgets.find((w: any) => w.id === first.id).group === "amber", "the first chart lost its link");
+});
+
 test("USD/INR: live in the watchlist, on a chart with history, and not offered where it makes no sense (paper trading, futures curve)", async ({ page }) => {
   await page.waitForFunction(() => /USDINR.*?\d{2}\.\d{4}/.test(document.querySelector(".watchlist")?.textContent ?? ""), undefined, { timeout: 20_000 });
   const bars = await (await fetch(`${API}/bars?symbol=FX:USDINR&tf=5m`)).json();

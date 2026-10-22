@@ -87,6 +87,7 @@ const defaults = () => ({
   focusedId: "chart-1" as string | null,
 });
 
+let idSeq = 0;
 const symbolOf = (w: Widget, groups: Record<Group, string>) => (w.group ? groups[w.group] : w.symbol);
 
 const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
@@ -148,15 +149,18 @@ export const useWorkspace = create<WorkspaceState>()(
       addWidget: (type, symbol) =>
         set((s) => {
           const focused = s.widgets.find((w) => w.id === s.focusedId);
-          const id = `${type}-${Date.now().toString(36)}`;
+          const id = `${type}-${Date.now().toString(36)}${(idSeq++).toString(36)}`; // the counter keeps two panels added in the same millisecond apart
           const tf = useSettings.getState().defaultTf;
-          // explicit symbol → pinned to it; otherwise join the focused widget's group
+          // explicit symbol → pinned to it; otherwise join the focused widget's group, except that a group shares ONE symbol, so a second
+          // panel of the same type (a second chart) would follow the first: it starts pinned to the same symbol instead and can be pointed elsewhere
+          const group: Group = focused?.group ?? "amber";
+          const sameTypeInGroup = s.widgets.some((w) => w.group === group && w.type === type);
           const widget: Widget = symbol
             ? { id, type, group: null, symbol, tf }
             : {
                 id,
                 type,
-                group: focused?.group ?? "amber",
+                group: sameTypeInGroup ? null : group,
                 symbol: focused ? symbolOf(focused, s.groups) : s.groups.amber,
                 tf,
               };
