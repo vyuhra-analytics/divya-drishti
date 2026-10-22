@@ -1,19 +1,12 @@
 import { BadRequestException, Controller, Get, GoneException, HttpException, Post, Body, Query, ServiceUnavailableException } from "@nestjs/common";
 import { AGENT_BRIEFING_INSTRUCTIONS, BRIEFING_SYSTEM, checkBriefing, citableFields, instrument, LruCache, parseSubmission, RateLimiter, TIMEFRAMES, type BriefingContext, type BriefingResult, type GroundingReport } from "@drishti/shared";
 import { Db } from "./db";
-import { gatherServerContext, type Sources } from "./briefing-facts";
+import { gatherServerContext, liveSources, type Sources } from "./briefing-facts";
 
 const CONTEXT_TTL_MS = 30 * 60_000; // an agent may take a while to write; after this it must ask for fresh facts
 const submitLimiter = new RateLimiter(12, 3600_000); // submissions an hour: a research note, not a feed
 const contexts = new LruCache<{ at: number; ctx: BriefingContext }>(64);
-const API_PORT = process.env.API_PORT ?? 3001;
 const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
-
-const live: Sources = {
-  api: (path) => fetch(`http://127.0.0.1:${API_PORT}${path}`, { signal: AbortSignal.timeout(15_000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
-  health: () => fetch(`${STREAM}/health`, { signal: AbortSignal.timeout(4000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
-  now: Date.now,
-};
 
 export interface SubmittedBriefing {
   id: string;
@@ -36,7 +29,7 @@ export interface SubmittedBriefing {
 export class BriefingFactsController {
   constructor(private readonly db: Db) {}
   /** where the facts come from; tests replace it */
-  sources: Sources = live;
+  sources: Sources = liveSources;
   /** tells the stream so open browsers show a notice; tests replace it */
   announce: (b: { id: string; symbol: string; bias: string; verified: number; total: number; wrong: number }) => Promise<void> = (b) =>
     fetch(`${STREAM}/briefings/announce`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), signal: AbortSignal.timeout(3000) }).then(() => undefined, () => undefined);

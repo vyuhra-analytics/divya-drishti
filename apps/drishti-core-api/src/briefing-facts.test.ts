@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { BadRequestException, GoneException, ServiceUnavailableException } from "@nestjs/common";
 import type { Bar, Quote } from "@drishti/shared";
-import { gatherServerContext, type Sources } from "./briefing-facts";
+import { gatherServerContext, marketStatus, recap, technicals, type Sources } from "./briefing-facts";
 import { BriefingFactsController } from "./briefing-facts.controller";
 
 // A Wednesday 15:00 UTC: MCX (20:30 IST), NYMEX and FX are all open.
@@ -20,7 +20,12 @@ function sources(over: { quote?: Quote | undefined; heardAgoMs?: number; paths?:
       return undefined;
     },
     async health() {
-      return { active: { "MCX:CRUDEOIL": "upstox", "FX:USDINR": "tradingview" }, prices: { "MCX:CRUDEOIL": { upstox: { at: NOW - (over.heardAgoMs ?? 1000) } }, "FX:USDINR": { tradingview: { at: NOW - 1000 } } } };
+      return {
+        active: { "MCX:CRUDEOIL": "upstox", "FX:USDINR": "tradingview" },
+        prices: { "MCX:CRUDEOIL": { upstox: { price: 9100, at: NOW - (over.heardAgoMs ?? 1000) }, tradingview: { price: 9101, at: NOW - 2000 } }, "FX:USDINR": { tradingview: { price: 94.45, at: NOW - 1000 } } },
+        providers: { upstox: { ok: 10, failed: 0, lastError: null, lastOkAt: NOW - 1000, latencyMs: 5 } },
+        rejected: { count: 2 },
+      };
     },
   };
 }
@@ -132,4 +137,40 @@ test("submitted briefings come back newest first with their grounding", async ()
   const { c } = controller();
   const rows = await c.submitted("5");
   expect(rows[0]).toMatchObject({ id: "bm-1", symbol: "MCX:CRUDEOIL", source: "claude-mcp", priceThen: 9100, at: 1_760_000_000_000 });
+});
+
+test("technicals are the computed numbers only, with where the price comes from", async () => {
+  const t = await technicals("MCX:CRUDEOIL", "5m", sources());
+  expect(t).toMatchObject({ symbol: "MCX:CRUDEOIL", price: 9100 });
+  expect(t.technicals.rsi14).toBeDefined();
+  expect(t.stats.atr14).toBeDefined();
+  expect(t.provenance.price.quality).toBe("live");
+  expect("news" in t).toBe(false); // headlines are a different tool
+});
+
+test("the recap is the no-AI summary, refused for a currency", async () => {
+  const r = await recap("MCX:CRUDEOIL", sources());
+  expect(r.headline).toContain("Crude Oil is at 9100");
+  expect(Array.isArray(r.lines)).toBe(true);
+  await expect(recap("FX:USDINR", sources())).rejects.toThrow(/covers the energy futures/);
+});
+
+test("market status says per instrument: session, serving feed, live or stale, whether the feeds agree; and per provider how it is doing", async () => {
+  const m = await marketStatus(sources());
+  const crude = m.instruments.find((i) => i.symbol === "MCX:CRUDEOIL")!;
+  expect(crude).toMatchObject({ session: "open", quality: "live", feed: "upstox", agreement: "agree", heardSecondsAgo: 1 });
+  expect(m.instruments.find((i) => i.symbol === "FX:USDINR")!.agreement).toBe("one feed only (no comparison)"); // not a pass
+  expect(m.sessions.MCX.open).toBe(true);
+  expect(m.feeds.upstox).toMatchObject({ ok: 10, failed: 0 });
+  expect(m.rejectedQuotes).toBe(2);
+  const stale = await marketStatus(sources({ heardAgoMs: 120_000 }));
+  expect(stale.instruments.find((i) => i.symbol === "MCX:CRUDEOIL")!.quality).toBe("stale");
+});
+
+test("with the stream down the status says feed state is unknown instead of looking healthy", async () => {
+  const s = sources();
+  s.health = async () => undefined;
+  const m = await marketStatus(s);
+  expect(m.warning).toContain("not reachable");
+  expect(m.instruments.every((i) => i.quality !== "live")).toBe(true);
 });

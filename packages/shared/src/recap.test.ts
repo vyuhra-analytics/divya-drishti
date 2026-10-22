@@ -65,3 +65,17 @@ test("buildRecap says so when the price is closed, behind or disputed", () => {
   expect(buildRecap(p({ conflict: { between: ["tradingview", "upstox"], pct: 0.31, ticks: 29 } })).lines[0]).toBe("Two live feeds disagree: tradingview and upstox differ by 0.31%, so treat the price as disputed.");
   expect(buildRecap(p({})).lines[0]).toMatch(/^On the 5m chart/); // live and undisputed: nothing added
 });
+
+test("recapExtras turns the curve, positioning and EIA responses into the recap's extra lines, and leaves out what is missing", async () => {
+  const { recapExtras } = await import("./recap");
+  const mm = (net: number) => ({ long: net > 0 ? net : 0, short: net < 0 ? -net : 0, net, change: 5, pctOfOi: 1, changeLong: 0, changeShort: 0 });
+  const rows = [100, 200, 300].map((n) => ({ date: "2026-10-13", managedMoney: mm(n) })) as never;
+  const full = recapExtras({ crude: true, curve: { summary: { shape: "backwardation" } as never }, cot: { rows }, eia: { series: [{ id: "WCESTUS1", label: "Crude", latest: { date: "x", value: 1 }, change: -8557, vsFiveYear: -2000 } as never] } });
+  expect(full.curve).toBeDefined();
+  expect(full.cot).toMatchObject({ name: "WTI", net: 300 });
+  expect(full.stocks).toEqual([{ label: "US crude stocks", change: -8557, vsFiveYear: -2000 }]);
+  const gas = recapExtras({ crude: false, cot: { rows } });
+  expect(gas.cot!.name).toBe("Henry Hub gas");
+  expect(gas.stocks).toBeUndefined();
+  expect(recapExtras({ crude: true })).toEqual({ curve: undefined });
+});

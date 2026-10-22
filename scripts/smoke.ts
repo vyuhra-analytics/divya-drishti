@@ -270,6 +270,14 @@ await check("instruments API: list, bad input is a 400, built-ins cannot be remo
   need(after.instruments.length === list.instruments.length, "the catalogue changed");
 });
 
+await check("analysis routes: bad requests are a 400, the status covers every instrument and the stream state", async () => {
+  need((await get("/analysis/technicals?symbol=MCX:GOLD")).status === 400, "unknown symbol was not a 400");
+  need((await get("/analysis/technicals?symbol=MCX:CRUDEOIL&tf=2h")).status === 400, "unknown timeframe was not a 400");
+  need((await get("/analysis/recap?symbol=FX:USDINR")).status === 400, "a recap for a currency was not a 400");
+  const st = await ok("/analysis/status");
+  need(st.instruments.length >= 7 && st.sessions.MCX && st.sessions.FX, "status is incomplete");
+  need(!st.warning, "the status says the stream is unreachable");
+});
 await check("agent briefings: bad requests are refused, a foreign website cannot submit or announce (nothing stored)", async () => {
   need((await get("/briefing/context?symbol=MCX:GOLD")).status === 400, "unknown symbol was not a 400");
   need((await get("/briefing/context?symbol=MCX:CRUDEOIL&tf=2h")).status === 400, "unknown timeframe was not a 400");

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { buildRecap, instrument, netChange, percentileRank, type CotRow, type CurveSummary, type EiaSummary, type Recap, type RecapExtras } from "@drishti/shared";
+import { buildRecap, instrument, recapExtras, type CotRow, type CurveSummary, type EiaSummary, type Recap } from "@drishti/shared";
 import { gatherContext } from "./BriefingPanel";
 import { apiUrl, useClock } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -33,13 +33,7 @@ export function RecapWidget({ widget }: { widget: Widget }) {
         get<{ rows: CotRow[] }>(`/cot?market=${crude ? "wti" : "natgas"}&weeks=156`),
         crude ? get<{ series: (EiaSummary & { label: string })[] }>("/eia") : Promise.resolve(undefined),
       ]);
-      const extras: RecapExtras = { curve: curve?.summary };
-      const rows = cot?.rows ?? [];
-      const last = rows[rows.length - 1];
-      if (last) extras.cot = { name: crude ? "WTI" : "Henry Hub gas", net: last.managedMoney.net, change: netChange(last.managedMoney), percentile: percentileRank(last.managedMoney.net, rows.map((r) => r.managedMoney.net)) };
-      const crudeStocks = eia?.series.find((s) => s.id === "WCESTUS1");
-      if (crudeStocks?.latest) extras.stocks = [{ label: "US crude stocks", change: crudeStocks.change, vsFiveYear: crudeStocks.vsFiveYear }];
-      setRecap({ at: Date.now(), value: buildRecap(ctx, extras) });
+      setRecap({ at: Date.now(), value: buildRecap(ctx, recapExtras({ crude, curve, cot, eia })) });
       setError(null);
     } catch (e) {
       setError((e as Error).message);

@@ -317,6 +317,33 @@ test("MCP -> UI: Claude reads the app's facts over MCP, submits a briefing, the 
   }
 });
 
+test("MCP read tools: instruments, market status, technicals, recap, news, calendar, candles and the option chain all answer from the live stack", async () => {
+  const transport = new StdioClientTransport({ command: "bun", args: ["src/index.ts"], cwd: join(import.meta.dir, "../apps/drishti-mcp"), env: { ...(process.env as Record<string, string>), MCP_PAPER_WRITE: "", MCP_BRIEFING_WRITE: "", TELEGRAM_BOT_TOKEN: "" }, stderr: "ignore" });
+  const mcp = new Client({ name: "e2e", version: "1" });
+  await mcp.connect(transport);
+  try {
+    const ask = async (name: string, args: Record<string, unknown> = {}) => {
+      const r: any = await mcp.callTool({ name, arguments: args });
+      assert(!r.isError, `${name} failed: ${r.content?.[0]?.text}`);
+      return JSON.parse(r.content[0].text);
+    };
+    assert((await ask("list_instruments")).length >= 7, "list_instruments is missing the built-ins");
+    const status = await ask("get_market_status");
+    assert(status.instruments.length >= 7 && status.sessions.MCX && status.feeds.upstox, "get_market_status is incomplete");
+    const t = await ask("get_technicals", { symbol: "MCX:CRUDEOIL", timeframe: "1h" });
+    assert(t.technicals.rsi14 !== undefined && t.provenance.price.quality, "get_technicals lacks indicators or provenance");
+    assert((await ask("get_recap", { symbol: "MCX:CRUDEOIL" })).headline.includes("Crude Oil"), "get_recap has no headline");
+    assert((await ask("get_news", { limit: 3 })).notice.includes("untrusted"), "get_news does not mark headlines as untrusted");
+    await ask("get_calendar", { days: 3 });
+    const bars = await ask("get_bars", { symbol: "FX:USDINR", limit: 5 });
+    assert(bars.bars.length === 5 && !bars.bars.some((b: any) => b.forming), "get_bars returned a forming candle or the wrong count");
+    const chain = await ask("get_option_chain", { underlying: "CRUDEOIL", strikes_each_side: 4 });
+    assert(chain.rows?.length >= 5, "get_option_chain has too few strikes");
+  } finally {
+    await mcp.close();
+  }
+});
+
 test("Detailed option chain: every column of the Upstox-style chain, spot marker, load more, column chooser that persists", async ({ page }) => {
   const root = await openPanel(page, "OCX", ".ocx");
   await root.locator("tbody tr").nth(8).waitFor({ timeout: 30_000 });

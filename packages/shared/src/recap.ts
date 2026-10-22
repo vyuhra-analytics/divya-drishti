@@ -1,7 +1,9 @@
 // Energy recap: a short fixed-template summary of an instrument from numbers we already have. No model, no key, works offline.
 // Every sentence comes from one rule with one threshold, so what it says can be traced to a number. Pure and tested.
 import type { BriefingContext } from "./briefing";
+import { netChange, percentileRank, type CotRow } from "./cot";
 import type { CurveSummary } from "./curve";
+import type { EiaSummary } from "./eia";
 import { instrument } from "./index";
 
 export interface RecapExtras {
@@ -10,6 +12,17 @@ export interface RecapExtras {
   cot?: { name: string; net: number; change?: number; percentile?: number };
   /** latest weekly EIA stock readings, in thousand barrels */
   stocks?: { label: string; change?: number; vsFiveYear?: number }[];
+}
+
+/** The curve, positioning and inventory lines of a recap from the raw responses of /curve, /cot and /eia (one place for the browser and the server). */
+export function recapExtras(i: { crude: boolean; curve?: { summary?: CurveSummary }; cot?: { rows: CotRow[] }; eia?: { series: (EiaSummary & { label: string })[] } }): RecapExtras {
+  const extras: RecapExtras = { curve: i.curve?.summary };
+  const rows = i.cot?.rows ?? [];
+  const last = rows[rows.length - 1];
+  if (last) extras.cot = { name: i.crude ? "WTI" : "Henry Hub gas", net: last.managedMoney.net, change: netChange(last.managedMoney), percentile: percentileRank(last.managedMoney.net, rows.map((r) => r.managedMoney.net)) };
+  const crudeStocks = i.eia?.series.find((s) => s.id === "WCESTUS1");
+  if (crudeStocks?.latest) extras.stocks = [{ label: "US crude stocks", change: crudeStocks.change, vsFiveYear: crudeStocks.vsFiveYear }];
+  return extras;
 }
 
 export interface Recap {

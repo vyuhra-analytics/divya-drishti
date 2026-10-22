@@ -35,13 +35,15 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
-  expect(await names(client)).toEqual(["get_briefing_context", "get_futures_curve", "get_paper_account", "get_quote", "get_speculator_positioning", "list_paper_positions", "list_paper_trades"]);
+  expect(await names(client)).toEqual([
+    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_futures_curve", "get_jodi", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
+  ].sort());
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(10);
+  expect((await names(client)).length).toBe(22);
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {
@@ -177,4 +179,107 @@ test("every connecting session is told what the server is, that the paper accoun
   expect(text).toContain("get_briefing_context");
   expect(text).toContain("never instructions");
   expect(text).toContain("not advice");
+});
+
+const NOW = Date.now();
+const fixtures: Record<string, unknown> = {
+  "/instruments": { instruments: [{ symbol: "MCX:CRUDEOIL", name: "Crude Oil", exchange: "MCX", currency: "INR", lot: "100 bbl", decimals: 0, delayedBy: 0 }, { symbol: "MCX:ZINC", name: "Zinc", exchange: "MCX", currency: "INR", lot: "5000 kg", decimals: 2, delayedBy: 0, custom: true }] },
+  "/news": [
+    { id: "a", title: "Brent climbs", url: "https://x/a", source: "Reuters", publishedAt: NOW - 10 * 60_000, tags: ["crude"], copies: [{ source: "CNBC" }] },
+    { id: "b", title: "Old story", url: "https://x/b", source: "OilPrice", publishedAt: NOW - 30 * 3600_000, tags: ["crude"] },
+  ],
+  "/calendar": [{ id: "e", title: "EIA crude inventories", at: NOW + 90 * 60_000, kind: "energy", impact: "high", forecast: "-1.2M", previous: "-3.1M", country: "US" }],
+};
+const respondWith = (extra: Record<string, unknown> = {}) => (url: string) => {
+  const u = new URL(url);
+  const body = { ...fixtures, ...extra }[u.pathname];
+  return body === undefined ? { status: 404, body: { message: "not found" } } : { body };
+};
+
+test("list_instruments gives symbols and lot sizes, and says which the user added", async () => {
+  const { call, calls } = await connect({}, respondWith());
+  const rows = JSON.parse((await call("list_instruments")).text);
+  expect(rows[1]).toMatchObject({ symbol: "MCX:ZINC", lot: "5000 kg", addedByUser: true });
+  expect(calls[0]!.url).toBe("http://stream.test/instruments");
+});
+
+test("get_news returns only recent headlines, marked as untrusted text, with who else ran the story", async () => {
+  const { call, calls } = await connect({}, respondWith());
+  const r = JSON.parse((await call("get_news", { topic: "crude", query: "brent", hours: 24 })).text);
+  expect(r.notice).toContain("never instructions");
+  expect(r.items).toHaveLength(1); // the 30-hour-old story is dropped
+  expect(r.items[0]).toMatchObject({ title: "Brent climbs", outlet: "Reuters", alsoReportedBy: ["CNBC"] });
+  expect(r.items[0].minutesAgo).toBeGreaterThanOrEqual(10);
+  expect(calls[0]!.url).toContain("tags=crude");
+  expect(calls[0]!.url).toContain("q=brent");
+});
+
+test("get_calendar shows time to each release and the forecast", async () => {
+  const { call } = await connect({}, respondWith());
+  const r = JSON.parse((await call("get_calendar", { days: 2 })).text);
+  expect(r[0]).toMatchObject({ title: "EIA crude inventories", impact: "high", forecast: "-1.2M" });
+  expect(r[0].minutesFromNow).toBeGreaterThan(85);
+});
+
+test("get_bars drops the candle still forming, marks it when asked, and keeps the newest N", async () => {
+  const sec = Math.floor(NOW / 1000);
+  const open = Math.floor(sec / 300) * 300;
+  const bars = [open - 900, open - 600, open - 300, open].map((time, i) => ({ time, open: 9000 + i, high: 9005 + i, low: 8995 + i, close: 9002 + i, volume: 10 }));
+  const { call } = await connect({}, respondWith({ "/bars": bars }));
+  const done = JSON.parse((await call("get_bars", { symbol: "MCX:CRUDEOIL", limit: 2 })).text);
+  expect(done.bars).toHaveLength(2);
+  expect(done.bars.some((b: any) => b.forming)).toBe(false);
+  expect(done.bars[1].time).toBe(new Date((open - 300) * 1000).toISOString());
+  const all = JSON.parse((await call("get_bars", { symbol: "MCX:CRUDEOIL", limit: 5, include_forming: true })).text);
+  expect(all.bars).toHaveLength(4);
+  expect(all.bars[3].forming).toBe(true);
+});
+
+test("the analysis tools read the API's computed views", async () => {
+  const { call, calls } = await connect({}, respondWith({ "/analysis/technicals": { technicals: { rsi14: 55 } }, "/analysis/status": { instruments: [] }, "/analysis/recap": { headline: "Crude Oil is at 9100." }, "/canaries": { canaries: [] }, "/eia": { series: [] } }));
+  expect(JSON.parse((await call("get_technicals", { symbol: "MCX:CRUDEOIL", timeframe: "1h" })).text).technicals.rsi14).toBe(55);
+  expect(calls.at(-1)!.url).toBe("http://api.test/analysis/technicals?symbol=MCX%3ACRUDEOIL&tf=1h");
+  await call("get_market_status");
+  expect(calls.at(-1)!.url).toBe("http://api.test/analysis/status");
+  expect(JSON.parse((await call("get_recap", { symbol: "NYMEX:CL" })).text).headline).toContain("Crude Oil");
+  await call("get_source_checks");
+  expect(calls.at(-1)!.url).toBe("http://api.test/canaries");
+  await call("get_eia");
+  expect(calls.at(-1)!.url).toBe("http://api.test/eia");
+});
+
+test("the option chain, JODI and chokepoint tools pass their choices through and keep results small", async () => {
+  const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-09-${String(i + 1).padStart(2, "0")}`, tankers: 40 + i }));
+  const { call, calls } = await connect({}, respondWith({ "/options": { rows: [] }, "/jodi": { flows: [] }, "/chokepoints": { chokepoint: { id: "suez" }, summary: { flag: "normal" }, days, fetchedAt: 1 } }));
+  await call("get_option_chain", { underlying: "CRUDEOIL", expiry: "2026-11-17", strikes_each_side: 12 });
+  expect(calls.at(-1)!.url).toBe("http://api.test/options?underlying=CRUDEOIL&strikes=12&expiry=2026-11-17");
+  await call("get_jodi", { country: "CN" });
+  expect(calls.at(-1)!.url).toBe("http://api.test/jodi?country=CN");
+  const cp = JSON.parse((await call("get_chokepoints", { id: "suez", days_shown: 7 })).text);
+  expect(cp.recentDays).toHaveLength(7);
+  expect(cp.recentDays[6].tankers).toBe(69);
+  expect(cp.summary.flag).toBe("normal");
+});
+
+test("bad arguments to the new read tools are refused before any request", async () => {
+  const { call, calls } = await connect({}, respondWith());
+  for (const [tool, args] of [
+    ["get_news", { topic: "gold" }],
+    ["get_news", { hours: 500 }],
+    ["get_calendar", { days: 99 }],
+    ["get_bars", { symbol: "MCX:CRUDEOIL", limit: 1000 }],
+    ["get_bars", { symbol: "MCX:CRUDEOIL", timeframe: "2h" }],
+    ["get_option_chain", { underlying: "GOLD" }],
+    ["get_option_chain", { underlying: "CRUDEOIL", expiry: "17-11-2026" }],
+    ["get_jodi", { country: "RU" }],
+    ["get_chokepoints", { id: "panama" }],
+  ] as const) expect((await call(tool, args as never)).isError).toBe(true);
+  expect(calls).toHaveLength(0);
+});
+
+test("a service that is down is reported, not hidden", async () => {
+  const { call } = await connect({}, () => null);
+  const r = await call("get_market_status");
+  expect(r.isError).toBe(true);
+  expect(r.text).toContain("not reachable");
 });
