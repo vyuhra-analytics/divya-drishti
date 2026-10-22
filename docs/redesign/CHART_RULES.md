@@ -22,8 +22,8 @@ Priority order; when more than eight apply, the lowest priorities hide, never th
 | Priority | Level | When |
 |---|---|---|
 | 1 | Entry | in a trade |
-| 2 | Stop (future level through delta) and the hard-limit equivalent | in a trade |
-| 3 | TP1, TP2, trail | in a trade |
+| 2 | Stop (1R, and at entry after TP1), shown with its option rupee equivalent | signal (as "plan") and in a trade |
+| 3 | TP1, TP2 | in a trade |
 | 4 | Range box high / low (the last hour before the print) | range, print, window, in trade |
 | 5 | Previous day high, previous day low | always |
 | 6 | Session VWAP | always (thin line) |
@@ -47,7 +47,7 @@ Each level has a **label at the right edge with its value**, labels never overla
 
 ## 6. Colour and type
 
-- Colours are state, from the design tokens (step 2 design system): up / down per the user's setting, blue = range and live price, green = favourable, red = stop and limit, grey = reference levels. Not decorative, and the same in light and dark.
+- Colours are state, from the design tokens (step 2 design system): up / down per the user's setting, blue = range and live price, green = favourable, red = stop and cap, grey = reference levels. Not decorative, and the same in light and dark.
 - Numbers use a tabular, monospaced face, sized so the price label reads from arm's length on a large monitor (the label at least 28 px high in the default density).
 
 ## 7. Performance targets (measured later, step 5)

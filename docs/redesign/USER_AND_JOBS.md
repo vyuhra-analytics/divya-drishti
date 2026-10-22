@@ -9,7 +9,7 @@ Filled in from the owner's own answers. Anything not yet answered is marked `?`.
 | What is traded | **Buying options** (CE or PE) on MCX: crude (standard) options and NATGASMINI options. **One lot, fixed, always.** The signals and levels are read on the **future's** 5-minute chart; the option is the instrument bought. |
 | Real capital | **Rs 70,000.** The capital a trade needs is set by the premium of the strike bought (premium x lot size), so it varies by strike and day. |
 | Style, session | **Intraday**, **MCX evening, 17:00 to 23:30 IST** |
-| Daily limits | **Rs 500 to 1,000 a day, in loss or in profit**: stop on whichever comes first |
+| Daily limits | **Superseded 2026-10-22:** the Rs 500 / Rs 1,000 daily limits were replaced by **R multiples (stop 1R, TP1 +1R then stop to entry, TP2 +2R) with a Rs 2,000 cap on the loss of one trade**. One trade a day. |
 | Per-trade loss | Set by the strategy (stop at entry minus or plus R on the future), not by a rupee rule |
 | Screens | **One large monitor** |
 | Tools today | **TradingView** (dislikes) and **Upstox web or desktop** (likes) |
@@ -31,7 +31,7 @@ Filled in from the owner's own answers. Anything not yet answered is marked `?`.
 | EIA entry, restated | **Pre-report high/low range; go long or short on the first three 5-minute candles after the print** breaking it (pre-report window: **the last hour before the print**) |
 | USIB range and filter | **High and low of 18:00 to 19:00 IST; entry needs volume at least 1.5x the previous ten candles and price on the right side of session VWAP** (above for long, below for short; confirmed) |
 | Funds | **Buying options: the premium is paid in full**; Upstox "funds" is just the premium |
-| Daily limit vs option stop | **The Rs 500 to 1,000 daily limit is a hard rupee stop on the open option** (closes the trade when reached, loss or profit); the R levels through delta only set targets and the nominal stop, which the limit will usually reach first |
+| Daily limit vs option stop | Superseded 2026-10-22 (was: the Rs 500 to 1,000 limit as a hard rupee stop). Now: the 1R stop and the Rs 2,000 cap rule; see `SETTINGS.md`. |
 
 ## The two strategies (in the owner's words, kept exactly)
 
@@ -85,6 +85,8 @@ Both run on report or non-report days in the evening session. The owner's wordin
    to say anything about these strategies. (Costs: the cost model has an options branch, to be checked.)
 7. **The other Claude session** (the one that asked for tags, client order ids and trailing stops) is where these strategies are being researched and recorded in
    `data/records/`. Its R, TP1, TP2 and trail rules are the same ones above.
+
+**Update 2026-10-22: the daily limits (Rs 500 / Rs 1,000) were replaced by R multiples with a Rs 2,000 per-trade cap. Notes below that mention the limits are history.**
 
 **Focus (2026-10-22): the EIA report-day strategy first.** Its spec and the replay on stored bars are in `EIA_STRATEGY.md`.
 

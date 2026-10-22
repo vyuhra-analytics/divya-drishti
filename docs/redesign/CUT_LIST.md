@@ -10,8 +10,8 @@ Desks: **Evening** (the one-monitor trading screens, see `EIA_SCREENS.md`) and *
 | OCX | Option chain (detailed) | **Keep, reshape** | Evening: trimmed to four strikes and six columns (premium, delta, OI, volume, IV, theta) with the rule's suggested strike. Detailed 15-column view stays on the Research desk. |
 | CAL | Calendar | **Keep** | Feeds the report block and the countdown. |
 | EIA | EIA stocks | **Keep, reshape** | Becomes the report block (forecast, actual, surprise, allowed side). |
-| PT | Paper trading | **Keep, reshape** | Must simulate buying one lot of an option and the daily limit; today it simulates futures. |
-| AL | Alerts | **Keep, reshape** | Alert sounds and flashes at stop, TP1, TP2, limit and time stop. |
+| PT | Paper trading | **Keep, reshape** | Must simulate buying one lot of an option and the R stop, targets and Rs 2,000 cap; today it simulates futures. |
+| AL | Alerts | **Keep, reshape** | Alert sounds and flashes at stop, TP1, TP2, the cap and time stop. |
 | (status bar) | Status bar | **Keep** | Clocks, sessions, feed ages. |
 | Q | Quote | Optional | Price, bid, ask and day range move into the chart header; the panel stays on the Research desk. |
 | W | Watchlist | Optional | Research desk. The evening screen shows only the traded instrument. |

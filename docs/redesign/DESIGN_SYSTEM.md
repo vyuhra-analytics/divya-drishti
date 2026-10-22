@@ -21,7 +21,7 @@ A dense, calm, one-monitor terminal. It extends the tokens already in `apps/dris
 | `--up` / `--down` | `#26a69a` / `#ef5350` | 6.0 / 5.1 | price direction (existing, switchable) |
 | `--live` (new) | `#4c8dff` | 5.6 | live price, the range box |
 | `--good` (new) | `#3fb950` | 7.0 | favourable: in profit, target hit |
-| `--bad` (new) | `#ff6b6b` | 6.4 | stop, limit, loss |
+| `--bad` (new) | `#ff6b6b` | 6.4 | stop, cap, loss |
 | `--warn` (new) | `#f0a020` | 8.3 | time stop, stale data, caution (the existing accent) |
 | `--ref` (new) | `#9aa0ac` | 6.8 | reference levels (previous day high / low, VWAP) |
 
@@ -58,8 +58,8 @@ Alerts are the one place the screen is allowed to be loud. Four classes, each wi
 
 | Class | Triggers | Look | Sound (distinct pattern, not just pitch) |
 |---|---|---|---|
-| **Critical** | the loss limit reached, the stop touched | full-width banner on `#a31621` with white text "STOP / LOSS LIMIT: close the option now", chart border flashes red twice, stays until acknowledged | three descending tones, repeats once after 10 s if unacknowledged |
-| **Good** | TP1 or TP2 touched, the profit limit reached | banner on `#3fb950` with dark text "TP1: move the stop to entry" or "PROFIT LIMIT: close and stop for the day", stays 20 s or until acknowledged | two rising tones |
+| **Critical** | the stop touched, the Rs 2,000 loss cap reached | full-width banner on `#a31621` with white text "STOP (-1R) / LOSS CAP: close the option now", chart border flashes red twice, stays until acknowledged | three descending tones, repeats once after 10 s if unacknowledged |
+| **Good** | TP1 or TP2 touched | banner on `#3fb950` with dark text "TP1: move the stop to entry" or "TP2 (+2R): close the option", stays 20 s or until acknowledged | two rising tones |
 | **Caution** | the time-stop window opens, entry cut-off passed, feed stale during a trade | amber banner, `#f0a020` with dark text | one medium tone |
 | **Info** | the print arrived, a signal formed, the report block updated | slim blue notice, no sound unless enabled | soft click (optional) |
 
@@ -67,7 +67,7 @@ Contrast checked: white on `#a31621` 7.8; dark on amber 8.6; dark on green 7.2; 
 
 ## 7. Components used on the evening desk (to build in step 4)
 
-Stage strip, limit gauge (bar plus "Rs used of Rs 500 / Rs 1,000" and the R equivalent), chart header, level label (with rupee equivalent), report block, trimmed chain row (with the suggested-strike highlight and the OI-wall mark), trade block, alert banner, review note box. Each is a small component with props and states listed in the step 3 prototype before it is built.
+Stage strip, result gauge (open result in R from -1R to +2R with the stop, TP1 and TP2 marked, and the rupee value), chart header, level label (with rupee equivalent), report block, trimmed chain row (with the suggested-strike highlight and the OI-wall mark), trade block, alert banner, review note box. Each is a small component with props and states listed in the step 3 prototype before it is built.
 
 ## 8. Not decided
 

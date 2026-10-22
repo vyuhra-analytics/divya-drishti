@@ -5,6 +5,8 @@ Evidence labels: **measured** (from our stored 5-minute bars, 2026-09-21 to 2026
 
 What we do NOT have: any trade record. The owner's text mentions an amendment history ("Amendment 3", "S2.1") and records kept by another session, but no `data/records/` exists in this repository. **So nothing below says whether the strategies make money. It only says where the rules disagree with themselves or with the market.**
 
+> **Update 2026-10-22:** findings A1 and A2 led to the owner replacing the Rs 500 / Rs 1,000 limits with R multiples and a Rs 2,000 per-trade cap (`SETTINGS.md`). A1 to A4 are kept as the record of why.
+
 ## A. Findings that change the design
 
 ### A1. The R structure and the rupee limit are two different strategies (arithmetic + measured)

@@ -2,13 +2,15 @@
 
 Built only from the owner's own rules (`USER_AND_JOBS.md`). Anything the owner has not said is marked `?`. No code.
 
+> **Update 2026-10-22:** the risk rule is now R multiples with a Rs 2,000 per-trade cap. The replay sections below were written under the Rs 500 / Rs 1,000 limits and are kept as history; the R replay is in `SETTINGS.md`.
+
 ## The rules as the owner gave them
 
 - Crude (standard) options on **WPSR** (Wednesday), NATGASMINI options on **WNGSR** (Thursday), print at 10:30 New York = **20:00 IST until 1 Nov 2026, 21:00 IST after**.
 - Surprise = actual against a free calendar's forecast. Threshold: **crude 3 million barrels, gas 5.0 Bcf**.
 - Range = high and low of the **last hour before the print**. Go long or short on a break of it during the **first three 5-minute candles after the print**.
 - Strike: at the money if |delta| >= 0.5, or the 0.6-delta strike if its premium fits the capital; evaluated before the print and adjusted after, in at most 5 minutes. Nearest expiry. One lot.
-- Exits by hand: future levels translated to premium through delta (R = 1.5 x ATR(14) of the 5-minute future, TP1 1R then stop to entry, TP2, trail), **and** a hard rupee limit of Rs 500 to 1,000 on the open option, whichever comes first. **Time stop**: 21:30 to 22:00 IST (22:30 to 23:00 after 1 Nov). One trade a day, then done.
+- Exits by hand (updated 2026-10-22): stop at **1R** (R = 1.5 x ATR(14) of the 5-minute future at the signal candle, translated to the option through delta); **TP1 at +1R then the stop moves to entry; TP2 at +2R**; time stop 21:30 to 22:00 IST (22:30 to 23:00 after 1 Nov); a **Rs 2,000 cap on the loss of one trade** (lower-delta strike or no trade when 1R exceeds it). The earlier Rs 500 / Rs 1,000 daily limits are gone. One trade a day, then done.
 
 ## The day as a state machine (what a terminal can show)
 
@@ -18,7 +20,7 @@ Built only from the owner's own rules (`USER_AND_JOBS.md`). Anything the owner h
 | RANGE | 1 hour before the print | the live range (high, low, width), the countdown to the print, the strike pick re-checked |
 | PRINT | the print | actual against forecast, the surprise in barrels or Bcf, and whether it passes the threshold, within a second of the release |
 | WINDOW | the print to +15 minutes | the three candles, the range lines, "closed beyond high / low" per candle |
-| IN TRADE | by hand | option premium and rupee P&L against the limit, the future against entry / stop / TP1 / TP2 / trail, countdown to the time stop |
+| IN TRADE | by hand | option premium and rupee P&L, the result in R, the future against entry / stop / TP1 / TP2, countdown to the time stop |
 | DONE | after the exit | review: what happened, no new entries |
 
 ## What the replay on stored bars shows (descriptive, 4 Wednesdays and 4 Thursdays, **not evidence of an edge**)

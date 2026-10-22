@@ -6,8 +6,9 @@ Two kinds: **rules** (they change what the strategy does or how much you can los
 
 | Setting | Default | Notes |
 |---|---|---|
-| Daily loss limit | **Rs 500** | Hard stop on the open option: the trade is closed by hand when reached (the terminal alerts); the day is then done. |
-| Daily profit limit | **Rs 1,000** | Same, on the profit side. |
+| Stop | **1R** | R = 1.5 x ATR(14) of the 5-minute future at the signal candle; the stop is 1R from the future entry, translated to the option through delta (changed 2026-10-22: the Rs 500 / Rs 1,000 daily limits are gone). |
+| Targets | **TP1 +1R, then the stop moves to entry; TP2 +2R** | No separate profit limit. One trade a day, so the day ends with the trade. |
+| **Max loss per trade (cap)** | **Rs 2,000** | If 1R through delta, plus the spread, exceeds the cap, the screen warns and suggests a lower-delta strike (below your 0.5 rule); if none fits, no trade. A backstop alert also fires if the option loss reaches the cap. |
 | Capital | Rs 70,000 | Used for the premium-fits test and the premium shown against capital. |
 | Crude surprise threshold | 3.0 million barrels | EIA WPSR. |
 | Gas surprise threshold | 5.0 Bcf | EIA WNGSR. |
@@ -23,8 +24,10 @@ Two kinds: **rules** (they change what the strategy does or how much you can los
 
 Up / down colours, clock format (12 / 24 hour), density, theme, alert sounds and flash, window length is **not** a setting (fixed 48 bars).
 
-## What the owner's numbers imply (arithmetic and measured, flag)
+## What the R rule and the cap imply (2026-10-22; replaces the older analysis of the Rs 500 / Rs 1,000 limits)
 
-- **A Rs 500 loss on one crude lot is 8 to 10 future points** (100 bbl, delta 0.5 to 0.6). Measured on the stored bars: **88 to 91% of evening 5-minute candles have a range at least that large.** A Rs 500 stop is inside the noise of a single candle: it will be hit often, including by trades that would have worked. Rs 1,000 on the profit side is about 17 to 20 points, so the loss limit is **half** the profit limit: the strategy needs a win rate near 67% to break even before costs and the spread (Rs 130 to 150 per crude lot round trip, about a quarter to a third of the Rs 500). This is arithmetic from the owner's own settings, not a forecast; it is the first thing the replay test (step 3 and later) should measure.
-- **On gas** Rs 500 is about 3.6 points (about three ATRs) and Rs 1,000 about 7 points; the limits are wide there, so gas trades are governed by the R levels and the time stop, not the limit.
-- **Two limits mean three day-end states**: done on loss, done on profit, done on time/no trade. The review view names which one ended the day.
+- **Why it changed:** a Rs 500 loss on one crude lot is about a 7-point future stop with the spread included (a median evening 5-minute candle is 18 points); the two EIA Wednesdays with an entry (7 and 14 Oct) hit it first, including the day that later moved 68 points the right way. The owner chose R multiples.
+- **Replay of the R rules on the same two days** (stop first inside a candle, delta 0.5, spread Rs 140, time stop 22:00): 7 Oct, TP2 at +2R, about +Rs 2,900; 14 Oct, stopped at -1R, about -Rs 1,550. Two trades, not an edge.
+- **1R in rupees moves with volatility:** about Rs 1,550 to 1,700 at the median ATR (R about 31 points), about Rs 2,900 at R 54.8 (20 Oct, delta 0.5). Above the Rs 2,000 cap the strike must have a lower delta: about 0.33 on that day (the prototype's simulated chain puts that strike far out of the money; the real chain decides).
+- **Gas:** R is about 1.5 points, 1R about Rs 190, far inside the cap; the cap does not bind on gas.
+- **Day-end states** (the review names which one ended the day): stopped at -1R, stopped at entry after TP1, TP2, time stop, cap backstop, no trade.

@@ -6,11 +6,11 @@ First wireframe, shown in the conversation as a clickable six-stage mock-up (num
 
 | Block | Where | Always shows |
 |---|---|---|
-| Stage strip | top | stage name and window, countdown to the next event, **day limit gauge** (Rs 1,000, used so far) |
+| Stage strip | top | stage name and window, countdown to the next event, **open-result gauge in R** (-1R to +2R, the stop, TP1 and TP2 as marks) and the Rs 2,000 cap |
 | Future chart | left, about 63% wide | MCX future 5-minute candles with the **live candle, tick and price always in view** (the chart follows the last bar by default, no zooming needed), previous-day high and low, session VWAP, the last-hour range box, signal marker, entry / stop / TP1 / TP2 / trail once in a trade |
 | Report block | right, top | forecast (typed in or from Forex Factory), actual, surprise against the 3.0M / 5.0 Bcf threshold, and which side is allowed |
 | Option chain | right, middle | four strikes around the money, columns **premium, delta, OI, volume, IV, theta** only; the rule's suggested strike highlighted; the nearest OI wall named |
-| Trade block | right, bottom | before entry: the signal and the strike to buy; in the trade: **option premium and rupee P&L**, the future against its levels, limit used, time-stop countdown; after: review |
+| Trade block | right, bottom | before entry: the signal and the strike to buy; in the trade: **option premium and rupee P&L**, the future against its levels, result in R, time-stop countdown; after: review |
 
 ## The six stages
 
@@ -18,16 +18,16 @@ First wireframe, shown in the conversation as a clickable six-stage mock-up (num
 2. **Range** (the hour before the print): range box drawn live with its width; chain re-checked about ten minutes before the print.
 3. **Print**: actual, surprise and allowed side appear within seconds of the release; the chain is re-read.
 4. **Window** (print to 30 minutes after): per-candle "inside / closed above / closed below"; signal when a close breaks the range on an allowed side; entry cut-off countdown; strike re-picked by the delta rule at that moment.
-5. **In trade** (entered by hand): premium and Rs P&L first; limit gauge; alerts (sound and flash) at stop, TP1, TP2, trail move, limit reached, time stop. No order button.
+5. **In trade** (entered by hand): premium and Rs P&L first; result gauge in R; alerts (sound and flash) at stop, TP1 (move the stop to entry), TP2, the Rs 2,000 cap, time stop. No order button.
 6. **Done**: one trade or none; review view with the entry, exit and a note box; new entries locked until tomorrow.
 
 ## Design rules this wireframe commits to (to be tested on a replay, step 3)
 
 - The **chart never needs zooming**: auto-follow the live bar, fixed visible window around it, price scale fitted to the visible bars; the last price is a label on the candle.
 - **No tool chrome** on this screen: no drawing toolbar, no indicator list. Levels are drawn by the app from the rules.
-- **Colour means state**, not decoration: blue = the range and live price, green = favourable, red = stop / limit, grey = reference levels.
+- **Colour means state**, not decoration: blue = the range and live price, green = favourable, red = stop / cap, grey = reference levels.
 - **Rupees before points** on the option; the future in points beside it.
-- The limit gauge is on screen in every stage, because it is the thing that ends the day.
+- The result gauge in R is on screen in every stage, because the stop and the targets are what end the trade.
 
 ## Not designed yet
 
@@ -44,3 +44,5 @@ Checked on the live chains (2026-10-22, daytime, so spreads are indicative):
 - **Crude ATM premium is about Rs 53,500 per lot** (535 points x 100; expiry 17 Nov), far above the Rs 31,600 in the wireframe, which was only a placeholder. That is 76% of Rs 70,000, so the "0.6 delta if the premium fits the capital" test matters on crude. Crude ATM theta is about -10 points = **Rs 1,000 a day per lot**, equal to the whole daily limit.
 
 Settled (2026-10-22): **gas uses the next expiry, not the nearest** (the owner's answer; reading: always the second-nearest for NATGASMINI, `?` if it should be "second only when the nearest expires within a day or two"). **Crude keeps the nearest expiry and its premium (about Rs 53,500 ATM) fits the Rs 70,000 capital.** So the strike rule per instrument is: crude = nearest expiry, gas = next expiry; both ATM with |delta| at least 0.5, else the 0.6-delta strike when its premium fits.
+
+**Update 2026-10-22:** the Rs 500 / Rs 1,000 day limits mentioned in the gas variant and the live chain notes above are replaced by the R rule and the Rs 2,000 per-trade cap (`SETTINGS.md`). The chain observations (spreads, theta, premiums) still stand.

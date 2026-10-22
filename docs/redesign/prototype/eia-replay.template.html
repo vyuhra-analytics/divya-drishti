@@ -50,7 +50,7 @@ tr.sug td{background:rgba(76,141,255,.15);color:var(--live)}
     <span class="st" id="stage">Prep</span><span class="small" id="stsub"></span>
     <span class="num" id="clock" style="font-size:15px"></span>
     <span id="cd" style="font-weight:500"></span>
-    <span style="margin-left:auto;min-width:230px"><span class="k" style="display:block">Day limit: loss Rs 500, profit Rs 1,000 <span id="limt"></span></span><span class="gauge"><i id="limb"></i></span></span>
+    <span style="margin-left:auto;min-width:230px"><span class="k" style="display:block">Risk in R: stop -1R, TP1 +1R, TP2 +2R; cap Rs 2,000 <span id="limt"></span></span><span class="gauge"><i id="limb"></i></span></span>
   </div>
   <div class="panel">
     <div class="hdr"><span>MCX CRUDEOIL future, 5 min</span><span class="p num" id="hp">-</span><span class="num small" id="hba"></span><span class="num small" id="hchg"></span><span class="badge simb" id="hsim">REPLAY</span></div>
@@ -95,7 +95,7 @@ tr.sug td{background:rgba(76,141,255,.15);color:var(--live)}
 </div>
 <script>
 const DATA=/*DATA*/null;
-const DEL=0.54,LOT=100,SPREAD=1.4,LOSS=500,PROFIT=1000,THR=3.0,CUTOFF=30*60;
+const DEL=0.54,LOT=100,SPREAD=1.4,CAP=2000,THR=3.0,CUTOFF=30*60;
 const bars=DATA.bars.map(r=>({t:r[0],o:r[1],h:r[2],l:r[3],c:r[4],v:r[5]}));
 const T0=bars[0].t, TEND=bars[bars.length-1].t+300;
 const pad=n=>String(n).padStart(2,'0');
@@ -148,13 +148,15 @@ function once(k,fn){if(!fired[k]){fired[k]=1;fn()}}
 // ---- trade
 function pnlRs(F){if(!trade)return 0;const bid=prem(trade.K,F,trade.side)-SPREAD/2;return (bid-trade.entryPrem)*LOT}
 function levels(){if(!sigInfo||sigInfo.i<0)return null;const sb=bars[sigInfo.i];const R=1.5*atrAt(sb.t);const e=bars[sigInfo.i+1].o;const s=sigInfo.side==='long'?1:-1;return{R,e,s,stop:e-s*R,tp1:e+s*R,tp2:e+s*2*R}}
-function lim(lv,d){const ptsL=Math.max(1,(LOSS-SPREAD*LOT)/(d*LOT)),ptsP=(PROFIT+SPREAD*LOT)/(d*LOT);return{ptsL,ptsP,stop:lv.e-lv.s*ptsL,tgt:lv.e+lv.s*ptsP}}
-function planInfo(F){if(trade)return{lv:trade.lv,delta:trade.delta,side:trade.side,live:true};if(done||!sigInfo||sigInfo.i<0||now<bars[sigInfo.i].t+300)return null;const pk=pickStrike(F,sigInfo.side);return{lv:levels(),delta:pk?pk.d:0.5,side:sigInfo.side,live:false,pk}}
-function ladder(F,pi){const rows=[];if(pi){const l=pi.lv;const q=lim(l,pi.delta);[['Stop (Rs '+LOSS+' limit)',q.stop],['Entry',l.e],['Target (Rs '+fmt(PROFIT)+' limit)',q.tgt],['R stop',l.stop],['TP1',l.tp1],['TP2',l.tp2]].forEach(([n,p])=>rows.push({n:(pi.live?'':'plan ')+n,p}))}const r=rangeOf(now);if(r){rows.push({n:'Range high',p:r.hi},{n:'Range low',p:r.lo})}rows.push({n:'PDH',p:DATA.pdh},{n:'PDL',p:DATA.pdl});const st=state(now);const vw=vwapAt(st.i,forming(st.i,st.u));if(vw)rows.push({n:'VWAP',p:vw});rows.push({n:'LIVE',p:F,live:true});rows.sort((a,b)=>b.p-a.p);const li=rows.findIndex(x=>x.live);const sd=pi?(pi.side==='long'?1:-1):0;const dl=pi?pi.delta*LOT:0;
+function riskRs(lv,stop,d){return Math.abs(stop-lv.e)*d*LOT+SPREAD*LOT}
+function capStrike(F,side,lv){const a=Math.round(F/50)*50;let best=null;const maxd=(CAP-SPREAD*LOT)/(Math.abs(lv.stop-lv.e)*LOT);for(let K=a-1000;K<=a+1000;K+=50){const d=deltaOf(K,F,side);if(d<=maxd&&(!best||d>best.d))best={K,d,p:prem(K,F,side)*LOT}}return best}
+function chosenStrike(F,side,lv){const pk=pickStrike(F,side);if(!lv||!pk)return pk?Object.assign(pk,{capped:false}):pk;if(riskRs(lv,lv.stop,pk.d)<=CAP)return Object.assign(pk,{capped:false});const c=capStrike(F,side,lv);return c?Object.assign(c,{capped:true}):null}
+function planInfo(F){if(trade)return{lv:trade.lv,delta:trade.delta,side:trade.side,live:true,stop:trade.stop};if(done||!sigInfo||sigInfo.i<0||now<bars[sigInfo.i].t+300)return null;const lv0=levels();const pk=chosenStrike(F,sigInfo.side,lv0);return{lv:lv0,delta:pk?pk.d:0.5,side:sigInfo.side,live:false,pk,stop:lv0.stop}}
+function ladder(F,pi){const rows=[];if(pi){const l=pi.lv;[['Stop',pi.stop],['Entry',l.e],['TP1',l.tp1],['TP2',l.tp2]].forEach(([n,p])=>rows.push({n:(pi.live?'':'plan ')+n,p}))}const r=rangeOf(now);if(r){rows.push({n:'Range high',p:r.hi},{n:'Range low',p:r.lo})}rows.push({n:'PDH',p:DATA.pdh},{n:'PDL',p:DATA.pdl});const st=state(now);const vw=vwapAt(st.i,forming(st.i,st.u));if(vw)rows.push({n:'VWAP',p:vw});rows.push({n:'LIVE',p:F,live:true});rows.sort((a,b)=>b.p-a.p);const li=rows.findIndex(x=>x.live);const sd=pi?(pi.side==='long'?1:-1):0;const dl=pi?pi.delta*LOT:0;
  let h='<table class="num"><tr><th style="text-align:left">Level</th><th>Price</th><th>Points</th><th>'+(pi?'Option Rs':'')+'</th></tr>';
  rows.forEach((x,k)=>{if(x.live){h+='<tr class="sug"><td style="text-align:left">LIVE</td><td>'+fmt(F)+'</td><td></td><td></td></tr>';return}const near=(k===li-1||k===li+1);const pts=x.p-F;const rsv=pi?pts*sd*dl:null;h+='<tr'+(near?' style="font-weight:700;color:var(--text)"':'')+'><td style="text-align:left">'+x.n+(near?' ◀':'')+'</td><td>'+fmt(x.p)+'</td><td>'+(pts>=0?'+':'')+fmt(pts)+'</td><td>'+(rsv==null?'':rs(rsv))+'</td></tr>'});
  return h+'</table>'}
-document.getElementById('buy').onclick=()=>{if(trade||done||!sigInfo||sigInfo.i<0)return;const st=state(now);if(now<bars[sigInfo.i].t+300)return;const side=sigInfo.side;const pk=pickStrike(st.price,side);if(!pk)return;const askP=prem(pk.K,st.price,side)+SPREAD/2;trade={side,K:pk.K,delta:pk.d,entryPrem:askP,entryF:st.price,t:now,lv:levels()};log('trade',hms(now)+' bought '+(side==='long'?'CE ':'PE ')+pk.K+' at '+askP.toFixed(1)+' (future '+st.price.toFixed(0)+')');document.getElementById('buy').disabled=true;document.getElementById('sell').disabled=false};
+document.getElementById('buy').onclick=()=>{if(trade||done||!sigInfo||sigInfo.i<0)return;const st=state(now);if(now<bars[sigInfo.i].t+300)return;const side=sigInfo.side;const pk=chosenStrike(st.price,side,levels());if(!pk)return;const askP=prem(pk.K,st.price,side)+SPREAD/2;const lv1=levels();trade={side,K:pk.K,delta:pk.d,entryPrem:askP,entryF:st.price,t:now,lv:lv1,stop:lv1.stop};log('trade',hms(now)+' bought '+(side==='long'?'CE ':'PE ')+pk.K+' at '+askP.toFixed(1)+' (future '+st.price.toFixed(0)+')');document.getElementById('buy').disabled=true;document.getElementById('sell').disabled=false};
 document.getElementById('sell').onclick=()=>{if(!trade)return;const st=state(now);const p=pnlRs(st.price);trade.exit={t:now,F:st.price,rs:p};done=true;document.getElementById('sell').disabled=true;ack=alerts.length;showBanner();const first=alerts.filter(a=>a.t>=trade.t).map(a=>a.text.split(':')[0])[0]||'by hand';document.getElementById('rev').innerHTML='<b>Review</b><br>Entry '+hm(trade.t)+' future '+trade.entryF.toFixed(0)+', premium '+trade.entryPrem.toFixed(1)+'<br>Exit '+hm(now)+' future '+st.price.toFixed(0)+', result <b class="num">'+rs(p)+'</b><br>First alert: '+first+'<br><textarea id="note" rows="3" style="width:100%" placeholder="Note"></textarea>'};
 // ---- logging
 function log(k,t){const e=document.getElementById('tlog');if(k==='task'||k==='trade'||k==='alert'){const d=document.createElement('div');d.textContent=t;e.prepend(d)}}
@@ -196,7 +198,7 @@ function draw(){const dpr=window.devicePixelRatio||1;const W=cv.clientWidth,H=cv
  // levels
  const lv=[];const r=rangeOf(now);const tl=trade?trade.lv:levels();
  const pi=planInfo(st.price);const lvT=pi?pi.lv:null;
- if(lvT){const d=pi.delta*LOT;const q=lim(lvT,pi.delta);[['Entry',lvT.e,'--good'],['Stop',q.stop,'--bad'],['Target',q.tgt,'--good'],['TP1',lvT.tp1,'--good']].forEach(([n,p,c])=>lv.push({n:(pi.live?'':'plan ')+n+' '+fmt(p),p,c,eq:n==='Entry'?'':'about '+rs((p-lvT.e)*lvT.s*d)}))}
+ if(lvT){const d=pi.delta*LOT;[['Entry',lvT.e,'--good'],['Stop',pi.stop,'--bad'],['TP1',lvT.tp1,'--good'],['TP2',lvT.tp2,'--good']].forEach(([n,p,c])=>lv.push({n:(pi.live?'':'plan ')+n+' '+fmt(p),p,c,eq:n==='Entry'?'':'about '+rs((p-lvT.e)*lvT.s*d)}))}
  if(r)lv.push({n:'Range high '+fmt(r.hi),p:r.hi,c:'--live'},{n:'Range low '+fmt(r.lo),p:r.lo,c:'--live'});
  lv.push({n:'PDH '+fmt(DATA.pdh),p:DATA.pdh,c:'--ref'},{n:'PDL '+fmt(DATA.pdl),p:DATA.pdl,c:'--ref'});
  const vw=vwapAt(st.i,fb);if(vw&&!lvT)lv.push({n:'VWAP '+fmt(vw),p:vw,c:'--ref'});
@@ -211,7 +213,7 @@ function draw(){const dpr=window.devicePixelRatio||1;const W=cv.clientWidth,H=cv
  cx.strokeStyle=css('--live');cx.setLineDash([1,3]);cx.beginPath();cx.moveTo(x(latest),y(lp));cx.lineTo(L+pw,y(lp));cx.stroke();cx.setLineDash([]);
 }
 // ---- panels
-function chainHTML(F,side){const sg=pickStrike(F,side||'long');const sd=side||'long';let h='<tr><th>Strike</th><th>Delta</th><th>Prem</th><th>OI</th><th>Vol</th><th>IV</th><th>Theta</th></tr>';const a=Math.round(F/50)*50;for(let K=a-100;K<=a+100;K+=50){const d=deltaOf(K,F,sd);const p=prem(K,F,sd);const seed=(K/50)%7;const sug=sg&&sg.K===K;h+='<tr'+(sug?' class="sug"':'')+'><td>'+K+(sd==='long'?' CE':' PE')+'</td><td>'+d.toFixed(2)+'</td><td>'+p.toFixed(1)+'</td><td>'+fmt(2000+seed*310)+'</td><td>'+fmt(500+seed*170)+'</td><td>'+(29+seed%4)+'</td><td>-'+(10+seed%3)+'</td></tr>'}return{h,sg}}
+function chainHTML(F,side,pl){const sg=chosenStrike(F,side||'long',pl);const sd=side||'long';let h='<tr><th>Strike</th><th>Delta</th><th>Prem</th><th>OI</th><th>Vol</th><th>IV</th><th>Theta</th></tr>';const a=Math.round(F/50)*50;for(let K=a-100;K<=a+100;K+=50){const d=deltaOf(K,F,sd);const p=prem(K,F,sd);const seed=(K/50)%7;const sug=sg&&sg.K===K;h+='<tr'+(sug?' class="sug"':'')+'><td>'+K+(sd==='long'?' CE':' PE')+'</td><td>'+d.toFixed(2)+'</td><td>'+p.toFixed(1)+'</td><td>'+fmt(2000+seed*310)+'</td><td>'+fmt(500+seed*170)+'</td><td>'+(29+seed%4)+'</td><td>-'+(10+seed%3)+'</td></tr>'}return{h,sg}}
 function update(real){const st=state(now);const F=st.price;const prevSig=sigInfo;sigInfo=findSignal();
  const [sg,ss,cd]=stage();document.getElementById('stage').textContent=sg;document.getElementById('stsub').textContent=ss;document.getElementById('cd').textContent=cd;document.getElementById('clock').textContent=hms(now)+' IST';
  document.getElementById('hp').textContent=fmt(F);document.getElementById('hba').textContent='bid '+fmt(F-.5,1)+'  ask '+fmt(F+.5,1)+' (simulated)';
@@ -225,24 +227,23 @@ function update(real){const st=state(now);const F=st.price;const prevSig=sigInfo
  // signal alert
  if(sigInfo&&sigInfo.i>=0&&now>=bars[sigInfo.i].t+300&&!trade&&!done)once('sig'+sigInfo.i,()=>raise('info','Signal '+sigInfo.side+': enter at the next future open. Strike below.',[600]));
  // chain
- const side=sigInfo&&sigInfo.i>=0?sigInfo.side:(al==='either'?'long':al);const ch=chainHTML(F,side);document.getElementById('chain').innerHTML=ch.h;document.getElementById('sugg').textContent=ch.sg?'Suggested: '+ch.sg.K+(side==='long'?' CE':' PE')+' (delta '+ch.sg.d.toFixed(2)+', premium Rs '+fmt(ch.sg.p)+' of Rs 70,000).':'No strike meets delta 0.5 and the capital.';
+ const side=sigInfo&&sigInfo.i>=0?sigInfo.side:(al==='either'?'long':al);const pl=(sigInfo&&sigInfo.i>=0&&now>=bars[sigInfo.i].t+300&&!trade)?levels():null;const ch=chainHTML(F,side,pl);document.getElementById('chain').innerHTML=ch.h;document.getElementById('sugg').textContent=ch.sg?'Suggested: '+ch.sg.K+(side==='long'?' CE':' PE')+' (delta '+ch.sg.d.toFixed(2)+', premium Rs '+fmt(ch.sg.p)+' of Rs 70,000)'+(ch.sg.capped?'. LOWER DELTA than your 0.5 rule: 1R would exceed the Rs 2,000 cap.':'.'):(pl?'No strike keeps 1R inside the Rs 2,000 cap: no trade.':'No strike meets delta 0.5 and the capital.');
  // buy enable
  const sigNow=sigInfo&&sigInfo.i>=0&&now>=bars[sigInfo.i].t+300;document.getElementById('buy').disabled=!(sigNow&&!trade&&!done);
  // trade block
  let html='';
- if(trade){const bid=prem(trade.K,F,trade.side)-SPREAD/2,ask=prem(trade.K,F,trade.side)+SPREAD/2;const p=trade.exit?trade.exit.rs:pnlRs(F);html='<p class="k">Option premium (simulated) '+trade.K+(trade.side==='long'?' CE':' PE')+'</p><p class="big num">Rs '+bid.toFixed(1)+' <span class="pnl '+(p>=0?'good':'bad')+'" style="font-size:22px">'+rs(p)+'</span></p><p class="num small">bid '+bid.toFixed(1)+'  ask '+ask.toFixed(1)+'  bought at '+trade.entryPrem.toFixed(1)+'</p><p class="num small">Future '+fmt(F)+'  entry '+fmt(trade.lv.e)+'</p><p class="num small">Stop (Rs '+LOSS+' limit) '+fmt(lim(trade.lv,trade.delta).stop)+'  Target (Rs '+fmt(PROFIT)+') '+fmt(lim(trade.lv,trade.delta).tgt)+'  R stop '+fmt(trade.lv.stop)+'  TP1 '+fmt(trade.lv.tp1)+'</p>'}
- else{const pi=planInfo(F);if(pi){const l=pi.lv,d=pi.delta*LOT,stopRs=Math.abs(l.stop-l.e)*d;const ptsToLoss=LOSS/d;const q=lim(l,pi.delta);html='<p class="k">Signal: plan (not yet entered)</p><p class="big num">Stop '+fmt(q.stop)+' <span class="pnl bad" style="font-size:20px">-Rs '+LOSS+'</span></p><p class="num small">about '+q.ptsL.toFixed(0)+' future points from entry, spread included. Target '+fmt(q.tgt)+' (+Rs '+fmt(PROFIT)+'). R stop '+fmt(l.stop)+' (about -Rs '+fmt(stopRs)+') and TP1 '+fmt(l.tp1)+' sit beyond the limits.</p>'}else html='<p class="k">Position</p><p class="big">None</p><p class="small">'+(done?'Done for the day.':'Waiting for a signal.')+'</p>'}
+ if(trade){const bid=prem(trade.K,F,trade.side)-SPREAD/2,ask=prem(trade.K,F,trade.side)+SPREAD/2;const p=trade.exit?trade.exit.rs:pnlRs(F);html='<p class="k">Option premium (simulated) '+trade.K+(trade.side==='long'?' CE':' PE')+'</p><p class="big num">Rs '+bid.toFixed(1)+' <span class="pnl '+(p>=0?'good':'bad')+'" style="font-size:22px">'+rs(p)+'</span></p><p class="num small">bid '+bid.toFixed(1)+'  ask '+ask.toFixed(1)+'  bought at '+trade.entryPrem.toFixed(1)+'</p><p class="num small">Future '+fmt(F)+'  entry '+fmt(trade.lv.e)+'</p><p class="num small">Stop '+fmt(trade.stop)+(trade.stop===trade.lv.e?' (at entry)':' (-1R)')+'  TP1 '+fmt(trade.lv.tp1)+'  TP2 '+fmt(trade.lv.tp2)+'  R '+trade.lv.R.toFixed(1)+' pts</p>'}
+ else{const pi=planInfo(F);if(pi){const l=pi.lv,rk=riskRs(l,l.stop,pi.delta);html='<p class="k">Signal: plan (not yet entered)</p><p class="big num">Stop '+fmt(l.stop)+' <span class="pnl bad" style="font-size:20px">-1R, about -Rs '+fmt(rk)+'</span></p><p class="num small">R = '+l.R.toFixed(1)+' pts (1.5 x ATR). TP1 '+fmt(l.tp1)+' (+1R, then stop to entry), TP2 '+fmt(l.tp2)+' (+2R). '+(pi.pk&&pi.pk.capped?'Strike lowered to keep the loss inside the Rs 2,000 cap.':pi.pk?'Loss at the stop is inside the Rs 2,000 cap.':'No strike keeps the loss inside the Rs 2,000 cap: skip today.')+'</p>'}else html='<p class="k">Position</p><p class="big">None</p><p class="small">'+(done?'Done for the day.':'Waiting for a signal.')+'</p>'}
  document.getElementById('tr1').innerHTML=html;document.getElementById('lad').innerHTML=ladder(F,planInfo(F));
  // limit gauge + alerts
- if(trade&&!trade.exit){const p=pnlRs(F);const used=p>=0?p/PROFIT:-p/LOSS;const b=document.getElementById('limb');b.style.width=Math.min(100,Math.max(0,used*100))+'%';b.style.background=p>=0?css('--good'):css('--bad');document.getElementById('limt').textContent=Math.round(used*100)+'% of '+(p>=0?'profit':'loss')+' limit';
-  const l=trade.lv,sd=l.s;const hit=(price)=>({stop:sd*(price-l.stop)<=0,tp1:sd*(price-l.tp1)>=0,tp2:sd*(price-l.tp2)>=0});const h=hit(F);
-  if(p<=-LOSS)once('loss',()=>raise('crit','LOSS LIMIT: close the option now ('+rs(p)+')',[880,660,440]));
-  if(p>=PROFIT)once('prof',()=>raise('good','PROFIT LIMIT: close and stop for the day ('+rs(p)+')',[520,780]));
-  if(h.stop)once('stop',()=>raise('crit','STOP touched on the future: close the option now',[880,660,440]));
-  if(h.tp1)once('tp1',()=>raise('good','TP1 touched: move the stop to entry',[520,780]));
-  if(h.tp2)once('tp2',()=>raise('good','TP2 touched',[520,780]));
+ if(trade&&!trade.exit){const p=pnlRs(F);const l=trade.lv;const rN=l.s*(F-l.e)/l.R;const bq=document.getElementById('limb');bq.style.width=Math.min(100,Math.max(0,(rN+1)/3*100))+'%';bq.style.background=rN>=0?css('--good'):css('--bad');document.getElementById('limt').textContent='open result '+(rN>=0?'+':'')+rN.toFixed(2)+' R';
+  const sd=l.s;const stopHit=sd*(F-trade.stop)<=0,tp1=sd*(F-l.tp1)>=0,tp2=sd*(F-l.tp2)>=0;
+  if(p<=-CAP)once('cap',()=>raise('crit','LOSS CAP Rs 2,000 reached: close the option now ('+rs(p)+')',[880,660,440]));
+  if(stopHit)once('stop'+trade.stop,()=>raise('crit',trade.stop===l.e?'STOP at entry touched: close the option now':'STOP (-1R) touched on the future: close the option now',[880,660,440]));
+  if(tp1)once('tp1',()=>{trade.stop=l.e;raise('good','TP1 (+1R) touched: move the stop to entry',[520,780])});
+  if(tp2)once('tp2',()=>raise('good','TP2 (+2R) touched: close the option',[520,780]));
   if(now>=T_TS)once('ts',()=>raise('cau','TIME STOP window open (21:30 to 22:00): close',[600]))}
- else if(!trade){document.getElementById('limb').style.width='0%';document.getElementById('limt').textContent='unused'}
+ else if(!trade){document.getElementById('limb').style.width='0%';document.getElementById('limt').textContent='no trade'}
 }
 function frame(ts){if(lastReal){const dt=(ts-lastReal)/1000;if(playing){now=Math.min(TEND-1,now+dt*speed);if(trade&&now>=TEND-1)playing=false}}lastReal=ts;update();draw();if(taskStart!=null)document.getElementById('tt').textContent=((performance.now()-taskStart)/1000).toFixed(1)+' s';requestAnimationFrame(frame)}
 requestAnimationFrame(frame);

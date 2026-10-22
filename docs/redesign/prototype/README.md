@@ -8,6 +8,6 @@
 
 Controls: Play / Pause, speed 1x 10x 60x, jump buttons, "I bought it" / "I sold it" (exits are by hand), Reset day, a timed-task stopwatch.
 
-Rules running: range = high and low of 19:00 to 20:00; a 5-minute close beyond it between the print and 30 minutes after, on an allowed side; entry reference = the next future open; R = 1.5 x ATR(14); stop, TP1 (1R), TP2 (2R); loss limit Rs 500, profit limit Rs 1,000; time stop 21:30. Dark theme tokens from `../DESIGN_SYSTEM.md`.
+Rules running: range = high and low of 19:00 to 20:00; a 5-minute close beyond it between the print and 30 minutes after, on an allowed side; entry reference = the next future open; R = 1.5 x ATR(14); stop -1R, TP1 +1R (then the stop moves to entry), TP2 +2R; a Rs 2,000 cap on the loss of one trade (a lower-delta strike is suggested when 1R plus the spread exceeds it, none = no trade); time stop 21:30. Alerts: stop, TP1, TP2, cap, time stop. The gauge shows the open result in R. Dark theme tokens from `../DESIGN_SYSTEM.md`.
 
 Not in the prototype: gas, USIB, the Research desk, the settings screen, a real chain, sounds beyond simple tones.

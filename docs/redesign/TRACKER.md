@@ -24,7 +24,7 @@ Status key: done, active, next, later, blocked.
 | 1.3 | Screens | **answered** | One large monitor |
 | 1.4 | Tools used today | **answered** | TradingView (messy, constant zooming); Upstox (tidy, all the information needed) |
 | 1.5 | Capital | **answered** | Rs 70,000 real; premium sets the capital per trade |
-| 1.6 | Daily limits | **answered** | Rs 500 to 1,000 in loss or in profit |
+| 1.6 | Daily limits | **superseded** | was Rs 500 to 1,000 in loss or in profit; now R multiples with a Rs 2,000 cap per trade (2026-10-22) |
 | 1.7 | Strategy rules | **answered, details unclear** | USIB (non-report days) and EIA B1 breakout (Wed WPSR, Thu WNGSR); see USER_AND_JOBS.md |
 | 1.8 | Clarifications on the strategies and option handling | **answered** | all rules answered; daily limit is a hard rupee stop on the open option (R levels only set targets); EIA range = last hour before the print; long above / short below VWAP |
 | 1.9 | A real recent evening session, narrated | **answered** | in the trade: watches option premium and the future; exit by hand; one trade a day, then done for the day |
@@ -37,7 +37,8 @@ Status key: done, active, next, later, blocked.
 | 2026-10-22 | Live TV kept |
 | 2026-10-22 | Insider trades, energy heatmap, energy screener, ticker tape: cut or optional, decide in step 2 |
 | 2026-10-22 | Simple chart and compact option chain: cut as duplicates, decide in step 2 |
-| 2026-10-22 | Owner decision: the limit-equivalent line is the working stop (and the Rs 1,000 line the working target); R stop, TP1, TP2 shown as secondary. Finding: on crude the Rs 500 limit is about a 7-point future stop (spread included, delta 0.5); replay of the two EIA Wednesdays with an entry in the 30-minute window (7 and 14 Oct) hit it first on both, stop assumed first inside a candle; two trades, not a result |
+| 2026-10-22 | **Risk rule changed (owner): R multiples, stop 1R, TP1 +1R then stop to entry, TP2 +2R, Rs 2,000 cap on the loss of one trade (lower-delta strike or no trade when 1R exceeds it); the Rs 500 / Rs 1,000 limits are gone. Docs and prototype updated; R replay of 7 / 14 Oct: +Rs 2,900 and -Rs 1,550 (two trades) |
+| 2026-10-22 | Owner decision (superseded): the limit-equivalent line is the working stop (and the Rs 1,000 line the working target); R stop, TP1, TP2 shown as secondary. Finding: on crude the Rs 500 limit is about a 7-point future stop (spread included, delta 0.5); replay of the two EIA Wednesdays with an entry in the 30-minute window (7 and 14 Oct) hit it first on both, stop assumed first inside a candle; two trades, not a result |
 | 2026-10-22 | Prototype task T1 (signal: price, nearest levels, Rs to stop): 12 s against a 3 s target; the stop was hard to find because it was only drawn after the buy. Fix: planned entry / stop / TP1 / TP2 shown at the signal, plus a level ladder (distance in points and option Rs) and a line saying the Rs 500 loss limit comes first. T2 and T3 timings not yet reported |
 | 2026-10-22 | Prototype built (`prototype/eia-replay.html`, replay of 7 Oct): chart, report block, simulated chain, trade, alerts, timed-task stopwatch; first run: Rs 500 loss limit fired on a late entry although the day later moved 68 pts the trade's way |
 | 2026-10-22 | Step 2 complete: dark theme everywhere, alert sounds accepted, no colour issues |

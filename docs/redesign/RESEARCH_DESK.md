@@ -4,8 +4,8 @@ The second desk. The **Evening desk** (`EIA_SCREENS.md`) is the trading screen; 
 
 ## Rules
 
-1. **One key switches desks** (`Esc` toggles Evening / Research). Switching never loses the evening state: the trade, the limit gauge and the countdown keep running underneath.
-2. **Alerts reach the owner on any desk.** A stop, TP, limit or time-stop alert shows as a banner and a sound over whatever is open, with a button back to the Evening desk.
+1. **One key switches desks** (`Esc` toggles Evening / Research). Switching never loses the evening state: the trade, the result gauge and the countdown keep running underneath.
+2. **Alerts reach the owner on any desk.** A stop, TP, cap or time-stop alert shows as a banner and a sound over whatever is open, with a button back to the Evening desk.
 3. The Research desk is **not locked** and may be rearranged (the grid, link groups and saved workspaces already work); the Evening desk is fixed.
 4. Every workspace answers one question; if it does not, it does not exist.
 
