@@ -117,6 +117,23 @@ test("CalendarWidget shows forecast, previous and actual per event, and filters 
   expect(screen.getByText("MCX closed: Diwali")).toBeTruthy();
 });
 
+test("CalendarWidget tabs split energy from macro, and High + Med hides low-impact rows", async () => {
+  const at = Date.now() + 3600_000;
+  mockFetch([
+    { id: "e1", title: "Baker Hughes rig count", at, kind: "energy", impact: "low" },
+    { id: "e2", title: "EIA crude inventories", at, kind: "energy", impact: "high" },
+    { id: "m1", title: "CPI y/y (US)", at, kind: "macro", impact: "high" },
+  ]);
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  expect(await screen.findByText("EIA crude inventories")).toBeTruthy();
+  expect(screen.queryByText("CPI y/y (US)")).toBeNull();
+  fireEvent.click(screen.getByText("High + Med"));
+  expect(screen.queryByText("Baker Hughes rig count")).toBeNull();
+  fireEvent.click(screen.getByText("Macro"));
+  expect(screen.getByText("CPI y/y (US)")).toBeTruthy();
+});
+
 test("CalendarWidget Recorded view shows stored figures, the surprise and the log of what was seen", async () => {
   const obs = (kind: string, text: string, num: number, source: string, observedAt: string) => ({ kind, text, num, source, observedAt, backfilled: false });
   mockFetch([

@@ -6,12 +6,12 @@ import { useNow } from "./market";
 import { StoredEvents } from "./StoredEvents";
 import type { Widget } from "./workspace";
 
-type Filter = "all" | CalKind;
-const FILTERS: [Filter, string][] = [
-  ["all", "All"],
+type Tab = CalKind | "recorded";
+const TABS: [Tab, string][] = [
   ["energy", "Energy"],
   ["macro", "Macro"],
   ["holiday", "Holidays"],
+  ["recorded", "Recorded"],
 ];
 const REFRESH_MS = 15 * 60_000;
 const REFRESH_PENDING_MS = 30_000; // a release is due or just out: look for its number every 30 s (the API itself re-reads the source every minute)
@@ -53,28 +53,32 @@ function until(at: number, now: number) {
   return mins >= 0 ? `in ${text}` : `${text} ago`;
 }
 
-/** Economic calendar: the live list (US inventory and rig reports, OPEC, high-impact US macro, MCX holidays) or what the recorder has stored. */
-export function CalendarWidget({ widget }: { widget: Widget }) {
-  const [view, setView] = useState<"live" | "stored">("live");
+/** Calendar in four tabs: energy releases, macro and central bank events, MCX holidays, and what the recorder has stored. */
+export function CalendarWidget(_: { widget: Widget }) {
+  const [tab, setTab] = useState<Tab>("energy");
+  const [bigOnly, setBigOnly] = useState(false);
   return (
     <div className="calendar">
       <div className="toolbar no-drag">
-        <button className={view === "live" ? "tf active" : "tf"} onClick={() => setView("live")}>
-          Live
-        </button>
-        <button className={view === "stored" ? "tf active" : "tf"} onClick={() => setView("stored")} title="Releases saved by the recorder, with every forecast and actual as it was seen">
-          Recorded
-        </button>
+        {TABS.map(([k, label]) => (
+          <button key={k} className={k === tab ? "tf active" : "tf"} onClick={() => setTab(k)} title={k === "recorded" ? "Releases saved by the recorder, with every forecast and actual as it was seen" : undefined}>
+            {label}
+          </button>
+        ))}
+        {tab !== "recorded" && tab !== "holiday" && (
+          <button className={bigOnly ? "tf active" : "tf"} aria-pressed={bigOnly} onClick={() => setBigOnly(!bigOnly)} title="Hide low-impact events">
+            High + Med
+          </button>
+        )}
       </div>
-      {view === "live" ? <LiveCalendar widget={widget} /> : <StoredEvents />}
+      {tab === "recorded" ? <StoredEvents /> : <LiveCalendar kind={tab} bigOnly={bigOnly} />}
     </div>
   );
 }
 
-function LiveCalendar(_: { widget: Widget }) {
+function LiveCalendar({ kind, bigOnly }: { kind: CalKind; bigOnly: boolean }) {
   const [events, setEvents] = useState<CalEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
   const now = useNow(30_000);
   const clock = useClock();
   const locale = useSettings((s) => s.locale);
@@ -119,7 +123,7 @@ function LiveCalendar(_: { widget: Widget }) {
 
   if (!events) return <p className="empty muted">{error ? `Calendar unavailable: ${error}` : "Loading calendar…"}</p>;
 
-  const shown = events.filter((e) => filter === "all" || e.kind === filter);
+  const shown = events.filter((e) => e.kind === kind && (!bigOnly || e.impact !== "low"));
   const next = shown.find((e) => e.kind !== "holiday" && e.at >= now)?.id;
   const days: [string, CalEvent[]][] = [];
   for (const e of shown) {
@@ -136,15 +140,8 @@ function LiveCalendar(_: { widget: Widget }) {
   };
 
   return (
-    <div className="calendar">
-      <div className="toolbar no-drag">
-        {FILTERS.map(([f, label]) => (
-          <button key={f} className={f === filter ? "tf active" : "tf"} onClick={() => setFilter(f)}>
-            {label}
-          </button>
-        ))}
-        {error && <span className="down" title={error}>stale</span>}
-      </div>
+    <>
+      {error && <p className="down" title={error}>stale: {error}</p>}
       <div className="calendar-list" tabIndex={0} role="region" aria-label="Calendar events">
         {days.length === 0 && <p className="empty muted">Nothing scheduled.</p>}
         {days.map(([day, list]) => (
@@ -199,6 +196,6 @@ function LiveCalendar(_: { widget: Widget }) {
           </section>
         ))}
       </div>
-    </div>
+    </>
   );
 }
