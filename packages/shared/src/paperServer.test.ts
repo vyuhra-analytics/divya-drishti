@@ -475,3 +475,11 @@ test("parseStopTarget reads the trailing flag and the reason, and refuses nonsen
   expect("error" in (parseStopTarget({ stop: 9450, only_tighten: "yes" }) as object)).toBe(true);
   expect("error" in (parseStopTarget({ stop: 9450, reason: "x".repeat(121) }) as object)).toBe(true);
 });
+
+test("parseRates accepts a broker's percentage-capped brokerage and still refuses nonsense", () => {
+  const z = parseRates({ brokerageFlat: 20, brokeragePctFutures: 0.0003, brokeragePctOptions: 0 }) as any;
+  expect(z.rates).toEqual({ ...UPSTOX_MCX_RATES, brokerageFlat: 20, brokeragePctFutures: 0.0003, brokeragePctOptions: 0 });
+  expect(parseRates({ brokeragePctFutures: -0.1 })).toHaveProperty("error");
+  expect(parseRates({ brokeragePctOptions: 0.5 })).toHaveProperty("error"); // half the turnover is not a brokerage
+  expect(parseRates({ brokeragePctFutures: "abc" })).toHaveProperty("error");
+});

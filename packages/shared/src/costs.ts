@@ -4,8 +4,11 @@
 import { instrument } from "./index";
 
 export interface CostRates {
-  /** flat brokerage per executed order, rupees */
+  /** flat brokerage per executed order, rupees; when a percentage below is set, the LOWER of the two is charged (Zerodha: 0.03% or Rs 20, whichever is lower) */
   brokerageFlat: number;
+  /** brokerage as a share of turnover, futures and options; 0 = flat only */
+  brokeragePctFutures: number;
+  brokeragePctOptions: number;
   /** commodity transaction tax on the sell side, share of turnover (non-agri futures 0.01%, options 0.05% of premium) */
   cttFutures: number;
   cttOptions: number;
@@ -30,6 +33,8 @@ export interface CostRates {
  */
 export const UPSTOX_MCX_RATES: CostRates = {
   brokerageFlat: 30,
+  brokeragePctFutures: 0,
+  brokeragePctOptions: 0,
   cttFutures: 0.0001,
   cttOptions: 0.0005,
   exchangeFutures: 0.000021,
@@ -74,7 +79,8 @@ export const lotUnits = (symbol: string): number | undefined => {
 export function legCosts(kind: Kind, side: Side, price: number, units: number, lots: number, rates: CostRates = UPSTOX_MCX_RATES): CostBreakdown {
   const turnover = price * units * lots;
   const opt = kind === "option";
-  const brokerage = rates.brokerageFlat;
+  const pct = opt ? rates.brokeragePctOptions : rates.brokeragePctFutures;
+  const brokerage = pct > 0 ? Math.min(rates.brokerageFlat, turnover * pct) : rates.brokerageFlat; // flat, or the lower of flat and a share of turnover
   const ctt = side === "sell" ? turnover * (opt ? rates.cttOptions : rates.cttFutures) : 0;
   const exchange = turnover * (opt ? rates.exchangeOptions : rates.exchangeFutures);
   const sebi = turnover * rates.sebi;

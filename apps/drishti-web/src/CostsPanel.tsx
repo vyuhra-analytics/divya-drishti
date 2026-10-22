@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { currentRates, fixedRiskLots, instrument, legCosts, lotUnits, roundTrip, UPSTOX_MCX_RATES, type CostRates, type Side } from "@drishti/shared";
+import { BROKERS, brokerById, compareBrokers, fixedRiskLots, instrument, legCosts, lotUnits, matchBroker, normalizeRates, roundTrip, UPSTOX_MCX_RATES, type CostRates, type Kind, type Side, type Verification } from "@drishti/shared";
 import { paperCall } from "./paperClient";
 import { apiUrl, useSettings } from "./settings";
 import { useStore } from "./store";
@@ -16,7 +16,7 @@ const DEFAULTS: Saved = { rates: UPSTOX_MCX_RATES, equity: 500_000, riskPct: 1 }
 function load(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    return s ? { ...DEFAULTS, ...s, rates: currentRates({ ...UPSTOX_MCX_RATES, ...s.rates }) } : DEFAULTS;
+    return s ? { ...DEFAULTS, ...s, rates: normalizeRates(s.rates) } : DEFAULTS;
   } catch {
     return DEFAULTS;
   }
@@ -24,6 +24,8 @@ function load(): Saved {
 
 const RATE_FIELDS: [keyof CostRates, string, string][] = [
   ["brokerageFlat", "Brokerage per order (₹)", "1"],
+  ["brokeragePctFutures", "Brokerage, futures: share of turnover; the lower of this and the flat amount (0 = flat only)", "0.0001"],
+  ["brokeragePctOptions", "Brokerage, options: share of turnover; the lower of this and the flat amount (0 = flat only)", "0.0001"],
   ["cttFutures", "CTT, sell side (share of turnover)", "0.000001"],
   ["exchangeFutures", "MCX transaction charge", "0.000001"],
   ["sebi", "SEBI fee", "0.0000001"],
@@ -31,7 +33,14 @@ const RATE_FIELDS: [keyof CostRates, string, string][] = [
   ["gst", "GST on brokerage, exchange, SEBI", "0.01"],
 ];
 
-/** What an MCX futures trade costs on Upstox (gross to net) and how many lots a fixed risk allows. A calculator: it never places an order. */
+const VERIFICATION: Record<Verification, string> = {
+  api: "checked against the broker's own calculation",
+  published: "from the broker's published pricing",
+  unverified: "UNVERIFIED: third-party sites only",
+  custom: "your own rates",
+};
+
+/** What an MCX futures trade costs at the broker you pick (gross to net) and how many lots a fixed risk allows. A calculator: it never places an order. */
 export function CostsWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const inst = instrument(symbol);
@@ -44,6 +53,7 @@ export function CostsWidget({ widget }: { widget: Widget }) {
   const [entry, setEntry] = useState<number | "">("");
   const [exit, setExit] = useState<number | "">("");
   const [stop, setStop] = useState<number | "">("");
+  const [cmpKind, setCmpKind] = useState<Kind>("future");
   const [upCheck, setUpCheck] = useState<{ text: string; brokerage?: number; differs?: boolean } | null>(null);
 
   // the server charges paper trades with these rates: send a change there (not the untouched defaults on first render)
@@ -98,9 +108,11 @@ export function CostsWidget({ widget }: { widget: Widget }) {
   const rs = (v: number) => `${v < 0 ? "−" : ""}₹${nf.format(Math.abs(v))}`;
 
   if (inst?.exchange !== "MCX" || units === undefined) {
-    return <p className="empty muted">Costs follow Upstox's MCX schedule. Link this panel to an MCX contract (NYMEX trades are not on Upstox).</p>;
+    return <p className="empty muted">Costs follow the MCX schedule and your broker's brokerage. Link this panel to an MCX contract (NYMEX trades are not on Upstox).</p>;
   }
   const trip = e !== undefined && x !== undefined ? roundTrip("future", side, e, x, units, lots, saved.rates) : undefined;
+  const broker = matchBroker(saved.rates); // undefined once a rate has been edited: the rates are then your own
+  const compare = e !== undefined && x !== undefined ? compareBrokers(cmpKind, side, e, x, units, lots) : [];
   const sized = e !== undefined && st !== undefined ? fixedRiskLots({ side, equity: saved.equity, riskPct: saved.riskPct, entry: e, stop: st, units, rates: saved.rates }) : undefined;
   const num = (v: number | "", set: (n: number | "") => void) => (ev: React.ChangeEvent<HTMLInputElement>) => set(ev.target.value === "" ? "" : Number(ev.target.value));
 
@@ -108,7 +120,30 @@ export function CostsWidget({ widget }: { widget: Widget }) {
     <div className="costs">
       <div className="costs-body" tabIndex={0} role="region" aria-label="Trade costs and position size">
         <p className="muted costs-head">
-          {inst.name}: 1 lot = {inst.lot}. Round trip on Upstox, costs in rupees.
+          {inst.name}: 1 lot = {inst.lot}. Round trip at {broker?.name ?? "your own rates"}, costs in rupees.
+        </p>
+        <div className="costs-form no-drag">
+          <label>
+            Broker
+            <select
+              aria-label="Broker"
+              value={broker?.id ?? "custom"}
+              onChange={(ev) => {
+                const b = brokerById(ev.target.value);
+                if (b && b.id !== "custom") setSaved({ ...saved, rates: b.rates });
+              }}
+            >
+              {BROKERS.filter((b) => b.id !== "custom").map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+              {!broker && <option value="custom">Custom (edited)</option>}
+            </select>
+          </label>
+        </div>
+        <p className={broker?.verification === "unverified" ? "costs-note down" : "muted costs-note"} title={broker?.source}>
+          {broker ? `${VERIFICATION[broker.verification]}, read ${broker.checkedOn}. ${broker.note ?? ""}` : "Your own rates: edited from a broker's. Pick a broker above to go back to its published rates."}
         </p>
         <div className="costs-form no-drag">
           <label>
@@ -166,6 +201,43 @@ export function CostsWidget({ widget }: { widget: Widget }) {
             </tbody>
           </table>
         )}
+        {trip && (
+          <>
+            <h2>Same trade at each broker</h2>
+            <div className="costs-form no-drag">
+              <label>
+                Treat Entry and Exit as
+                <select aria-label="Compare as" value={cmpKind} onChange={(ev) => setCmpKind(ev.target.value as Kind)}>
+                  <option value="future">a futures price</option>
+                  <option value="option">an option premium</option>
+                </select>
+              </label>
+            </div>
+            <table aria-label="Costs by broker">
+              <thead>
+                <tr>
+                  <th>Broker</th>
+                  <th>Costs</th>
+                  <th>Net</th>
+                  <th title="Price points the trade must gain just to pay its costs">Breakeven</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compare.map((c) => (
+                  <tr key={c.broker.id} className={c.broker.id === broker?.id ? "costs-net" : undefined} title={c.broker.source}>
+                    <td>
+                      {c.broker.name}
+                      {c.broker.verification === "unverified" && <span className="down"> (unverified)</span>}
+                    </td>
+                    <td>{rs(c.costs)}</td>
+                    <td className={c.net >= 0 ? "up" : "down"}>{rs(c.net)}</td>
+                    <td>{c.breakeven.toFixed(inst.decimals + 1)} pts</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
         <h2>Position size</h2>
         <div className="costs-form no-drag">
           <label>
@@ -201,9 +273,11 @@ export function CostsWidget({ widget }: { widget: Widget }) {
             ))}
           </div>
           <div className="no-drag" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "6px 0" }}>
-            <button className="tf" onClick={() => void checkUpstox()}>
-              Check with Upstox
-            </button>
+            {(!broker || broker.id === "upstox") && (
+              <button className="tf" onClick={() => void checkUpstox()}>
+                Check with Upstox
+              </button>
+            )}
             {upCheck && <span className="muted">{upCheck.text}</span>}
             {upCheck?.differs && (
               <button className="tf" onClick={() => setSaved({ ...saved, rates: { ...saved.rates, brokerageFlat: upCheck.brokerage! } })}>

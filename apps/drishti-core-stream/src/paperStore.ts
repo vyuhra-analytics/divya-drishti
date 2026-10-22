@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import { currentRates, MAX_TRADES_KEPT, UPSTOX_MCX_RATES, type AccountRow, type AuditEntry, type CostRates, type PaperPosition, type PaperStore, type PaperTrade } from "@drishti/shared";
+import { MAX_TRADES_KEPT, normalizeRates, UPSTOX_MCX_RATES, type AccountRow, type AuditEntry, type CostRates, type PaperPosition, type PaperStore, type PaperTrade } from "@drishti/shared";
 
 /** Postgres-backed paper account storage (tables in infra/sql/006_paper.sql). jsonb goes in as text first: Bun sends a string param cast straight to jsonb as a JSON string. */
 export class PgPaperStore implements PaperStore {
@@ -73,7 +73,7 @@ export class PgPaperStore implements PaperStore {
   async rates(): Promise<CostRates> {
     const r = (await this.sql`SELECT value FROM kv WHERE key = 'cost_rates'`) as { value: string }[];
     try {
-      return r[0] ? currentRates({ ...UPSTOX_MCX_RATES, ...JSON.parse(r[0].value) }) : UPSTOX_MCX_RATES;
+      return r[0] ? normalizeRates(JSON.parse(r[0].value)) : UPSTOX_MCX_RATES;
     } catch {
       return UPSTOX_MCX_RATES;
     }
