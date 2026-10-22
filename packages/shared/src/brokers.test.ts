@@ -16,7 +16,7 @@ test("the profiles: Upstox first and the default, each with its source and the d
   }
   expect(upstox.verification).toBe("api");
   expect(zerodha.verification).toBe("published");
-  expect(kotak.verification).toBe("unverified"); // official page lists F&O but not MCX: never presented as confirmed
+  expect(kotak.verification).toBe("published"); // the official page, which lists F&O but does not name MCX: the note says so
   expect(kotak.note).toMatch(/kotakneo\.com/);
   expect(brokerById("nope")).toBeUndefined();
 });

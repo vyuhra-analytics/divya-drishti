@@ -81,7 +81,7 @@ test("the panel starts on Upstox, says its numbers were checked against Upstox, 
   expect(screen.getByText("Check with Upstox", { exact: false })).toBeTruthy();
 });
 
-test("choosing Zerodha loads its rates (Rs 20 capped at 0.03% on futures) and hides the Upstox check; Kotak Neo is marked unverified", () => {
+test("choosing Zerodha loads its rates (Rs 20 capped at 0.03% on futures) and hides the Upstox check; Kotak Neo is from its published pricing", () => {
   render(<CostsWidget widget={widget("MCX:CRUDEOIL")} />);
   pick("zerodha");
   expect(brokerageBox().value).toBe("20");
@@ -90,7 +90,7 @@ test("choosing Zerodha loads its rates (Rs 20 capped at 0.03% on futures) and hi
   expect(screen.queryByText("Check with Upstox", { exact: false })).toBeNull(); // that check compares with Upstox's calculation, not Zerodha's
   pick("kotakneo");
   expect(brokerageBox().value).toBe("10");
-  expect(screen.getAllByText(/UNVERIFIED: not confirmed for MCX/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/UNVERIFIED/)).toBeNull();
   expect(screen.getByText(/Check the charges PDF and a contract note/)).toBeTruthy();
 });
 
@@ -123,13 +123,13 @@ test("the chosen broker is remembered, and the server is sent its rates", async 
   expect((screen.getByLabelText("Broker") as HTMLSelectElement).value).toBe("zerodha");
 });
 
-test("the table of the same trade at each broker lists all three, cheapest first, with the selected one marked and Kotak Neo flagged", () => {
+test("the table of the same trade at each broker lists all three, cheapest first, with the selected one marked ", () => {
   render(<CostsWidget widget={widget("MCX:CRUDEOIL")} />);
   fireEvent.change(screen.getByLabelText("Compare as"), { target: { value: "option" } });
   const rows = within(screen.getByRole("table", { name: "Costs by broker" })).getAllByRole("row").slice(1);
   expect(rows).toHaveLength(3);
   const names = rows.map((r) => r.querySelector("td")!.textContent);
-  expect(names[0]).toMatch(/Kotak Neo \(unverified\)/); // Rs 10 a leg is the cheapest
+  expect(names[0]).toMatch(/^Kotak Neo$/); // Rs 10 a leg is the cheapest
   expect(rows.filter((r) => r.className === "costs-net")).toHaveLength(1);
   expect(rows.find((r) => r.className === "costs-net")!.querySelector("td")!.textContent).toBe("Upstox");
   pick("zerodha");
