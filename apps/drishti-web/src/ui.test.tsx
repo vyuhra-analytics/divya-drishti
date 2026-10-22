@@ -5,7 +5,6 @@ import { PanelBoundary } from "./PanelBoundary";
 import { NewsWidget } from "./NewsWidget";
 import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { Palette } from "./Palette";
-import { OptionsWidget } from "./OptionsPanel";
 import { useStore } from "./store";
 import { useWorkspace, type Widget } from "./workspace";
 
@@ -82,16 +81,6 @@ const mockFetch = (body: unknown, ok = true) => {
   globalThis.fetch = mock(async () => ({ ok, status: ok ? 200 : 503, json: async () => body })) as never;
 };
 
-test("OptionsWidget renders the chain rows and summary", async () => {
-  mockFetch({
-    underlying: "CRUDEOIL", expiry: "2026-11-17", expiries: ["2026-11-17"], spot: 9100, atm: 9100, pcr: 1.2, maxPain: 9100, updatedAt: 1,
-    rows: [{ strike: 9100, ce: { key: "c", ltp: 600, oi: 10 }, pe: { key: "p", ltp: 590, oi: 12 } }],
-  });
-  render(<OptionsWidget widget={widget("options")} />);
-  expect(await screen.findByText("1.20")).toBeTruthy();
-  expect(document.querySelector("tr.atm")).toBeTruthy();
-});
-
 test("Settings clock toggle switches stamps between 12h and 24h", () => {
   const t = Date.UTC(2026, 9, 21, 15, 42); // 21:12 IST
   const { useSettings, formatStamp } = require("./settings") as typeof import("./settings");
@@ -155,23 +144,6 @@ test("HelpDialog welcomes first-time users once, lists codes and the glossary", 
   expect(onClose).toHaveBeenCalled();
   rerender(<HelpDialog open={false} onClose={onClose} />);
   expect(useSettings.getState().helpSeen).toBe(true);
-});
-
-test("OptionsWidget lets you pick the feed and says which one built the chain", async () => {
-  const chain = (source: string) => ({
-    underlying: "CRUDEOIL", expiry: "2026-11-17", expiries: ["2026-11-17"], spot: 9459, atm: 9450, updatedAt: 1, source,
-    rows: [{ strike: 9450, ce: { key: "c", ltp: 524, bid: 523.2, ask: 524.9, iv: 50.4, delta: 0.53, theo: 524.6 }, pe: { key: "p", ltp: 480 } }],
-  });
-  const urls: string[] = [];
-  globalThis.fetch = mock(async (url: string) => {
-    urls.push(String(url));
-    return { ok: true, status: 200, json: async () => chain(String(url).includes("source=tradingview") ? "tradingview" : "upstox") };
-  }) as never;
-  render(<OptionsWidget widget={widget("options")} />);
-  expect(await screen.findByText("UPSTOX")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Options feed"), { target: { value: "tradingview" } });
-  expect(await screen.findByText("TV")).toBeTruthy();
-  expect(urls.some((u) => u.includes("source=tradingview"))).toBe(true);
 });
 
 test("CotWidget shows managed-money positioning, its change and rank, and switches market", async () => {

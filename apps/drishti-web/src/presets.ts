@@ -64,12 +64,12 @@ export const PRESETS: Preset[] = [
   {
     key: "options",
     name: "Options",
-    hint: "Options chain beside its underlying chart and quote",
+    hint: "Detailed options chain under its underlying chart and quote",
     build: () =>
       snapshot("options", [
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 5, 12],
-        ["options-1", "options", "amber", "MCX:CRUDEOIL", "5m", 5, 0, 7, 14],
-        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 0, 12, 5, 10],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 12],
+        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 12],
+        ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 12, 12, 16],
       ]),
   },
   {

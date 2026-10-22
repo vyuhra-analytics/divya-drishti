@@ -159,18 +159,6 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .screener tr.ours td:first-child { color: var(--accent); }
 .range52 { position: relative; display: inline-block; width: 70px; height: 4px; border-radius: 2px; background: var(--line); vertical-align: middle; }
 .range52 span { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--text); }
-.options { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.options .toolbar { gap: 12px; font-size: 12px; }
-.options .toolbar select { padding: 1px 4px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
-.options-scroll { flex: 1; min-height: 0; overflow: auto; }
-.options table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.options th { position: sticky; top: 0; z-index: 1; padding: 3px 6px; font-weight: 600; color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line); }
-.options td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); }
-.options td.itm { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.options td.oi { background: linear-gradient(90deg, transparent calc(100% - var(--oi)), color-mix(in srgb, var(--muted) 25%, transparent) 0); }
-.options td.strike { font-weight: 700; text-align: center; color: var(--text); background: var(--hover); }
-.options tr.atm td { border-top: 1px solid var(--accent); border-bottom: 1px solid var(--accent); }
-.options tr.atm td.strike { color: var(--accent); }
 .statusbar { display: flex; align-items: center; gap: 14px; height: 24px; flex: none; padding: 0 12px; font-size: 11px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
 .statusbar b { font-weight: 600; color: var(--text); }
 .sb-item { flex: none; display: inline-flex; align-items: center; gap: 4px; }
