@@ -15,6 +15,8 @@ export interface OptionContract {
 
 export interface OptionLeg {
   key: string;
+  /** Upstox instrument key (MCX_FO|582939) when the leg is an Upstox contract: what the live feed is subscribed by */
+  ukey?: string;
   ltp?: number;
   /** change vs previous close */
   change?: number;
@@ -176,6 +178,7 @@ export function buildRows(
     const g = greeks.get(c.instrument_key);
     const leg: OptionLeg = {
       key: c.instrument_key,
+      ukey: c.instrument_key,
       ltp: q?.last_price,
       change: q?.net_change,
       bid: bestPrice(q?.depth?.buy),
@@ -207,6 +210,7 @@ export function mergeChains(tv: Chain, up: Chain): Chain {
     if (!b) return a;
     return {
       ...a,
+      ukey: b.ukey ?? a.ukey,
       ltp: b.ltp ?? a.ltp, // the last trade when there is one, else the TradingView midpoint
       change: b.change,
       oi: b.oi,

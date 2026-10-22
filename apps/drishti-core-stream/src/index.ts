@@ -11,6 +11,7 @@ import {
   UPSTOX_MCX_RATES,
   type DayOverride,
   type MarketStatus,
+  optionLagMs,
   withStatus,
   allowedOrigins,
   changedFronts,
@@ -35,7 +36,8 @@ import {
   type Source,
   type Tick,
 } from "@drishti/shared";
-import { loadFronts, tvCloses, upstoxHasFuture, type Fronts } from "./contracts";
+import { loadFronts, loadOptionKeys, tvCloses, upstoxHasFuture, type Fronts } from "./contracts";
+import { LagWindow, OptionWatch } from "./optionWatch";
 import { formOf, instrumentRoutes } from "./instrumentRoutes";
 import { newStats, type ProviderStats } from "./providers/provider";
 import { startServerAlerts } from "./serverAlerts";
@@ -51,7 +53,7 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
-const EXTRA_TOPICS = new Set<string>(["news", "alerts", "paper", "briefing"]);
+const EXTRA_TOPICS = new Set<string>(["news", "alerts", "paper", "briefing", "options"]);
 const isTopic = (t: string) => EXTRA_TOPICS.has(t) || SYMBOLS.includes(t); // SYMBOLS grows when an instrument is added in Settings
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
 const wsLimiter = new RateLimiter(30, 10_000); // subscribe/unsubscribe messages per connection
@@ -88,6 +90,18 @@ const heartbeat = () => {
   return JSON.stringify({ type: "hb", t: Date.now(), seen, mcxStatus: mcxStatus ?? null });
 };
 let buffer: Tick[] = [];
+
+// ---- live option quotes: clients name the contracts they show (`watch`), the Upstox feed carries them, and every tick is published on topic "options"
+let optionKeys = new Set<string>(); // every unexpired option on our MCX underlyings, from the public master (empty until it loads: any well-formed key is accepted then)
+const optionWatch = new OptionWatch((k) => optionKeys.size === 0 || optionKeys.has(k));
+const optionLag = new LagWindow();
+const lastTrade = new Map<string, number>(); // per contract: the exchange trade time of the previous message, so lag is measured only on a NEW trade (a quiet strike repeats its old trade time)
+const optionStats = { messages: 0, lastAt: null as number | null };
+const refreshOptionKeys = () =>
+  loadOptionKeys()
+    .then((keys) => void (optionKeys = keys))
+    .catch((err) => console.warn("option contract list failed:", (err as Error).message));
+setInterval(() => optionWatch.sweep(), 5_000);
 
 const lastPrice = new Map<string, SourcePrices>();
 const DRIFT_PCT = Number(process.env.DRIFT_FLAG_PCT) > 0 ? Number(process.env.DRIFT_FLAG_PCT) : undefined; // percent; default in shared drift.ts
@@ -338,6 +352,7 @@ const app = new Elysia()
       active: Object.fromEntries(active),
       mcxPrimary: mcxPrimary ?? "auto",
       mcxStatus: mcxStatus ?? null,
+      options: { watching: optionWatch.wanted().length, known: optionKeys.size, messages: optionStats.messages, lastAt: optionStats.lastAt, lagMedianMs: optionLag.pct(50) ?? null, lagP95Ms: optionLag.pct(95) ?? null, lagSamples: optionLag.count },
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
       news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
     };
@@ -364,6 +379,7 @@ const app = new Elysia()
         return;
       }
       if (!msg || typeof msg !== "object") return;
+      if ("watch" in msg) return void optionWatch.request(msg.watch); // option contracts this client shows; refused keys cost nothing
       const list = (("subscribe" in msg ? msg.subscribe : msg?.unsubscribe) ?? []) as unknown[];
       const topics = (Array.isArray(list) ? list : []).filter((t): t is string => typeof t === "string" && isTopic(t));
       if ("subscribe" in msg) {
@@ -373,7 +389,7 @@ const app = new Elysia()
             ws.send(JSON.stringify({ type: "news", items: currentNews() }));
             continue;
           }
-          if (s === "alerts" || s === "paper" || s === "briefing") {
+          if (s === "alerts" || s === "paper" || s === "briefing" || s === "options") {
             ws.subscribe(s);
             continue;
           }
@@ -381,7 +397,7 @@ const app = new Elysia()
           const snap = latest.get(s);
           if (snap) ws.send(JSON.stringify(snap)); // don't leave panels blank until the next trade
         }
-      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "alerts" || s === "paper" || s === "briefing" ? s : `quotes:${s}`));
+      } else topics.forEach((s) => ws.unsubscribe(s === "news" || s === "alerts" || s === "paper" || s === "briefing" || s === "options" ? s : `quotes:${s}`));
     },
   })
   .listen({ port: PORT, hostname: HOST });
@@ -393,7 +409,20 @@ if (DEMO) {
 } else {
   await refreshFronts();
   setInterval(refreshFronts, FRONTS_REFRESH_MS);
-  startUpstox(redis, upstoxTargets, accept, stats.upstox!);
+  void refreshOptionKeys();
+  setInterval(refreshOptionKeys, 60 * 60_000);
+  startUpstox(redis, upstoxTargets, accept, stats.upstox!, {
+    keys: () => optionWatch.wanted(),
+    onChange: (fn) => optionWatch.onChange(fn),
+    emit: (q) => {
+      optionStats.messages++;
+      optionStats.lastAt = q.recvAt;
+      const prev = lastTrade.get(q.key);
+      lastTrade.set(q.key, q.time);
+      if (prev !== undefined && q.time > prev) optionLag.add(optionLagMs(q));
+      app.server?.publish("options", JSON.stringify({ type: "opt", q }));
+    },
+  });
   startTradingView(tvTargets, accept, stats.tradingview!);
   startYahoo(
     () => INSTRUMENTS.filter((i) => i.yahoo),

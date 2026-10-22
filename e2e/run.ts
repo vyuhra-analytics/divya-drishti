@@ -366,6 +366,13 @@ test("Detailed option chain: every column of the Upstox-style chain, spot marker
   const heads = (await root.locator("thead tr").nth(1).locator("th").allInnerTexts()).map((t) => t.trim());
   for (const h of ["Volume", "IV", "Vega", "Gamma", "Theta", "Delta", "OI chg", "OI", "Bid", "Ask", "LTP", "Strike"]) assert(heads.includes(h), `column ${h} is missing: ${heads.join(",")}`);
   assert((await root.locator("tr.ocx-spot").count()) === 1, "no spot marker row");
+  // the strikes around the money come live over the Upstox feed while MCX is open: the footer says so, and a live premium replaces the polled one
+  const mcxOpen = (await (await fetch(`${API}/market/status`)).json())?.mcx?.state === "NORMAL_OPEN";
+  if (mcxOpen) {
+    await page.waitForFunction(() => /live feed \d+\/\d+ contracts/.test(document.querySelector(".ocx")?.textContent ?? ""), undefined, { timeout: 25_000 });
+    const m = (await root.innerText()).match(/live feed (\d+)\/(\d+) contracts/)!;
+    assert(Number(m[1]) >= 2 && Number(m[2]) === 18, `live feed ${m[1]}/${m[2]}: expected the 18 contracts around the money, at least 2 already live`);
+  }
   assert((await root.getByText("Build Strategy").count()) === 0, "the Build Strategy button should be omitted");
   assert((await root.locator("td.ocx-strike small").first().innerText()).startsWith("PCR"), "PCR per strike is missing");
   const before = await root.locator("tbody tr:not(.ocx-more):not(.ocx-spot)").count();

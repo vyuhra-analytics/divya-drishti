@@ -71,3 +71,14 @@ export async function loadFronts(now = Date.now()): Promise<Fronts> {
   }
   return fronts;
 }
+
+/** Instrument keys of every unexpired option (CE/PE) on our MCX underlyings, from the public master: the contracts a client may ask to watch. */
+export async function loadOptionKeys(now = Date.now()): Promise<Set<string>> {
+  const rows = await fetchMaster();
+  const ours = new Set(INSTRUMENTS.flatMap((i) => (i.upstox ? [i.upstox] : [])));
+  return new Set(
+    rows
+      .filter((r: any) => (r.instrument_type === "CE" || r.instrument_type === "PE") && ours.has(r.underlying_symbol) && typeof r.expiry === "number" && r.expiry >= now - 86_400_000)
+      .map((r: any) => r.instrument_key as string),
+  );
+}

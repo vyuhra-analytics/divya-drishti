@@ -201,6 +201,38 @@ await check("stream WebSocket: a live quote and a heartbeat arrive", async () =>
   need(got.quote && got.quote.price > 0 && ["upstox", "tradingview"].includes(got.quote.source), "no valid quote");
   return `${got.quote.source} ${got.quote.price}`;
 });
+await check("live option feed: a watched contract streams its premium, depth and greeks; a malformed or unknown key is ignored", async () => {
+  const chain = await ok("/options?underlying=CRUDEOIL&strikes=4");
+  const atm = chain.rows.find((r: any) => r.strike === chain.atm) ?? chain.rows[Math.floor(chain.rows.length / 2)];
+  const good: string[] = [atm.ce?.ukey, atm.pe?.ukey].filter(Boolean);
+  need(good.length === 2, "the chain carries no Upstox keys");
+  const bad = ["NSE_FO|12345", "MCX_FO|1", "x; drop table", "MCX_FO|99999999"];
+  const got = await new Promise<Record<string, any>>((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN } } as any);
+    const seen: Record<string, any> = {};
+    const t = setTimeout(() => (ws.close(), resolve(seen)), 9000);
+    ws.onopen = () => (ws.send(JSON.stringify({ subscribe: ["options"] })), ws.send(JSON.stringify({ watch: [...good, ...bad] })));
+    ws.onerror = () => reject(new Error("WebSocket error"));
+    ws.onmessage = (e) => {
+      const m = JSON.parse(String(e.data));
+      if (m.type === "opt") {
+        seen[m.q.key] = m.q;
+        if (good.every((k) => seen[k])) (clearTimeout(t), ws.close(), resolve(seen));
+      }
+    };
+  });
+  if (!good.every((k) => got[k])) {
+    const st = (await ok("/market/status")).mcx?.state;
+    if (st && st !== "NORMAL_OPEN") throw new Error(`SKIP: MCX is ${st}, no ticks to see`);
+    throw new Error(`no tick for ${good.filter((k) => !got[k]).join(", ")} within 9 s`);
+  }
+  need(Object.keys(got).every((k) => good.includes(k)), `a key nobody should get arrived: ${Object.keys(got).filter((k) => !good.includes(k))}`);
+  const q = got[good[0]];
+  need(q.price > 0 && q.bid > 0 && q.ask > 0 && q.depth?.length >= 1 && typeof q.delta === "number" && q.iv > 0, "premium, depth or greeks missing");
+  const h: any = await (await fetch(`${STREAM}/health`)).json();
+  need(h.options && h.options.messages > 0, "the stream health does not count option messages");
+  return `${good.length} contracts, premium ${q.price}, bid ${q.bid} / ask ${q.ask}, delta ${q.delta.toFixed(2)}; lag p95 ${h.options.lagP95Ms ?? "n/a"} ms over ${h.options.lagSamples} new trades`;
+});
 await check("refuses: a foreign website opening the WebSocket", async () => {
   const code = await new Promise<string>((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: "https://evil.example" } } as any);

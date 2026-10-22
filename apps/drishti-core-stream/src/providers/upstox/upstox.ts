@@ -1,7 +1,8 @@
 import protobuf from "protobufjs";
 import { join } from "node:path";
 import type { RedisClient } from "bun";
-import type { Instrument, Quote } from "@drishti/shared";
+import { optionQuoteProblem, parseOptionFeed, type Instrument, type OptionQuote, type Quote } from "@drishti/shared";
+import { subscriptionDiff } from "../../optionWatch";
 import type { Emit, ProviderStats } from "../provider";
 
 // Upstox Market Data Feed v3: authorize over REST, then a protobuf WebSocket.
@@ -58,12 +59,36 @@ export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quot
   return out;
 }
 
+/** Option contracts clients want live (see optionWatch.ts): subscribed on the same connection, added and dropped without reconnecting. */
+export interface OptionFeed {
+  keys: () => string[];
+  /** register for changes of the wanted set */
+  onChange: (fn: () => void) => void;
+  emit: (q: OptionQuote) => void;
+}
+
 /**
  * Keeps one feed connection alive while a token exists. `targets()` maps instrument_key → our instrument;
- * when it changes (front-month roll) we resubscribe by reconnecting.
+ * when it changes (front-month roll) we resubscribe by reconnecting. Option keys named by `options` ride the same connection.
  */
-export function startUpstox(redis: RedisClient, targets: () => Map<string, UpstoxTarget>, emit: Emit, stats: ProviderStats) {
+export function startUpstox(redis: RedisClient, targets: () => Map<string, UpstoxTarget>, emit: Emit, stats: ProviderStats, options?: OptionFeed) {
   let ws: WebSocket | undefined;
+  const subscribedOptions = new Set<string>();
+  const send = (method: "sub" | "unsub", instrumentKeys: string[]) => {
+    if (ws?.readyState !== WebSocket.OPEN || !instrumentKeys.length) return;
+    const data = method === "sub" ? { mode: "full", instrumentKeys } : { instrumentKeys };
+    ws.send(new TextEncoder().encode(JSON.stringify({ guid: crypto.randomUUID(), method, data })));
+  };
+  /** move the open socket from the subscribed option keys to the wanted ones */
+  const syncOptions = () => {
+    if (!options || ws?.readyState !== WebSocket.OPEN) return;
+    const { sub, unsub } = subscriptionDiff(subscribedOptions, options.keys());
+    send("unsub", unsub);
+    send("sub", sub);
+    unsub.forEach((k) => subscribedOptions.delete(k));
+    sub.forEach((k) => subscribedOptions.add(k));
+  };
+  options?.onChange(syncOptions);
   let token: string | null = null;
   let keys = "";
   let backoff = 2000;
@@ -93,7 +118,10 @@ export function startUpstox(redis: RedisClient, targets: () => Map<string, Upsto
     ws = sock;
     sock.onopen = () => {
       backoff = 2000;
-      const sub = { guid: crypto.randomUUID(), method: "sub", data: { mode: "full", instrumentKeys: [...t.keys()] } };
+      subscribedOptions.clear();
+      const wantedOptions = options?.keys() ?? [];
+      wantedOptions.forEach((k) => subscribedOptions.add(k));
+      const sub = { guid: crypto.randomUUID(), method: "sub", data: { mode: "full", instrumentKeys: [...t.keys(), ...wantedOptions] } };
       sock.send(new TextEncoder().encode(JSON.stringify(sub))); // Upstox wants the request as binary
     };
     sock.onmessage = (e) => {
@@ -104,6 +132,14 @@ export function startUpstox(redis: RedisClient, targets: () => Map<string, Upsto
         for (const q of feedToQuotes(msg, t)) {
           latest.set(q.symbol, q);
           emit(q);
+        }
+        if (options) {
+          const recvAt = Date.now();
+          for (const [key, feed] of Object.entries<any>(msg?.feeds ?? {})) {
+            if (t.has(key) || !subscribedOptions.has(key)) continue;
+            const oq = parseOptionFeed(key, feed, recvAt);
+            if (oq && !optionQuoteProblem(oq)) options.emit(oq);
+          }
         }
       } catch (err) {
         stats.failed++;

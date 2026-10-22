@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { dedupeNews, SYMBOLS, type MarketStatus, type NewsItem, type Quote } from "@drishti/shared";
+import { dedupeNews, SYMBOLS, type MarketStatus, type NewsItem, type OptionQuote, type Quote } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { streamUrl } from "./settings";
 import { pushTrail } from "./spark";
@@ -17,6 +17,8 @@ interface MarketState {
   news: NewsItem[];
   /** the exchange's own MCX status from Upstox (heartbeat); the session rules decide when it is missing or old */
   mcxStatus?: MarketStatus;
+  /** live option quotes by Upstox instrument key, for the contracts a panel asked the stream to watch (see optionFeed.ts) */
+  options: Record<string, OptionQuote>;
   /** +1 on every (re)connect: charts re-fetch history so candles missed while disconnected get filled */
   epoch: number;
   /** per symbol: when the server last heard from its active source (heartbeat), for STALE detection */
@@ -36,6 +38,7 @@ export const useStore = create<MarketState>()(() => ({
   prev: {},
   news: [],
   mcxStatus: undefined,
+  options: {},
   epoch: 0,
   seen: {},
   paperRev: 0,
@@ -53,6 +56,11 @@ setInterval(() => {
 
 let ws: WebSocket | undefined;
 
+/** Tell the stream which option contracts this tab shows (it drops one nobody has asked for in 60 s); ignored while the socket is down. */
+export function sendWatch(keys: string[]) {
+  if (ws?.readyState === WebSocket.OPEN && keys.length) ws.send(JSON.stringify({ watch: keys }));
+}
+
 export function connectStream() {
   useStore.setState({ status: "connecting" });
   const sock = new WebSocket(streamUrl());
@@ -60,11 +68,11 @@ export function connectStream() {
   sock.onopen = () => {
     lastMessageAt = Date.now();
     useStore.setState((s) => ({ status: "open", epoch: s.epoch + 1 }));
-    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "alerts", "paper", "briefing"] }));
+    sock.send(JSON.stringify({ subscribe: [...SYMBOLS, "news", "alerts", "paper", "briefing", "options"] }));
   };
   sock.onmessage = (e) => {
     lastMessageAt = Date.now();
-    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number>; mcxStatus?: MarketStatus | null } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
+    const msg: Quote | { type: "news"; items: NewsItem[] } | { type: "hb"; seen?: Record<string, number>; mcxStatus?: MarketStatus | null } | { type: "opt"; q: OptionQuote } | { type: "alert"; id: string; message: string } | { type: "paper"; account: string; event: string; actor: string; text: string } | { type: "briefing"; id: string; symbol: string; bias: string; verified: number; total: number; wrong: number } =
       JSON.parse(e.data);
     if ("type" in msg) {
       // a server-side alert fired (it also went to Telegram/webhook): show it here too
@@ -79,6 +87,7 @@ export function connectStream() {
         useStore.setState((s) => ({ briefingRev: s.briefingRev + 1 }));
         useAlerts.getState().push(`briefing-${msg.id}`, `Claude wrote a ${msg.bias} briefing on ${msg.symbol.split(":")[1]}: ${msg.verified} of ${msg.total} points checked against the data${msg.wrong ? `, ${msg.wrong} contradict it` : ""}`);
       }
+      if (msg.type === "opt" && msg.q?.key) useStore.setState((s) => ({ options: { ...s.options, [msg.q.key]: msg.q } }));
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen }, mcxStatus: msg.mcxStatus ?? undefined }));
       return;

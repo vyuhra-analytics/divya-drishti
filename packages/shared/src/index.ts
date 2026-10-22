@@ -294,7 +294,7 @@ export function mergeBars(...lists: Bar[][]): Bar[] {
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
-export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] };
+export type ClientMessage = { subscribe: string[] } | { unsubscribe: string[] } | { watch: string[] };
 
 export * from "./news";
 export * from "./security";
@@ -337,6 +337,7 @@ export * from "./eia";
 export * from "./recap";
 export * from "./costs";
 export * from "./upstoxCharges";
+export * from "./optionQuote";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

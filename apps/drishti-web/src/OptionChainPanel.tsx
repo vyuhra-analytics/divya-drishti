@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { instrument, rowPcr, type ChainRow, type OptionLeg } from "@drishti/shared";
 import { useChain, type ChainFeed } from "./chainClient";
+import { useLiveChain } from "./optionFeed";
 import { makeFormat, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -56,7 +57,8 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
   const [strikes, setStrikes] = useState(START_STRIKES);
   const [metric, setMetric] = useState<"oi" | "volume">("oi");
   const [cols, setCols] = useState<ColId[]>(savedColumns);
-  const { chain, error, reload } = useChain(underlying, expiry, feed, strikes);
+  const { chain: polled, error, reload } = useChain(underlying, expiry, feed, strikes);
+  const { chain, live } = useLiveChain(polled);
 
   const nf = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
   const price = makeFormat(locale, 2).price;
@@ -256,6 +258,13 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
                   ⌃ Load more strikes
                 </button>
                 <span className="muted"> {rows.length} strikes shown</span>
+                <span
+                  className="muted"
+                  style={{ marginLeft: 12 }}
+                  title="Prices for the strikes around the money come over the live Upstox feed (about once a second); the rest, and any strike whose feed goes quiet, are polled every 1 to 3 seconds."
+                >
+                  {live.fresh ? `● live feed ${live.fresh}/${live.watched} contracts` : "polled"}
+                </span>
               </td>
             </tr>
             {body}
