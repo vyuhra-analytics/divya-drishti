@@ -81,7 +81,7 @@ function Select<K extends keyof Settings>({ k, options }: { k: K; options: [Sett
   );
 }
 
-function Toggle({ k }: { k: "flash" | "lockLayout" | "confirmClose" | "tickerTape" }) {
+function Toggle({ k }: { k: "flash" | "lockLayout" | "confirmClose" }) {
   const value = useSettings((s) => s[k]);
   const set = useSettings((s) => s.set);
   return <input type="checkbox" checked={value} onChange={(e) => set({ [k]: e.target.checked })} />;
@@ -198,9 +198,6 @@ export function SettingsDialog() {
             </Field>
             <Field label="Flash prices on tick">
               <Toggle k="flash" />
-            </Field>
-            <Field label="Scrolling price ticker" hint="under the top bar">
-              <Toggle k="tickerTape" />
             </Field>
           </section>
 

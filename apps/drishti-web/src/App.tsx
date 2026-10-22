@@ -9,7 +9,6 @@ import { SettingsDialog } from "./SettingsDialog";
 import { StatusBar } from "./StatusBar";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
-import { TickerTape } from "./TickerTape";
 import { Workspace } from "./Grid";
 import { PANEL_TYPES, Sidebar } from "./Sidebar";
 import { workspaceList } from "./presets";
@@ -79,7 +78,6 @@ export function App() {
           ⚙
         </button>
       </header>
-      <TickerTape />
       <div className="main-area">
         <Sidebar mobileOpen={menuOpen} onClose={() => setMenuOpen(false)} />
         <main className="workspace-main" aria-label="Panels">

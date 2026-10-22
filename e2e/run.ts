@@ -153,23 +153,6 @@ test("live prices reach the top bar", async ({ page }) => {
   await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+/.test(document.body.innerText), undefined, { timeout: 20_000 });
 });
 
-test("Ticker tape: scrolls, shows live price, change and expiry for every symbol, pauses on hover", async ({ page }) => {
-  const tape = page.getByLabel("Price ticker");
-  await tape.waitFor();
-  await page.waitForFunction(() => /CRUDEOIL\s*[\d,]+\s*[+−-][\d,.]+ \([+−-][\d.]+%\)\s*Exp\. \d+ \w{3}/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
-  await page.waitForFunction(() => /USDINR\s*[\d.]+\s*[+−-][\d.]+ \([+−-][\d.]+%\)/.test(document.querySelector(".tape")?.textContent ?? ""), undefined, { timeout: 20_000 });
-  const x = () => page.locator(".tape-track").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
-  const a = await x();
-  await page.waitForTimeout(1200);
-  assert((await x()) < a, "the tape is not moving");
-  await tape.hover();
-  const b = await x();
-  await page.waitForTimeout(800);
-  assert((await x()) === b, "the tape did not pause on hover");
-  await page.mouse.move(0, 400);
-  await page.screenshot({ path: join(SHOTS, "ticker-tape.png"), clip: { x: 0, y: 0, width: 1280, height: 70 } });
-});
-
 test("USD/INR: live in the watchlist, on a chart with history, and not offered where it makes no sense (paper trading, futures curve)", async ({ page }) => {
   await page.waitForFunction(() => /USDINR.*?\d{2}\.\d{4}/.test(document.querySelector(".watchlist")?.textContent ?? ""), undefined, { timeout: 20_000 });
   const bars = await (await fetch(`${API}/bars?symbol=FX:USDINR&tf=5m`)).json();

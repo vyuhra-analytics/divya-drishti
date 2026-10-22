@@ -632,13 +632,3 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ocx-key.prev { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* scrolling price strip under the top bar */
-.tape { flex: none; height: 28px; overflow: hidden; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
-.tape-track { display: flex; width: max-content; height: 100%; align-items: center; animation: tape-scroll linear infinite; }
-.tape:hover .tape-track, .tape:focus-within .tape-track { animation-play-state: paused; }
-.tape-copy { display: contents; }
-.tape-item { display: inline-flex; gap: 8px; align-items: baseline; height: 100%; align-items: center; padding: 0 16px; border-right: 1px solid var(--line); white-space: nowrap; color: inherit; }
-.tape-item:hover { background: var(--hover); color: var(--text); }
-.tape-name { color: var(--text); font-weight: 600; }
-.tape-exp { font-size: 11px; }
-@keyframes tape-scroll { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .tape { overflow-x: auto; } .tape-track { animation: none; } }
