@@ -3,6 +3,7 @@ import { releasePending, type CalEvent, type CalKind } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useNow } from "./market";
+import { StoredEvents } from "./StoredEvents";
 import type { Widget } from "./workspace";
 
 type Filter = "all" | CalKind;
@@ -52,8 +53,25 @@ function until(at: number, now: number) {
   return mins >= 0 ? `in ${text}` : `${text} ago`;
 }
 
-/** Energy calendar: US inventory and rig reports, OPEC, high-impact US macro and MCX holidays, grouped by day. */
-export function CalendarWidget(_: { widget: Widget }) {
+/** Energy calendar: the live list (US inventory and rig reports, OPEC, high-impact US macro, MCX holidays) or what the recorder has stored. */
+export function CalendarWidget({ widget }: { widget: Widget }) {
+  const [view, setView] = useState<"live" | "stored">("live");
+  return (
+    <div className="calendar">
+      <div className="toolbar no-drag">
+        <button className={view === "live" ? "tf active" : "tf"} onClick={() => setView("live")}>
+          Live
+        </button>
+        <button className={view === "stored" ? "tf active" : "tf"} onClick={() => setView("stored")} title="Releases saved by the recorder, with every forecast and actual as it was seen">
+          Recorded
+        </button>
+      </div>
+      {view === "live" ? <LiveCalendar widget={widget} /> : <StoredEvents />}
+    </div>
+  );
+}
+
+function LiveCalendar(_: { widget: Widget }) {
   const [events, setEvents] = useState<CalEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");

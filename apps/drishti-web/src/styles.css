@@ -584,3 +584,10 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ocx-key.prev { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* scrolling price strip under the top bar */
+.st-detail { padding: 6px 10px 8px 72px; border-bottom: 1px solid var(--line); font-size: 11px; background: var(--hover); }
+.st-obs { display: grid; grid-template-columns: 62px 70px 1fr; gap: 6px; padding: 1px 0; }
+.st-eia { margin-top: 6px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.st-eia th { text-align: right; font-weight: 400; color: var(--muted); padding: 1px 8px; }
+.st-eia td { text-align: right; padding: 1px 8px; }
+.st-eia th:first-child, .st-eia td:first-child { text-align: left; }
+.st-eia tr.headline td { font-weight: 700; }

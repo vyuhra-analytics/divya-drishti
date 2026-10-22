@@ -117,6 +117,30 @@ test("CalendarWidget shows forecast, previous and actual per event, and filters 
   expect(screen.getByText("MCX closed: Diwali")).toBeTruthy();
 });
 
+test("CalendarWidget Recorded view shows stored figures, the surprise and the log of what was seen", async () => {
+  const obs = (kind: string, text: string, num: number, source: string, observedAt: string) => ({ kind, text, num, source, observedAt, backfilled: false });
+  mockFetch([
+    {
+      id: "7",
+      series_code: "WNGSR",
+      scheduled_at: new Date(Date.now() - 3600_000).toISOString(),
+      title: "EIA natural gas storage",
+      period: "2026-10-16",
+      status: "released",
+      observations: [obs("forecast", "80B", 80, "Forex Factory", "2026-10-15T10:00:00Z"), obs("forecast", "82B", 82, "Forex Factory", "2026-10-16T10:00:00Z"), obs("actual", "77B", 77, "EIA", "2026-10-22T15:00:00Z")],
+    },
+  ]);
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  fireEvent.click(screen.getByText("Recorded"));
+  const row = (await screen.findByText("EIA natural gas storage")).closest(".cal-row")!;
+  expect(row.querySelector(".cal-fc")!.textContent).toBe("82B"); // the newest forecast is the one believed now
+  expect(row.querySelector(".cal-actual")!.textContent).toBe("77B");
+  expect(row.textContent).toContain("-5 vs forecast");
+  fireEvent.click(row.querySelector("button")!);
+  expect(document.body.textContent).toContain("80B"); // the earlier forecast stays on record
+});
+
 test("HelpDialog welcomes first-time users once, lists codes and the glossary", () => {
   const { HelpDialog } = require("./HelpDialog") as typeof import("./HelpDialog");
   const { useSettings } = require("./settings") as typeof import("./settings");
