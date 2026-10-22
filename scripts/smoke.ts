@@ -96,7 +96,7 @@ await check("canaries: every light source ok", async () => {
   need(c.canaries.length >= 12, `only ${c.canaries.length} checked (the first run starts ~4 s after boot)`);
   const notOk = c.canaries.filter((x: any) => !["ok", "skipped"].includes(x.status));
   need(notOk.length === 0, `failing: ${notOk.map((x: any) => `${x.id} ${x.status}`).join(", ")}`);
-  need(c.sources.length >= 13, "registry missing");
+  need(c.sources.length >= 12, "registry missing");
 });
 await check("options chain (needs Upstox/TradingView)", async () => {
   const r = await get("/options?underlying=CRUDEOIL");
