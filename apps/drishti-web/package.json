@@ -11,7 +11,6 @@
   "dependencies": {
     "@drishti/shared": "workspace:*",
     "hls.js": "^1.7.3",
-    "lightweight-charts": "^5.0.0",
     "openalgo-charts": "2.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

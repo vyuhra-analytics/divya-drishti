@@ -95,7 +95,7 @@ export interface Tick {
   size: number;
 }
 
-/** time = bucket start, epoch seconds (lightweight-charts UTCTimestamp) */
+/** time = bucket start, epoch seconds */
 export interface Bar {
   time: number;
   open: number;
