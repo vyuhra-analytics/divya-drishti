@@ -37,6 +37,8 @@ Status key: done, active, next, later, blocked.
 | 2026-10-22 | Live TV kept |
 | 2026-10-22 | Insider trades, energy heatmap, energy screener, ticker tape: cut or optional, decide in step 2 |
 | 2026-10-22 | Simple chart and compact option chain: cut as duplicates, decide in step 2 |
+| 2026-10-22 | Owner decision: the limit-equivalent line is the working stop (and the Rs 1,000 line the working target); R stop, TP1, TP2 shown as secondary. Finding: on crude the Rs 500 limit is about a 7-point future stop (spread included, delta 0.5); replay of the two EIA Wednesdays with an entry in the 30-minute window (7 and 14 Oct) hit it first on both, stop assumed first inside a candle; two trades, not a result |
+| 2026-10-22 | Prototype task T1 (signal: price, nearest levels, Rs to stop): 12 s against a 3 s target; the stop was hard to find because it was only drawn after the buy. Fix: planned entry / stop / TP1 / TP2 shown at the signal, plus a level ladder (distance in points and option Rs) and a line saying the Rs 500 loss limit comes first. T2 and T3 timings not yet reported |
 | 2026-10-22 | Prototype built (`prototype/eia-replay.html`, replay of 7 Oct): chart, report block, simulated chain, trade, alerts, timed-task stopwatch; first run: Rs 500 loss limit fired on a late entry although the day later moved 68 pts the trade's way |
 | 2026-10-22 | Step 2 complete: dark theme everywhere, alert sounds accepted, no colour issues |
 | 2026-10-22 | Design system spec drafted (`DESIGN_SYSTEM.md`): position colours (`--good`/`--bad`) separate from market direction (`--up`/`--down`), 28 px numbers, four alert classes with sounds; 3 questions open |
