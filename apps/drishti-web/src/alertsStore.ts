@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Alert } from "@drishti/shared";
 
-export interface Fired {
+interface Fired {
   id: string;
   alertId: string;
   at: number;
@@ -24,7 +24,7 @@ interface AlertsState {
   dismiss: (id: string) => void;
 }
 
-export const MAX_ALERTS = 50;
+const MAX_ALERTS = 50;
 
 export const useAlerts = create<AlertsState>()(
   persist(

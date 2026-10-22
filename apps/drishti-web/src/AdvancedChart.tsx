@@ -18,7 +18,7 @@ const systemZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
  * Read from the settings store on every call, so a change applies the next time the chart repaints.
  * `kind` is the library's tick class (`year`, `month`, `day`, `time`, `timeWithSeconds`); no kind is the crosshair label: date and time.
  */
-export function chartTimeLabel(utcSeconds: number, kind?: TickMarkType): string {
+function chartTimeLabel(utcSeconds: number, kind?: TickMarkType): string {
   const { locale, clock } = useSettings.getState();
   const zone = systemZone();
   const ms = utcSeconds * 1000;

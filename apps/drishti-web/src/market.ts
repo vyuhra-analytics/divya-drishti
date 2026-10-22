@@ -49,6 +49,3 @@ export function symbolFreshness(symbol: string, now = Date.now()): Freshness {
   const open = exchange === "MCX" ? mcxSession(now, mcxToday).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : true;
   return freshness(open, useStore.getState().seen[symbol], now);
 }
-
-/** Is this symbol's exchange open and its feed live right now? */
-export const isLive = (symbol: string, now = Date.now()) => symbolFreshness(symbol, now) === "live";

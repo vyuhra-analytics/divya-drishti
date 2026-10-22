@@ -30,7 +30,7 @@ import { useClock, useFormat, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget, type WidgetType } from "./workspace";
 
 /** "CRUDEOIL FUT 19 NOV 26" → "NOV 26" */
-export const contractMonth = (contract?: string) => contract?.match(/([A-Z]{3}) (\d{2})$/)?.slice(1).join(" ");
+const contractMonth = (contract?: string) => contract?.match(/([A-Z]{3}) (\d{2})$/)?.slice(1).join(" ");
 
 /** Change vs previous close (the provider's), not since page load. */
 function useChange(symbol: string) {

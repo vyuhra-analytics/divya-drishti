@@ -7,7 +7,6 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@drishti/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.6.7"
   }

@@ -13,7 +13,7 @@ export interface McpConfig {
   fetch?: typeof fetch;
 }
 
-export const MCX_SYMBOLS = ["MCX:CRUDEOIL", "MCX:CRUDEOILM", "MCX:NATURALGAS", "MCX:NATGASMINI"] as const;
+const MCX_SYMBOLS = ["MCX:CRUDEOIL", "MCX:CRUDEOILM", "MCX:NATURALGAS", "MCX:NATGASMINI"] as const;
 const ALL_SYMBOLS = [...MCX_SYMBOLS, "NYMEX:CL", "NYMEX:NG"] as const;
 
 type Reply = { content: { type: "text"; text: string }[]; isError?: boolean };

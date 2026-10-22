@@ -12,6 +12,7 @@
     "infra:up": "docker compose up -d --wait && bun --env-file=.env scripts/migrate.ts",
     "infra:down": "docker compose down",
     "db:migrate": "bun scripts/migrate.ts",
+    "db:clean": "bun scripts/db-clean.ts",
     "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
     "e2e": "bun e2e/run.ts",
     "smoke": "bun scripts/smoke.ts"

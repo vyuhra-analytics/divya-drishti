@@ -56,7 +56,7 @@ export function usePaperAccount(accountId: string) {
 }
 
 /** The cost rates saved in this browser (Costs panel), if any. */
-export function savedCostRates(): Record<string, number> | undefined {
+function savedCostRates(): Record<string, number> | undefined {
   try {
     return JSON.parse(localStorage.getItem("drishti-costs") ?? "null")?.rates;
   } catch {

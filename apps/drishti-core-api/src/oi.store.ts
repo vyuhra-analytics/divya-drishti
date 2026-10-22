@@ -5,7 +5,7 @@ const RECORD_EVERY_MS = 2 * 60_000; // snapshots per chain are written at most t
 const BASELINE_TTL_MS = 60_000; // baselines change only when a session turns over or a new first reading is stored
 
 /** Trading day in IST (MCX), as YYYY-MM-DD. */
-export const istDay = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10);
+const istDay = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10);
 
 /**
  * Open-interest snapshots per option contract and day (Postgres `option_oi`). Upstox has no previous-day OI for MCX options, so the

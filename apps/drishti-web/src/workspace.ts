@@ -7,7 +7,7 @@ import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
 export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "jodi" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
-export const GROUPS = ["amber", "blue", "green", "red"] as const;
+const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
 /** group === null means pinned: the widget shows its own `symbol` instead of following a link group. */
@@ -98,7 +98,7 @@ const defaults = () => ({
   focusedId: "chart-1" as string | null,
 });
 
-export const symbolOf = (w: Widget, groups: Record<Group, string>) => (w.group ? groups[w.group] : w.symbol);
+const symbolOf = (w: Widget, groups: Record<Group, string>) => (w.group ? groups[w.group] : w.symbol);
 
 const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
   widgets.map((w) => (w.id === id ? { ...w, ...change } : w));
