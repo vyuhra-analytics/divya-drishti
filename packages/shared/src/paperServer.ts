@@ -5,7 +5,7 @@
 import { UPSTOX_MCX_RATES, type CostRates, type Side } from "./costs";
 import { lotUnits } from "./costs";
 import { instrument } from "./index";
-import { closePaper, exitHit, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type PaperPosition, type PaperQuote, type PaperTrade } from "./paper";
+import { closePaper, describeFill, exitHit, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade } from "./paper";
 
 export type Actor = "ui" | "mcp";
 
@@ -36,12 +36,41 @@ export interface AccountRow {
   slippage: number;
 }
 
-export interface OrderInput {
+export interface OrderInput extends OrderMeta {
   symbol: string;
   side: Side;
   lots: number;
   stop?: number;
   target?: number;
+}
+
+const CLIENT_ORDER_ID = /^[A-Za-z0-9._:-]{1,64}$/;
+const LABEL = /^[^\u0000-\u001f<>]{1,64}$/;
+
+/** The labels on an order: client_order_id, tag, strategy, signal_time (an ISO time) and r_points. Each optional; anything present must be well-formed. */
+export function parseOrderMeta(body: any): { meta: OrderMeta } | { error: string } {
+  const absent = (v: unknown) => v === undefined || v === null || v === "";
+  const meta: OrderMeta = {};
+  if (!absent(body?.client_order_id)) {
+    if (typeof body.client_order_id !== "string" || !CLIENT_ORDER_ID.test(body.client_order_id)) return { error: "client_order_id must be 1 to 64 letters, digits, . _ : or -" };
+    meta.clientOrderId = body.client_order_id;
+  }
+  for (const [key, field] of [["tag", "tag"], ["strategy", "strategy"]] as const) {
+    if (absent(body?.[key])) continue;
+    if (typeof body[key] !== "string" || !LABEL.test(body[key].trim())) return { error: `${key} must be 1 to 64 characters of plain text` };
+    meta[field] = body[key].trim();
+  }
+  if (!absent(body?.signal_time)) {
+    const t = typeof body.signal_time === "string" ? Date.parse(body.signal_time) : NaN;
+    if (!Number.isFinite(t)) return { error: "signal_time must be an ISO 8601 time, e.g. 2026-10-22T09:30:00+05:30" };
+    meta.signalTime = t;
+  }
+  if (!absent(body?.r_points)) {
+    const r = typeof body.r_points === "number" ? body.r_points : NaN;
+    if (!Number.isFinite(r) || r <= 0 || r > 1e6) return { error: "r_points must be a positive number of price points" };
+    meta.rPoints = r;
+  }
+  return { meta };
 }
 
 /** Validate an order from a request body or a tool call: refuse anything unexpected with a reason, never coerce. */
@@ -53,16 +82,18 @@ export function parseOrderInput(body: any): { order: OrderInput } | { error: str
   const lots = Number(body.lots);
   if (!Number.isInteger(lots) || lots < 1) return { error: "lots must be a whole number of at least 1" };
   const num = (v: unknown, name: string) => (v === undefined || v === null || v === "" ? undefined : Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : (() => { throw new Error(`${name} must be a positive price`); })());
+  const m = parseOrderMeta(body);
+  if ("error" in m) return m;
   try {
-    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target") } };
+    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target"), ...m.meta } };
   } catch (e) {
     return { error: (e as Error).message };
   }
 }
 
-/** A stop/target change: a number sets it, null clears it, absent leaves it alone. */
-export function parseStopTarget(body: any): { stop?: number | null; target?: number | null } | { error: string } {
-  const out: { stop?: number | null; target?: number | null } = {};
+/** A stop/target change: a number sets it, null clears it, absent leaves it alone. `only_tighten` makes it a trailing update that can only move the stop closer to profit. */
+export function parseStopTarget(body: any): { stop?: number | null; target?: number | null; onlyTighten?: boolean; reason?: string } | { error: string } {
+  const out: { stop?: number | null; target?: number | null; onlyTighten?: boolean; reason?: string } = {};
   for (const k of ["stop", "target"] as const) {
     if (!(k in (body ?? {}))) continue;
     const v = body[k];
@@ -71,6 +102,14 @@ export function parseStopTarget(body: any): { stop?: number | null; target?: num
     else return { error: `${k} must be a positive price, or null to remove it` };
   }
   if (!("stop" in out) && !("target" in out)) return { error: "give a stop and/or a target (null removes one)" };
+  if (body?.only_tighten !== undefined) {
+    if (typeof body.only_tighten !== "boolean") return { error: "only_tighten must be true or false" };
+    out.onlyTighten = body.only_tighten;
+  }
+  if (body?.reason !== undefined && body.reason !== null) {
+    if (typeof body.reason !== "string" || body.reason.length > 120) return { error: "reason must be text of at most 120 characters" };
+    out.reason = body.reason;
+  }
   return out;
 }
 
@@ -127,6 +166,13 @@ export interface PaperDeps {
   /** told after every change, so open browsers refresh: { account, event, actor, text } */
   publish(e: { account: string; event: "opened" | "closed" | "updated" | "reset" | "imported"; actor: string; text: string }): void;
   limits?: Record<Actor, Limits>;
+}
+
+/** What placing an order answers: the position, and when the caller's client_order_id was already used, `duplicate` (and the closing trade if it has since closed). */
+export interface PlaceResult {
+  position: PaperPosition;
+  duplicate?: true;
+  closed?: PaperTrade;
 }
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; status: 400 | 404 | 409 | 422 | 503; error: string };
@@ -221,21 +267,41 @@ export class PaperEngine {
     return { ok: true, state: { account, positions, trades, rates, limits: this.limits(actor), summary: summarizeAccount(account.capital, [...all].reverse(), nets) } };
   }
 
-  place(accountId: string, raw: unknown, actor: Actor): Promise<Result<{ position: PaperPosition }>> {
+  place(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
     return this.serial(async () => {
       const r = await this.placeNow(accountId, raw, actor);
-      await this.audit(actor, "place", accountId, raw, r, r.ok ? `${r.position.side} ${r.position.lots} ${r.position.symbol} @ ${r.position.entry}` : "");
-      if (r.ok) this.d.publish({ account: accountId, event: "opened", actor, text: `${actor === "mcp" ? "Claude" : "You"} opened ${r.position.lots} lot${r.position.lots === 1 ? "" : "s"} ${r.position.symbol} ${r.position.side === "buy" ? "long" : "short"} at ${r.position.entry}` });
+      // a repeat of an order already filled is recorded under its own action, so it never counts toward the daily order cap
+      await this.audit(actor, r.ok && r.duplicate ? "place_duplicate" : "place", accountId, raw, r, r.ok ? `${r.duplicate ? "duplicate of " : ""}${r.position.side} ${r.position.lots} ${r.position.symbol} @ ${r.position.entry}` : "");
+      if (r.ok && !r.duplicate) this.d.publish({ account: accountId, event: "opened", actor, text: `${actor === "mcp" ? "Claude" : "You"} opened ${r.position.lots} lot${r.position.lots === 1 ? "" : "s"} ${r.position.symbol} ${r.position.side === "buy" ? "long" : "short"} at ${r.position.entry}` });
       return r;
     });
   }
 
-  private async placeNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<{ position: PaperPosition }>> {
+  /** An order the caller already placed with this client_order_id: the open position, or (once closed) the position as it was with its trade. */
+  private async findClientOrder(accountId: string, clientOrderId: string): Promise<{ position: PaperPosition; trade?: PaperTrade } | undefined> {
+    const open = (await this.d.store.positions(accountId)).find((p) => p.clientOrderId === clientOrderId);
+    if (open) return { position: open };
+    const trade = (await this.d.store.trades(accountId, MAX_TRADES_KEPT)).find((t) => t.clientOrderId === clientOrderId);
+    if (!trade) return undefined;
+    const { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, entryFill } = trade;
+    return { position: { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, fill: entryFill }, trade };
+  }
+
+  private async placeNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
     const parsed = parseOrderInput(raw);
     if ("error" in parsed) return fail(400, parsed.error);
     const { order } = parsed;
     const account = await this.d.store.getAccount(accountId);
     if (!account) return fail(404, "no such account");
+    // idempotency first: a retry must get the original answer, not "already in this contract" or a second fill
+    if (order.clientOrderId) {
+      const dup = await this.findClientOrder(accountId, order.clientOrderId);
+      if (dup) {
+        const p = dup.position;
+        if (p.symbol !== order.symbol || p.side !== order.side || p.lots !== order.lots) return fail(409, `client_order_id ${order.clientOrderId} was already used for a different order (${p.side} ${p.lots} ${p.symbol})`);
+        return { ok: true, position: p, duplicate: true, ...(dup.trade ? { closed: dup.trade } : {}) };
+      }
+    }
     const lim = this.limits(actor);
     if (order.lots > lim.maxLots) return fail(422, `at most ${lim.maxLots} lot${lim.maxLots === 1 ? "" : "s"} per order for ${actor === "mcp" ? "agents" : "this client"}`);
     const positions = await this.d.store.positions(accountId);
@@ -246,9 +312,19 @@ export class PaperEngine {
     if (!q) return fail(503, "no live price for this contract yet");
     if (!this.d.live(order.symbol)) return fail(503, "the market is closed or the feed is stale: paper orders fill only on a live price");
     const units = lotUnits(order.symbol)!;
-    const filled = openPaper({ id: this.d.newId(), symbol: order.symbol, side: order.side, lots: order.lots, units, stop: order.stop, target: order.target }, q, account.slippage * tickSize(order.symbol), this.d.now());
+    const slippage = account.slippage * tickSize(order.symbol);
+    const filled = openPaper({ id: this.d.newId(), symbol: order.symbol, side: order.side, lots: order.lots, units, stop: order.stop, target: order.target }, q, slippage, this.d.now());
     if ("error" in filled) return fail(400, filled.error);
-    const position = { ...filled, actor };
+    const position: PaperPosition = {
+      ...filled,
+      actor,
+      fill: describeFill(order.side, q, slippage, tickSize(order.symbol)),
+      ...(order.clientOrderId ? { clientOrderId: order.clientOrderId } : {}),
+      ...(order.tag ? { tag: order.tag } : {}),
+      ...(order.strategy ? { strategy: order.strategy } : {}),
+      ...(order.signalTime !== undefined ? { signalTime: order.signalTime } : {}),
+      ...(order.rPoints !== undefined ? { rPoints: order.rPoints } : {}),
+    };
     await this.d.store.savePosition(accountId, position);
     this.open.set(position.id, { account: accountId, position });
     return { ok: true, position };
@@ -270,17 +346,32 @@ export class PaperEngine {
     if (!pos) return fail(404, "no such open position");
     const q = this.d.quote(pos.symbol);
     if (!q) return fail(503, "no live price for this contract");
-    const trade = { ...closePaper(pos, q, account.slippage * tickSize(pos.symbol), this.d.now(), reason, await this.d.rates()), actor: pos.actor, closedBy: actor };
+    const slippage = account.slippage * tickSize(pos.symbol);
+    const closed = closePaper(pos, q, slippage, this.d.now(), reason, await this.d.rates());
+    const dir = pos.side === "buy" ? 1 : -1;
+    const trade: PaperTrade = {
+      ...closed,
+      actor: pos.actor,
+      closedBy: actor,
+      // the labels the order carried, so the trade can be reconciled with the strategy's own records
+      ...(pos.clientOrderId ? { clientOrderId: pos.clientOrderId } : {}),
+      ...(pos.tag ? { tag: pos.tag } : {}),
+      ...(pos.strategy ? { strategy: pos.strategy } : {}),
+      ...(pos.signalTime !== undefined ? { signalTime: pos.signalTime } : {}),
+      ...(pos.rPoints !== undefined ? { rPoints: pos.rPoints, rMultiple: Number(((dir * (closed.exit - pos.entry)) / pos.rPoints).toFixed(2)) } : {}),
+      ...(pos.fill ? { entryFill: pos.fill } : {}),
+      exitFill: describeFill(pos.side === "buy" ? "sell" : "buy", q, slippage, tickSize(pos.symbol)),
+    };
     await this.d.store.saveTrade(accountId, trade);
     await this.d.store.deletePosition(accountId, positionId);
     this.open.delete(positionId);
     return { ok: true, trade };
   }
 
-  setStopTarget(accountId: string, positionId: string, raw: unknown, actor: Actor): Promise<Result<{ position: PaperPosition }>> {
+  setStopTarget(accountId: string, positionId: string, raw: unknown, actor: Actor): Promise<Result<{ position: PaperPosition; previous: { stop?: number; target?: number } }>> {
     return this.serial(async () => {
       const parsed = parseStopTarget(raw);
-      let r: Result<{ position: PaperPosition }>;
+      let r: Result<{ position: PaperPosition; previous: { stop?: number; target?: number } }>;
       if ("error" in parsed) r = fail(400, parsed.error);
       else {
         const pos = (await this.d.store.positions(accountId)).find((p) => p.id === positionId);
@@ -290,12 +381,17 @@ export class PaperEngine {
           if ("stop" in parsed) parsed.stop === null ? delete next.stop : (next.stop = parsed.stop);
           if ("target" in parsed) parsed.target === null ? delete next.target : (next.target = parsed.target);
           const long = next.side === "buy";
-          if (next.stop !== undefined && (long ? next.stop >= next.entry : next.stop <= next.entry)) r = fail(400, `a ${long ? "long" : "short"}'s stop must be ${long ? "below" : "above"} the entry (${next.entry})`);
-          else if (next.target !== undefined && (long ? next.target <= next.entry : next.target >= next.entry)) r = fail(400, `a ${long ? "long" : "short"}'s target must be ${long ? "above" : "below"} the entry (${next.entry})`);
+          // a stop or target is checked against where the market is NOW, not the entry: a trailing stop legitimately sits above a long's entry once it is in profit
+          const ref = this.d.quote(pos.symbol)?.price ?? pos.entry;
+          const word = long ? "long" : "short";
+          if (parsed.onlyTighten && "stop" in parsed && parsed.stop === null) r = fail(400, "only_tighten: a stop cannot be removed");
+          else if (parsed.onlyTighten && "stop" in parsed && pos.stop !== undefined && next.stop !== undefined && (long ? next.stop < pos.stop : next.stop > pos.stop)) r = fail(400, `only_tighten: a ${word}'s stop can only move ${long ? "up" : "down"} (it is at ${pos.stop}, you asked for ${next.stop})`);
+          else if ("stop" in parsed && next.stop !== undefined && (long ? next.stop >= ref : next.stop <= ref)) r = fail(400, `a ${word}'s stop must be ${long ? "below" : "above"} the current price (${ref}): it would trigger at once`);
+          else if ("target" in parsed && next.target !== undefined && (long ? next.target <= ref : next.target >= ref)) r = fail(400, `a ${word}'s target must be ${long ? "above" : "below"} the current price (${ref}): it would trigger at once`);
           else {
             await this.d.store.savePosition(accountId, next);
             this.open.set(next.id, { account: accountId, position: next });
-            r = { ok: true, position: next };
+            r = { ok: true, position: next, previous: { ...(pos.stop !== undefined ? { stop: pos.stop } : {}), ...(pos.target !== undefined ? { target: pos.target } : {}) } };
           }
         }
       }

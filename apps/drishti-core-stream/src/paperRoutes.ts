@@ -66,7 +66,7 @@ export function paperRoutes(opts: {
     .post("/accounts/:id/orders", async ({ request, params, body, set }) => {
       const r = await engine.place(params.id, body, actorOf(request));
       if (!r.ok) return reply(set, r);
-      set.status = 201;
+      set.status = r.duplicate ? 200 : 201; // a repeat of an order already filled is not a new order
       return reply(set, r);
     })
     .post("/accounts/:id/positions/:pid/close", async ({ request, params, set }) => reply(set, await engine.close(params.id, params.pid, actorOf(request))))

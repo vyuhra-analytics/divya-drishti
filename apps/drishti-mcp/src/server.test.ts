@@ -283,3 +283,41 @@ test("a service that is down is reported, not hidden", async () => {
   expect(r.isError).toBe(true);
   expect(r.text).toContain("not reachable");
 });
+
+test("place_paper_order passes the labels and the client order id through, and says when the answer is a repeat of an earlier order", async () => {
+  const position = { id: "pp-1", symbol: "MCX:CRUDEOILM", side: "buy", lots: 1, entry: 9402, openedAt: 1_800_000_000_000, signalTime: Date.parse("2026-10-22T09:30:00+05:30"), tag: "usib-1", strategy: "USIB", fill: { price: 9402, quote: { price: 9400, time: 1_799_999_990_000 } } };
+  let duplicate = false;
+  const { call, calls } = await connect({ write: true }, () => ({ status: duplicate ? 200 : 201, body: { position, ...(duplicate ? { duplicate: true } : {}) } }));
+  const args = { symbol: "MCX:CRUDEOILM", side: "buy", lots: 1, client_order_id: "usib-20261022-0930-L", tag: "usib-1", strategy: "USIB", signal_time: "2026-10-22T09:30:00+05:30", r_points: 40 };
+  const first = JSON.parse((await call("place_paper_order", args)).text);
+  expect(calls[0]!.body).toMatchObject(args);
+  expect(first.duplicate).toBeUndefined();
+  expect(first.filled.signalTimeIso).toBe("2026-10-22T04:00:00.000Z");
+  expect(first.filled.fill.quote.timeIso).toBe(new Date(1_799_999_990_000).toISOString());
+  duplicate = true;
+  const again = JSON.parse((await call("place_paper_order", args)).text);
+  expect(again.duplicate).toBe(true);
+  expect(again.note).toContain("nothing new was filled");
+});
+
+test("place_paper_order refuses a malformed client order id, signal-less labels stay optional, before any request", async () => {
+  const { call, calls } = await connect({ write: true });
+  expect((await call("place_paper_order", { symbol: "MCX:CRUDEOILM", side: "buy", lots: 1, client_order_id: "has space" })).isError).toBe(true);
+  expect((await call("place_paper_order", { symbol: "MCX:CRUDEOILM", side: "buy", lots: 1, r_points: -5 })).isError).toBe(true);
+  expect(calls).toHaveLength(0);
+});
+
+test("list_paper_trades carries the labels, the R multiple and the fill records, with ISO times beside the epoch milliseconds", async () => {
+  const trade = { id: "t1", symbol: "MCX:CRUDEOILM", side: "buy", lots: 1, entry: 9402, exit: 9478, openedAt: 1_800_000_000_000, closedAt: 1_800_000_600_000, net: 7520, tag: "usib-1", strategy: "USIB", signalTime: 1_799_999_900_000, rMultiple: 1.9, clientOrderId: "c1", entryFill: { price: 9402, slippageTicks: 1, quote: { price: 9400, source: "upstox", time: 1_799_999_990_000 } } };
+  const { call } = await connect({}, () => ({ body: { state: { positions: [], trades: [trade] } } }));
+  const [t] = JSON.parse((await call("list_paper_trades")).text);
+  expect(t).toMatchObject({ tag: "usib-1", strategy: "USIB", rMultiple: 1.9, clientOrderId: "c1", closedAtIso: new Date(1_800_000_600_000).toISOString(), signalTimeIso: new Date(1_799_999_900_000).toISOString() });
+  expect(t.entryFill.quote).toMatchObject({ source: "upstox", timeIso: new Date(1_799_999_990_000).toISOString() });
+});
+
+test("set_paper_stop_target passes the trailing flag and the reason, and returns the previous stop", async () => {
+  const { call, calls } = await connect({ write: true }, () => ({ body: { position: { id: "pp-1", stop: 9450, openedAt: 1 }, previous: { stop: 9360 } } }));
+  const r = JSON.parse((await call("set_paper_stop_target", { position_id: "pp-1", stop: 9450, only_tighten: true, reason: "USIB trail" })).text);
+  expect(calls[0]).toMatchObject({ method: "PATCH", body: { stop: 9450, only_tighten: true, reason: "USIB trail" } });
+  expect(r.previous).toEqual({ stop: 9360 });
+});

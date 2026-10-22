@@ -245,11 +245,18 @@ test("MCP -> UI: a paper order Claude places over MCP appears in the Paper panel
     try {
       const tools = (await mcp.listTools()).tools.map((t) => t.name);
       assert(tools.includes("place_paper_order"), `the MCP server did not offer place_paper_order: ${tools.join(", ")}`);
-      const placed: any = await mcp.callTool({ name: "place_paper_order", arguments: { symbol: "MCX:CRUDEOIL", side: "buy", lots: 1 } });
+      const labelled = { symbol: "MCX:CRUDEOIL", side: "buy", lots: 1, client_order_id: `e2e-${Date.now()}`, strategy: "E2E", tag: "e2e-label", signal_time: new Date().toISOString(), r_points: 10 };
+      const placed: any = await mcp.callTool({ name: "place_paper_order", arguments: labelled });
       assert(!placed.isError, `MCP order refused: ${placed.content?.[0]?.text}`);
+      // a retry with the same client order id is the same order: nothing new fills
+      const retry: any = await mcp.callTool({ name: "place_paper_order", arguments: labelled });
+      assert(!retry.isError && JSON.parse(retry.content[0].text).duplicate === true, `the retry was not recognised as a duplicate: ${retry.content?.[0]?.text}`);
+      assert(JSON.parse(retry.content[0].text).filled.id === JSON.parse(placed.content[0].text).filled.id, "the retry answered with a different position");
       // ... and the browser shows it without any click or reload
       await root.getByRole("cell", { name: "Long", exact: true }).waitFor({ timeout: 6000 });
       await root.getByText("Claude (MCP)").first().waitFor({ timeout: 2000 });
+      await root.getByText("E2E · e2e-label").first().waitFor({ timeout: 2000 }); // the strategy and tag the order carried
+      assert((await root.getByRole("cell", { name: "Long", exact: true }).count()) === 1, "the retry opened a second position");
       await page.getByText(/Claude opened 1 lot MCX:CRUDEOIL long/).first().waitFor({ timeout: 3000 }); // the toast
       await shot(root, "mcp-order-in-ui");
 

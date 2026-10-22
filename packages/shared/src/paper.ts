@@ -6,9 +6,48 @@ export interface PaperQuote {
   price: number;
   bid?: number;
   ask?: number;
+  /** which feed the quote came from, and its time (epoch ms), kept on fills so a trade can be reconciled with its source */
+  source?: string;
+  time?: number;
 }
 
-export interface PaperPosition {
+/** How one fill was priced: the quote it used, the book price it started from, and the slippage added. */
+export interface FillDetail {
+  /** the quote used */
+  quote: { price: number; bid?: number; ask?: number; source?: string; time?: number };
+  /** the price before slippage: the ask for a buy, the bid for a sell, else the last price */
+  reference: number;
+  slippageTicks: number;
+  slippagePoints: number;
+  /** the price the order filled at */
+  price: number;
+}
+
+/** Describe a fill for the record. `slippagePoints` is what was added against the trader; `tick` is the contract's price step. */
+export function describeFill(side: Side, q: PaperQuote, slippagePoints: number, tick: number): FillDetail {
+  const reference = side === "buy" ? (q.ask ?? q.price) : (q.bid ?? q.price);
+  return {
+    quote: { price: q.price, ...(q.bid !== undefined ? { bid: q.bid } : {}), ...(q.ask !== undefined ? { ask: q.ask } : {}), ...(q.source ? { source: q.source } : {}), ...(q.time !== undefined ? { time: q.time } : {}) },
+    reference,
+    slippageTicks: Number((slippagePoints / tick).toFixed(4)),
+    slippagePoints: round6(slippagePoints),
+    price: round6(side === "buy" ? reference + slippagePoints : reference - slippagePoints),
+  };
+}
+
+/** Labels an order carries so a trade can be reconciled with the strategy's own records. All optional. */
+export interface OrderMeta {
+  /** the caller's own id for this order: a retry with the same id never doubles the position */
+  clientOrderId?: string;
+  tag?: string;
+  strategy?: string;
+  /** when the signal fired (epoch ms), e.g. the candle close the strategy acted on */
+  signalTime?: number;
+  /** the risk unit in price points (entry to initial stop): the trade's R multiple is its move divided by this */
+  rPoints?: number;
+}
+
+export interface PaperPosition extends OrderMeta {
   id: string;
   symbol: string;
   side: Side;
@@ -22,11 +61,13 @@ export interface PaperPosition {
   openedAt: number;
   /** who opened it: "ui" (the browser) or "mcp" (an agent). Absent on positions from before accounts moved to the server. */
   actor?: string;
+  /** how the entry was priced: quote, slippage (absent on positions opened before fills were recorded) */
+  fill?: FillDetail;
 }
 
 export type ExitReason = "manual" | "stop" | "target";
 
-export interface PaperTrade {
+export interface PaperTrade extends OrderMeta {
   id: string;
   symbol: string;
   side: Side;
@@ -44,13 +85,20 @@ export interface PaperTrade {
   /** who opened it, and who closed it ("engine" when a stop or target fired) */
   actor?: string;
   closedBy?: string;
+  /** how the entry and the exit were priced */
+  entryFill?: FillDetail;
+  exitFill?: FillDetail;
+  /** the move in the trade's favour (before costs) divided by `rPoints`; only when the order gave an R */
+  rMultiple?: number;
 }
 
 /** Where an order fills: at the book's far side when depth is known (ask to buy, bid to sell), else the last price, then `slippage` points worse. */
 export function fillPrice(side: Side, q: PaperQuote, slippage: number): number {
   const ref = side === "buy" ? (q.ask ?? q.price) : (q.bid ?? q.price);
-  return side === "buy" ? ref + slippage : ref - slippage;
+  return round6(side === "buy" ? ref + slippage : ref - slippage); // 270.1 + 0.1 is 270.20000000000005 in floating point: a recorded price must be the price
 }
+
+const round6 = (n: number) => Number(n.toFixed(6));
 
 const opposite = (s: Side): Side => (s === "buy" ? "sell" : "buy");
 

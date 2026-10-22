@@ -115,3 +115,18 @@ test("the account this browser kept before the server existed is imported once i
   await screen.findByText("None.");
   expect(calls.filter((c) => c.path.endsWith("/import"))).toHaveLength(1); // never twice
 });
+
+test("an order's strategy and tag show beside who opened it, a closed trade shows its R multiple, and the tooltip says how each fill was priced", async () => {
+  const fill = (ref: number, price: number, source: string) => ({ quote: { price: ref, bid: ref - 1, ask: ref + 1, source, time: Date.now() }, reference: ref, slippageTicks: 1, slippagePoints: 1, price });
+  server.positions = [{ id: "p9", symbol: SYM, side: "buy", lots: 1, units: 100, entry: 9402, openedAt: Date.now(), actor: "mcp", strategy: "USIB", tag: "usib-1", fill: fill(9400, 9402, "upstox") }];
+  server.trades = [
+    { id: "t1", symbol: SYM, side: "buy", lots: 1, units: 100, entry: 9402, exit: 9478, openedAt: Date.now() - 9e5, closedAt: Date.now() - 6e5, gross: 7600, costs: 80, net: 7520, reason: "manual", note: "", actor: "mcp", closedBy: "mcp", strategy: "USIB", tag: "usib-0", rPoints: 40, rMultiple: 1.9, entryFill: fill(9400, 9402, "upstox"), exitFill: fill(9480, 9478, "tradingview") },
+  ];
+  render(<PaperWidget widget={widget} />);
+  expect(await screen.findByText("USIB · usib-1")).toBeTruthy(); // the open position
+  expect(screen.getByText("USIB · usib-0", { exact: false })).toBeTruthy(); // the closed trade
+  expect(screen.getByText("+1.9R", { exact: false })).toBeTruthy();
+  const tip = document.querySelector('td[title*="Exit:"]')!.getAttribute("title")!;
+  expect(tip).toContain("Entry: 9400 from upstox (bid 9399, ask 9401), 1 tick slippage, filled 9402");
+  expect(tip).toContain("Exit: 9480 from tradingview");
+});

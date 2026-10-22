@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ACCOUNT_ID, instrument, lotUnits, tickSize, unrealisedNet, type PaperTrade, type Side } from "@drishti/shared";
+import { ACCOUNT_ID, instrument, lotUnits, tickSize, unrealisedNet, type FillDetail, type PaperTrade, type Side } from "@drishti/shared";
 import { paperCall, usePaperAccount } from "./paperClient";
 import { useFreshness } from "./market";
 import { useClock, useSettings } from "./settings";
@@ -18,6 +18,12 @@ const remembered = () => {
     return "main";
   }
 };
+/** "USIB · usib-1": the strategy and tag an order carried, when it carried any. */
+const labels = (x: { strategy?: string; tag?: string }) => [x.strategy, x.tag].filter(Boolean).join(" · ");
+/** One line saying how a fill was priced: which side of the book, which feed, and the slippage. */
+const fillText = (side: "entry" | "exit", f?: FillDetail) =>
+  f ? `${side === "entry" ? "Entry" : "Exit"}: ${f.reference} from ${f.quote.source ?? "the feed"}${f.quote.bid !== undefined && f.quote.ask !== undefined ? ` (bid ${f.quote.bid}, ask ${f.quote.ask})` : ""}, ${f.slippageTicks} tick${f.slippageTicks === 1 ? "" : "s"} slippage, filled ${f.price}` : "";
+
 const who = (actor?: string) => (actor === "mcp" ? "Claude (MCP)" : actor === "engine" ? "stop/target" : "you");
 
 /**
@@ -199,7 +205,10 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                         {p.stop === undefined ? "—" : px(p.symbol, p.stop)} / {p.target === undefined ? "—" : px(p.symbol, p.target)}
                       </td>
                       <td className={net >= 0 ? "up" : "down"}>{rs(net)}</td>
-                      <td className={p.actor === "mcp" ? "paper-agent" : "muted"}>{who(p.actor)}</td>
+                      <td className={p.actor === "mcp" ? "paper-agent" : "muted"} title={fillText("entry", p.fill) || undefined}>
+                        {who(p.actor)}
+                        {labels(p) && <small className="muted paper-labels"> {labels(p)}</small>}
+                      </td>
                       <td>
                         <button className="tf" onClick={() => run(() => paperCall(`/accounts/${accountId}/positions/${p.id}/close`, "POST"))}>
                           Close
@@ -308,8 +317,10 @@ function TradeRow({ t, px, rs, stamp, onNote }: { t: PaperTrade; px: (s: string,
   return (
     <tr>
       <td className="muted">{stamp(t.closedAt)}</td>
-      <td title={REASON[t.reason]}>
+      <td title={[REASON[t.reason], fillText("entry", t.entryFill), fillText("exit", t.exitFill)].filter(Boolean).join("\n")}>
         {t.symbol.split(":")[1]} {t.side === "buy" ? "long" : "short"} {t.lots}× {px(t.symbol, t.entry)}→{px(t.symbol, t.exit)}{" "}
+        {labels(t) && <small className="muted paper-labels"> · {labels(t)}</small>}
+        {t.rMultiple !== undefined && <small className={t.rMultiple >= 0 ? "up" : "down"}> · {t.rMultiple >= 0 ? "+" : ""}{t.rMultiple}R</small>}
         {!(t.reason === "manual" && t.closedBy === "mcp") && <small className="muted">{REASON[t.reason]}</small>}
         {t.actor === "mcp" && <small className="paper-agent"> · opened by Claude</small>}
         {t.closedBy === "mcp" && <small className="paper-agent"> · closed by Claude</small>}
