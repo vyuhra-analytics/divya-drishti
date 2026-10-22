@@ -22,12 +22,14 @@ export interface CostRates {
 }
 
 /**
- * Upstox MCX non-agri schedule as published in its help centre and MCX's April 2026 master circular (see CLAUDE.md).
- * The Upstox pricing page lists the futures exchange charge as 0.0026% while its help centre and MCX say 0.0021%: the
- * table uses 0.0021%, so check a real contract note. ponytail: no percentage cap on brokerage; flat per order only.
+ * Upstox MCX non-agri schedule. Checked on 2026-10-22 against Upstox's own Brokerage Details API (`upstoxCharges.ts`,
+ * recorded in `fixtures/upstox-charges.json`): every component matched except brokerage, which is **Rs 30 per order**
+ * (this table said Rs 20), and the futures exchange charge is confirmed at 0.0021% (the pricing page's 0.0026% is not what
+ * Upstox charges). Whether Rs 30 is Upstox's standard MCX rate or specific to the account is not known: the API answers
+ * per token, so `GET /costs/check` re-checks with the owner's own. ponytail: flat per order only, no percentage cap.
  */
 export const UPSTOX_MCX_RATES: CostRates = {
-  brokerageFlat: 20,
+  brokerageFlat: 30,
   cttFutures: 0.0001,
   cttOptions: 0.0005,
   exchangeFutures: 0.000021,
@@ -37,6 +39,16 @@ export const UPSTOX_MCX_RATES: CostRates = {
   stampOptions: 0.00003,
   gst: 0.18,
 };
+
+/** The table before 2026-10-22 (brokerage Rs 20). A saved copy that still equals it was never edited: it takes the current defaults. */
+const OLD_DEFAULT_RATES: CostRates = { ...UPSTOX_MCX_RATES, brokerageFlat: 20 };
+
+/** Rates the user or the server saved: an untouched old default table becomes the current default, an edited one is kept as it is. */
+export function currentRates(saved: CostRates): CostRates {
+  const old = OLD_DEFAULT_RATES;
+  const untouched = (Object.keys(old) as (keyof CostRates)[]).every((k) => saved[k] === old[k]);
+  return untouched ? UPSTOX_MCX_RATES : saved;
+}
 
 export type Side = "buy" | "sell";
 export type Kind = "future" | "option";

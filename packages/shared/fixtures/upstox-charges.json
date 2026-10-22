@@ -1,0 +1,186 @@
+{
+ "recordedAt": "2026-10-22T15:34:56.589Z",
+ "instrument": "CRUDEOIL 9350 CE 17 NOV 26 and CRUDEOIL FUT 19 NOV 26",
+ "legs": [
+  {
+   "kind": "option",
+   "side": "buy",
+   "price": 500,
+   "key": "MCX_FO|582937",
+   "units": 100,
+   "charges": {
+    "total": 61.62,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 9.17,
+     "stt": 0,
+     "stamp_duty": 1.5
+    },
+    "otherTaxes": {
+     "transaction": 20.9,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.05
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 20.9,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.05
+    },
+    "dp_plan": null
+   }
+  },
+  {
+   "kind": "option",
+   "side": "sell",
+   "price": 500,
+   "key": "MCX_FO|582937",
+   "units": 100,
+   "charges": {
+    "total": 85.12,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 9.17,
+     "stt": 25,
+     "stamp_duty": 0
+    },
+    "otherTaxes": {
+     "transaction": 20.9,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.05
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 20.9,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.05
+    },
+    "dp_plan": null
+   }
+  },
+  {
+   "kind": "option",
+   "side": "buy",
+   "price": 100,
+   "key": "MCX_FO|582937",
+   "units": 100,
+   "charges": {
+    "total": 40.64,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 6.15,
+     "stt": 0,
+     "stamp_duty": 0.3
+    },
+    "otherTaxes": {
+     "transaction": 4.18,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.01
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 4.18,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.01
+    },
+    "dp_plan": null
+   }
+  },
+  {
+   "kind": "option",
+   "side": "buy",
+   "price": 2000,
+   "key": "MCX_FO|582937",
+   "units": 100,
+   "charges": {
+    "total": 140.28,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 20.48,
+     "stt": 0,
+     "stamp_duty": 6
+    },
+    "otherTaxes": {
+     "transaction": 83.6,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.2
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 83.6,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.2
+    },
+    "dp_plan": null
+   }
+  },
+  {
+   "kind": "future",
+   "side": "buy",
+   "price": 9341,
+   "key": "MCX_FO|573422",
+   "units": 100,
+   "charges": {
+    "total": 78.33,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 9.1,
+     "stt": 0,
+     "stamp_duty": 18.68
+    },
+    "otherTaxes": {
+     "transaction": 19.62,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.93
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 19.62,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.93
+    },
+    "dp_plan": null
+   }
+  },
+  {
+   "kind": "future",
+   "side": "sell",
+   "price": 9341,
+   "key": "MCX_FO|573422",
+   "units": 100,
+   "charges": {
+    "total": 153.06,
+    "brokerage": 30,
+    "taxes": {
+     "gst": 9.1,
+     "stt": 93.41,
+     "stamp_duty": 0
+    },
+    "otherTaxes": {
+     "transaction": 19.62,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.93
+    },
+    "dpPlan": null,
+    "other_charges": {
+     "transaction": 19.62,
+     "clearing": 0,
+     "ipft": 0,
+     "sebi_turnover": 0.93
+    },
+    "dp_plan": null
+   }
+  }
+ ]
+}

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fixedRiskLots, legCosts, lotUnits, roundTrip, UPSTOX_MCX_RATES } from "./costs";
+import { currentRates, fixedRiskLots, legCosts, lotUnits, roundTrip, UPSTOX_MCX_RATES } from "./costs";
 
 test("lotUnits reads the units per lot from the instrument", () => {
   expect(lotUnits("MCX:CRUDEOIL")).toBe(100);
@@ -13,13 +13,13 @@ test("legCosts on one MCX crude lot at 9,400: sell side carries CTT, buy side ca
   const turnover = 9400 * 100; // ₹9,40,000
   const sell = legCosts("future", "sell", 9400, 100, 1);
   expect(sell.turnover).toBe(turnover);
-  expect(sell.brokerage).toBe(20);
+  expect(sell.brokerage).toBe(30); // Upstox's own API says Rs 30 per order (2026-10-22)
   expect(sell.ctt).toBeCloseTo(94, 9); // 0.01%
   expect(sell.exchange).toBeCloseTo(19.74, 9); // 0.0021%
   expect(sell.sebi).toBeCloseTo(0.94, 9); // ₹10 per crore
   expect(sell.stamp).toBe(0);
-  expect(sell.gst).toBeCloseTo((20 + 19.74 + 0.94) * 0.18, 9);
-  expect(sell.total).toBeCloseTo(20 + 94 + 19.74 + 0.94 + (20 + 19.74 + 0.94) * 0.18, 9);
+  expect(sell.gst).toBeCloseTo((30 + 19.74 + 0.94) * 0.18, 9);
+  expect(sell.total).toBeCloseTo(30 + 94 + 19.74 + 0.94 + (30 + 19.74 + 0.94) * 0.18, 9);
   const buy = legCosts("future", "buy", 9400, 100, 1);
   expect(buy.ctt).toBe(0);
   expect(buy.stamp).toBeCloseTo(18.8, 9); // 0.002%
@@ -56,4 +56,14 @@ test("fixedRiskLots keeps the loss at the stop, costs included, inside the budge
   expect(fixedRiskLots({ ...i, equity: 0 })).toBeUndefined();
   const short = fixedRiskLots({ ...i, side: "sell", stop: 9420 })!;
   expect(short.lots).toBe(2);
+});
+
+test("currentRates: an untouched old default table takes the new defaults, an edited one is kept", () => {
+  const old = { ...UPSTOX_MCX_RATES, brokerageFlat: 20 };
+  expect(currentRates(old)).toBe(UPSTOX_MCX_RATES);
+  const edited = { ...old, exchangeFutures: 0.000026 };
+  expect(currentRates(edited)).toBe(edited);
+  const chosen = { ...UPSTOX_MCX_RATES, brokerageFlat: 25 };
+  expect(currentRates(chosen)).toBe(chosen);
+  expect(currentRates(UPSTOX_MCX_RATES)).toBe(UPSTOX_MCX_RATES);
 });

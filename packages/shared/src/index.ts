@@ -336,6 +336,7 @@ export * from "./continuous";
 export * from "./eia";
 export * from "./recap";
 export * from "./costs";
+export * from "./upstoxCharges";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

@@ -109,6 +109,16 @@ await check("options chain: strikes outside 4..40 or not a number is a 400", asy
     need(r.status === 400, `strikes=${s} → HTTP ${r.status}`);
   }
 });
+await check("costs check: bad input is a 400; a futures leg agrees with Upstox's own charge calculation", async () => {
+  for (const q of ["symbol=MCX:CRUDEOIL&kind=swap&side=buy&price=9300", "symbol=MCX:CRUDEOIL&kind=future&side=hold&price=9300", "symbol=MCX:CRUDEOIL&kind=future&side=buy&price=abc", "symbol=NYMEX:CL&kind=future&side=buy&price=90", "key=NSE_EQ|1333&units=100&kind=option&side=buy&price=500"]) {
+    const r = await get(`/costs/check?${q}`);
+    need(r.status === 400, `${q} → HTTP ${r.status}`);
+  }
+  const r = await get("/costs/check?symbol=MCX:CRUDEOIL&kind=future&side=buy&price=9300&lots=1");
+  if (r.status === 503) throw new Error(`SKIP: ${r.json?.message ?? "Upstox not reachable"}`);
+  need(r.status === 200, `HTTP ${r.status}`);
+  need(r.json.agree === true, `our table differs from Upstox by Rs ${r.json.diff} (Upstox ${r.json.upstox?.total}, ours ${r.json.ours?.total}): re-record with bun run fixtures:upstox-charges and fix costs.ts`);
+});
 await check("server alerts: channels, create, list, delete (never fires, sends nothing)", async () => {
   const ch = await ok("/alerts/channels");
   need("telegram" in ch && "webhook" in ch, "channel status missing");

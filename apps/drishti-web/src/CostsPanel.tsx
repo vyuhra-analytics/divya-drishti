@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fixedRiskLots, instrument, lotUnits, roundTrip, UPSTOX_MCX_RATES, type CostRates, type Side } from "@drishti/shared";
+import { currentRates, fixedRiskLots, instrument, legCosts, lotUnits, roundTrip, UPSTOX_MCX_RATES, type CostRates, type Side } from "@drishti/shared";
 import { paperCall } from "./paperClient";
-import { useSettings } from "./settings";
+import { apiUrl, useSettings } from "./settings";
 import { useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -16,7 +16,7 @@ const DEFAULTS: Saved = { rates: UPSTOX_MCX_RATES, equity: 500_000, riskPct: 1 }
 function load(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    return s ? { ...DEFAULTS, ...s, rates: { ...UPSTOX_MCX_RATES, ...s.rates } } : DEFAULTS;
+    return s ? { ...DEFAULTS, ...s, rates: currentRates({ ...UPSTOX_MCX_RATES, ...s.rates }) } : DEFAULTS;
   } catch {
     return DEFAULTS;
   }
@@ -44,6 +44,7 @@ export function CostsWidget({ widget }: { widget: Widget }) {
   const [entry, setEntry] = useState<number | "">("");
   const [exit, setExit] = useState<number | "">("");
   const [stop, setStop] = useState<number | "">("");
+  const [upCheck, setUpCheck] = useState<{ text: string; brokerage?: number; differs?: boolean } | null>(null);
 
   // the server charges paper trades with these rates: send a change there (not the untouched defaults on first render)
   const firstRates = useRef(true);
@@ -62,6 +63,27 @@ export function CostsWidget({ widget }: { widget: Widget }) {
       /* private window: the values just are not remembered */
     }
   }, [saved]);
+  // Upstox's own charge calculation for this leg (entry side, our front month, the price in the Entry box or the live price), beside what our rates give
+  const checkUpstox = async () => {
+    const price = typeof entry === "number" ? entry : live;
+    if (!price || !units) return setUpCheck({ text: "Enter a price (or wait for a live quote) first." });
+    setUpCheck({ text: "Asking Upstox…" });
+    try {
+      const res = await fetch(`${apiUrl()}/costs/check?symbol=${encodeURIComponent(symbol)}&kind=future&side=${side}&price=${price}&lots=${lots}`);
+      const body = await res.json();
+      if (!res.ok) return setUpCheck({ text: String(body?.message ?? `Upstox check failed (${res.status})`) });
+      const mine = legCosts("future", side, price, units, lots, saved.rates).total;
+      const up = body.upstox;
+      const diff = mine - up.total;
+      setUpCheck({
+        text: `Upstox charges ₹${up.total.toFixed(2)} for this leg (brokerage ₹${up.brokerage}); your rates give ₹${mine.toFixed(2)}${Math.abs(diff) <= 1 ? ": they agree." : `: ${diff > 0 ? "₹" + diff.toFixed(2) + " more" : "₹" + (-diff).toFixed(2) + " less"} than Upstox.`}`,
+        brokerage: up.brokerage,
+        differs: Math.abs(diff) > 1 && up.brokerage !== saved.rates.brokerageFlat,
+      });
+    } catch {
+      setUpCheck({ text: "Could not reach the API." });
+    }
+  };
   // a new instrument starts from its live price: entry there, exit and stop 0.5% either side
   useEffect(() => {
     setEntry("");
@@ -169,7 +191,7 @@ export function CostsWidget({ widget }: { widget: Widget }) {
         )}
         <details>
           <summary>Cost rates</summary>
-          <p className="muted costs-note">Upstox MCX schedule as published in its help centre and MCX's April 2026 circular. Upstox's pricing page shows 0.0026% for the exchange charge where its help centre shows 0.0021%: check a real contract note and edit here.</p>
+          <p className="muted costs-note">Upstox MCX schedule, checked against Upstox's own charge calculation on 2026-10-22: brokerage ₹30 per order, futures exchange charge 0.0021%, the rest as listed. Press the button to re-check with your own account.</p>
           <div className="costs-form no-drag">
             {RATE_FIELDS.map(([k, label, step]) => (
               <label key={k}>
@@ -177,6 +199,17 @@ export function CostsWidget({ widget }: { widget: Widget }) {
                 <input type="number" step={step} min={0} value={saved.rates[k]} onChange={(ev) => setSaved({ ...saved, rates: { ...saved.rates, [k]: Number(ev.target.value) } })} />
               </label>
             ))}
+          </div>
+          <div className="no-drag" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "6px 0" }}>
+            <button className="tf" onClick={() => void checkUpstox()}>
+              Check with Upstox
+            </button>
+            {upCheck && <span className="muted">{upCheck.text}</span>}
+            {upCheck?.differs && (
+              <button className="tf" onClick={() => setSaved({ ...saved, rates: { ...saved.rates, brokerageFlat: upCheck.brokerage! } })}>
+                Use ₹{upCheck.brokerage} brokerage
+              </button>
+            )}
           </div>
           <button className="tf" onClick={() => setSaved({ ...saved, rates: UPSTOX_MCX_RATES })}>
             Reset rates
