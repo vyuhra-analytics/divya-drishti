@@ -99,3 +99,51 @@ test("the facts carry provenance: feed, live or closed, a feed conflict, and whe
   expect(c.provenance.technicals).toEqual({ source: "computed", quality: "computed", asOf: (bars[bars.length - 1].time + 300) * 1000 });
   expect(c.provenance.news).toMatchObject({ source: "rss", quality: "published" });
 });
+
+const grounded = {
+  ...result,
+  bull: [
+    { point: "Momentum is up", evidence: "rsi14 71", cites: [{ field: "technicals.rsi14", value: "71" }] },
+    { point: "Breaking out", evidence: "price 9300", cites: [{ field: "price", value: "9300" }] },
+  ],
+  bear: [{ point: "Sentiment is poor", evidence: "mood" }],
+};
+const report = {
+  total: 3,
+  verified: 1,
+  wrong: 1,
+  other: [{ kind: "loose", text: "9500 is not in the data." }],
+  points: [
+    { section: "bull", index: 0, verdict: "verified", issues: [] },
+    { section: "bull", index: 1, verdict: "wrong", issues: [{ kind: "wrong", text: "price is 9100, not 9300." }] },
+    { section: "bear", index: 0, verdict: "unverified", issues: [{ kind: "loose", text: "No data cited for this point." }] },
+  ],
+};
+
+test("each point shows whether code could check it against the data, and what the data really says when it does not match", async () => {
+  globalThis.fetch = mock(async (url: string) =>
+    String(url).includes("/briefing")
+      ? { ok: true, status: 200, json: async () => ({ result: grounded, model: "m", asOf: "x", generatedAt: Date.now(), usage: { input: 1, output: 1 }, grounding: report, attempts: 2, cached: false }) }
+      : { ok: true, status: 200, json: async () => bars },
+  ) as never;
+  render(<BriefingWidget widget={widget} />);
+  fireEvent.click(screen.getByText(/Brief me on/));
+  await screen.findByText("Crude is firm.");
+  expect(screen.getByText(/1 of 3 points checked against the data/)).toBeTruthy();
+  expect(screen.getByText(/1 contradicts it/)).toBeTruthy();
+  expect(screen.getByText(/corrected once after a mismatch/)).toBeTruthy();
+  expect(screen.getByLabelText("Checked against the data")).toBeTruthy();
+  expect(screen.getByLabelText("Contradicts the data")).toBeTruthy();
+  expect(screen.getByLabelText("Could not be fully checked")).toBeTruthy();
+  expect(screen.getByText(/Data says: price is 9100, not 9300\./)).toBeTruthy();
+  expect(screen.getByText(/Summary: 9500 is not in the data\./)).toBeTruthy();
+  expect(useJournal.getState().entries[0]!.grounding?.wrong).toBe(1); // kept with the entry
+});
+
+test("a briefing saved before checking existed says so instead of looking verified", async () => {
+  render(<BriefingWidget widget={widget} />);
+  fireEvent.click(screen.getByText(/Brief me on/)); // the default mock response carries no grounding
+  await screen.findByText("Crude is firm.");
+  expect(screen.getByText(/Not checked against the data/)).toBeTruthy();
+  expect(screen.queryByLabelText("Checked against the data")).toBeNull();
+});

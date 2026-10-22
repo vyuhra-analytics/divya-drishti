@@ -51,7 +51,9 @@ test("buildContext survives a short history", () => {
 test("the prompt carries the whole context as JSON", () => {
   const p = briefingPrompt(buildContext(input()));
   expect(p).toContain('"symbol":"MCX:CRUDEOIL"');
-  expect(JSON.parse(p.slice(p.indexOf("\n") + 1)).price).toBe(9158);
+  const [contextPart, citablePart] = p.split("\n\nCitable fields");
+  expect(JSON.parse(contextPart!.slice(contextPart!.indexOf("\n") + 1)).price).toBe(9158);
+  expect(JSON.parse(citablePart!.slice(citablePart!.indexOf("\n") + 1)).price).toBe(9158); // the facts the model may cite, by path
 });
 
 test("scoreBriefing grades direction, with a band for neutral", () => {

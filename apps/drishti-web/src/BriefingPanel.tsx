@@ -12,6 +12,8 @@ import {
   type Bar,
   type BriefingResult,
   type CalEvent,
+  type GroundingReport,
+  type PointCheck,
   type OpenPosition,
   type Timeframe,
 } from "@drishti/shared";
@@ -27,6 +29,10 @@ interface Entry {
   priceThen: number;
   model: string;
   result: BriefingResult;
+  /** how the points held up against the data, checked by code (absent on briefings saved before this existed) */
+  grounding?: GroundingReport;
+  /** model calls used; 2 = the first answer cited something wrong and was corrected once */
+  attempts?: number;
 }
 
 /** Past briefings, kept in this browser so they can be graded later against what price did. */
@@ -81,20 +87,59 @@ export async function gatherContext(symbol: string, tf: string, withPosition = f
   });
 }
 
-function Points({ title, items, cls }: { title: string; items: BriefingResult["bull"]; cls: string }) {
+const MARK = {
+  verified: { sym: "✓", cls: "up", label: "Checked against the data" },
+  wrong: { sym: "✗", cls: "down", label: "Contradicts the data" },
+  unverified: { sym: "?", cls: "muted", label: "Could not be fully checked" },
+} as const;
+
+function Points({ title, items, cls, checks }: { title: string; items: BriefingResult["bull"]; cls: string; checks?: PointCheck[] }) {
   return (
     <section className={`brief-col ${cls}`}>
       <h2>{title}</h2>
       {items.length === 0 && <p className="muted">None found in the data.</p>}
       <ul>
-        {items.map((p, i) => (
-          <li key={i}>
-            {p.point}
-            <small className="muted"> · {p.evidence}</small>
-          </li>
-        ))}
+        {items.map((p, i) => {
+          const c = checks?.find((x) => x.index === i);
+          const m = c && MARK[c.verdict];
+          return (
+            <li key={i} className={c?.verdict === "wrong" ? "brief-wrong" : undefined}>
+              {m && (
+                <span className={`brief-mark ${m.cls}`} role="img" aria-label={m.label} title={[m.label, ...c.issues.map((x) => x.text)].join("\n")}>
+                  {m.sym}
+                </span>
+              )}{" "}
+              {p.point}
+              <small className="muted"> · {p.evidence}</small>
+              {c?.issues.filter((x) => x.kind === "wrong").map((x, k) => (
+                <small key={k} className="down brief-issue">
+                  Data says: {x.text}
+                </small>
+              ))}
+            </li>
+          );
+        })}
       </ul>
     </section>
+  );
+}
+
+/** One line on how the briefing held up when code checked every cited figure against the data it was written from. */
+function GroundingNote({ g, attempts }: { g?: GroundingReport; attempts?: number }) {
+  if (!g) return <p className="muted brief-ground">Not checked against the data (saved before checking existed).</p>;
+  return (
+    <div className="brief-ground">
+      <span className={g.wrong ? "down" : g.verified === g.total ? "up" : "muted"}>
+        {g.verified} of {g.total} points checked against the data
+      </span>
+      {g.wrong > 0 && <span className="down"> · {g.wrong} contradict{g.wrong === 1 ? "s" : ""} it</span>}
+      {attempts === 2 && <span className="muted"> · corrected once after a mismatch</span>}
+      {g.other.map((o, i) => (
+        <small key={i} className="muted brief-issue">
+          Summary: {o.text}
+        </small>
+      ))}
+    </div>
   );
 }
 
@@ -121,7 +166,7 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
       const res = await fetch(`${apiUrl()}/briefing`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ context }) });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.message ?? `HTTP ${res.status}`);
-      const entry: Entry = { id: `b-${body.generatedAt}`, symbol, at: body.generatedAt, priceThen: context.price, model: body.model, result: body.result };
+      const entry: Entry = { id: `b-${body.generatedAt}`, symbol, at: body.generatedAt, priceThen: context.price, model: body.model, result: body.result, grounding: body.grounding, attempts: body.attempts };
       add(entry);
       setShownId(entry.id);
     } catch (e) {
@@ -138,7 +183,7 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
         <button className="btn" onClick={generate} disabled={busy}>
           {busy ? "Writing…" : `Brief me on ${symbol.split(":")[1]}`}
         </button>
-        <span className="muted brief-note">One AI call (about US$0.05). Research aid, not advice.</span>
+        <span className="muted brief-note">One AI call, or two if a citation has to be corrected (about US$0.05 each). Research aid, not advice.</span>
         {instrument(symbol)?.exchange === "MCX" && (
           <label className="brief-share" title="Sends your net quantity, average price and P&L in this contract to the AI service with the briefing">
             <input type="checkbox" checked={sharePosition} onChange={(e) => set({ briefingPositions: e.target.checked })} /> Include my position
@@ -158,9 +203,10 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
               </span>
             </div>
             <p className="brief-summary">{r.summary}</p>
+            <GroundingNote g={shown.grounding} attempts={shown.attempts} />
             <div className="brief-cols">
-              <Points title="Bull case" items={r.bull} cls="bull" />
-              <Points title="Bear case" items={r.bear} cls="bear" />
+              <Points title="Bull case" items={r.bull} cls="bull" checks={shown.grounding?.points.filter((p) => p.section === "bull")} />
+              <Points title="Bear case" items={r.bear} cls="bear" checks={shown.grounding?.points.filter((p) => p.section === "bear")} />
             </div>
             {r.watch.length > 0 && (
               <section>

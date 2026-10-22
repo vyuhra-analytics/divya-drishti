@@ -410,6 +410,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .brief-col.bull h2 { color: var(--up); }
 .brief-col.bear h2 { color: var(--down); }
 .brief-foot { margin-top: 12px; font-size: 11px; }
+.brief-ground { margin: 0 0 8px; font-size: 11px; }
+.brief-mark { display: inline-block; min-width: 1em; font-weight: 700; cursor: help; }
+.brief-issue { display: block; margin-top: 1px; }
+.brief-wrong { opacity: .85; }
 .brief-journal { margin-top: 16px; }
 .journal-row { display: grid; grid-template-columns: 1fr auto auto 1.3fr; gap: 8px; align-items: center; width: 100%; padding: 4px 0; text-align: left; border-bottom: 1px solid var(--line); font-size: 11px; }
 .journal-row.active { background: var(--hover); }
