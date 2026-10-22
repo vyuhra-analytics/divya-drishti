@@ -48,13 +48,14 @@ async function archive(sql: SQL, stories: NewsItem[]) {
   if (!stories.length) return;
   const rows = stories.map((n) => ({ ...n, published_at: new Date(n.publishedAt).toISOString(), copies: n.copies ?? null }));
   await sql`
-    INSERT INTO news (id, title, url, source, published_at, tags, copies, updated_at)
-    SELECT id, title, url, source, published_at, tags, copies, now()
+    INSERT INTO news (id, title, url, source, published_at, tags, copies, updated_at, first_seen_at)
+    SELECT id, title, url, source, published_at, tags, copies, now(), now()
     FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) -- ::text first: Bun sends a string param cast straight to jsonb as a JSON string
       AS x(id text, title text, url text, source text, published_at timestamptz, tags text[], copies jsonb)
     ON CONFLICT (id) DO UPDATE SET
       url = EXCLUDED.url, source = EXCLUDED.source, published_at = EXCLUDED.published_at,
-      tags = EXCLUDED.tags, copies = EXCLUDED.copies, updated_at = now()`;
+      tags = EXCLUDED.tags, copies = EXCLUDED.copies, updated_at = now()
+      -- first_seen_at is deliberately NOT updated here: it is when we first saw the story, set once on insert (infra/sql/011_news_first_seen.sql)`;
 }
 
 /** Starts all feeds; `publish` gets only items not seen before. Stories are archived to Postgres when it's up. */

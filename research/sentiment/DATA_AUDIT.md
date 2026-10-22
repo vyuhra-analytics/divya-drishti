@@ -52,3 +52,15 @@ run. This is a statement about the data, not about FinBERT or CrudeBERT, and it 
    or train our own classifier on the collected headlines.
 7. **Build the remaining pipeline** (look-ahead test, second implementation of IC and P&L, controls) before the data is ready, so the day it is ready
    the pre-registered experiments run once.
+
+## Status of the acquisition plan
+
+| date | step | status |
+|---|---|---|
+| 2026-10-22 | 1. Record first-seen | **Done.** `news.first_seen_at` (migration 011), set once on insert, never overwritten. Checked live: a story first seen at 13:02:54 was touched again at 13:09:06 (`updated_at` moved) and kept its `first_seen_at`; 24 stories carried it within minutes, none had it later than `updated_at`. Older rows stay NULL. The 1,500-event gate is now expected about 37 trading days after 2026-10-22. |
+| | 2. GDELT backfill | not started |
+| | 3. Primary cell change (log first) | not started |
+| | 4. Roll handling | not started |
+| | 5. Positive control data | not started |
+| | 6. CrudeBERT licence enquiry | not started |
+| | 7. Remaining pipeline | not started |
