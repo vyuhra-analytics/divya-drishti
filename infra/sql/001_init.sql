@@ -24,8 +24,4 @@ FROM ticks
 GROUP BY bucket, symbol
 WITH NO DATA;
 
-SELECT add_continuous_aggregate_policy('bars_1m',
-  start_offset => INTERVAL '1 hour',
-  end_offset   => INTERVAL '1 minute',
-  schedule_interval => INTERVAL '1 minute',
-  if_not_exists => TRUE);
+-- The refresh policy for bars_1m lives in 009_tick_retention.sql (replaced on every run, so it cannot be added here too).

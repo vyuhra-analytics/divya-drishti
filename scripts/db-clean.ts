@@ -40,6 +40,7 @@ for (const s of steps) {
   console.log(`  ${String(s.n).padStart(7)}  ${s.what}`);
   if (APPLY && s.n > 0) await s.run();
 }
-const [{ n: ticks }] = (await sql`SELECT count(*) AS n FROM ticks WHERE time < now() - interval '30 days'`) as { n: string }[];
-if (Number(ticks) > 0) console.log(`Note: ${ticks} ticks are older than 30 days (kept: there is no tick retention policy yet).`);
+// ticks are dropped by the retention policy in infra/sql/009_tick_retention.sql (90 days); this only warns if that daily job is not keeping up
+const [{ n: ticks }] = (await sql`SELECT count(*) AS n FROM ticks WHERE time < now() - interval '100 days'`) as { n: string }[];
+if (Number(ticks) > 0) console.log(`Note: ${ticks} ticks are older than 100 days: the retention job (daily) is not running. Check timescaledb_information.jobs.`);
 await sql.close();
