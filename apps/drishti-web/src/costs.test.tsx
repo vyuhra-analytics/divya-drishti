@@ -75,7 +75,7 @@ test("the panel starts on Upstox, says its numbers were checked against Upstox, 
   render(<CostsWidget widget={widget("MCX:CRUDEOIL")} />);
   const select = screen.getByLabelText("Broker") as HTMLSelectElement;
   expect(select.value).toBe("upstox");
-  expect([...select.options].map((o) => o.textContent)).toEqual(["Upstox", "Zerodha", "Kotak Neo"]);
+  expect([...select.options].map((o) => o.textContent)).toEqual(["Upstox", "Zerodha", "Kotak Neo", "Groww"]);
   expect(screen.getByText(/checked against the broker's own calculation/)).toBeTruthy();
   expect(brokerageBox().value).toBe("30");
   expect(screen.getByText("Check with Upstox", { exact: false })).toBeTruthy();
@@ -127,7 +127,7 @@ test("the table of the same trade at each broker lists all three, cheapest first
   render(<CostsWidget widget={widget("MCX:CRUDEOIL")} />);
   fireEvent.change(screen.getByLabelText("Compare as"), { target: { value: "option" } });
   const rows = within(screen.getByRole("table", { name: "Costs by broker" })).getAllByRole("row").slice(1);
-  expect(rows).toHaveLength(3);
+  expect(rows).toHaveLength(4);
   const names = rows.map((r) => r.querySelector("td")!.textContent);
   expect(names[0]).toMatch(/^Kotak Neo$/); // Rs 10 a leg is the cheapest
   expect(rows.filter((r) => r.className === "costs-net")).toHaveLength(1);

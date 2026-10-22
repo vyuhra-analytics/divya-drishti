@@ -31,10 +31,14 @@ export interface BrokerProfile {
 // UPSTOX_MCX_RATES while the cycle is still loading would see it undefined. Each profile's `rates` is a getter for the same reason.
 let zerodhaRates: CostRates | undefined;
 let kotakRates: CostRates | undefined;
+let growwRates: CostRates | undefined;
 /** Zerodha's published MCX schedule matched our statutory table on every line; only the brokerage rule differs. */
 const zerodha = (): CostRates => (zerodhaRates ??= { ...UPSTOX_MCX_RATES, brokerageFlat: 20, brokeragePctFutures: 0.0003, brokeragePctOptions: 0 });
 /** Kotak Neo: the flat brokerage aggregators report; statutory charges as the MCX schedule (Kotak's FAQ shows 0.0026% / 0.05% exchange charges, which do not match the MCX schedule our other profiles use). */
 const kotak = (): CostRates => (kotakRates ??= { ...UPSTOX_MCX_RATES, brokerageFlat: 10 });
+
+/** Groww: flat Rs 20 per executed order on commodity F&O with no percentage cap; its statutory table matched ours on every line. */
+const groww = (): CostRates => (growwRates ??= { ...UPSTOX_MCX_RATES, brokerageFlat: 20 });
 
 export const BROKERS: BrokerProfile[] = [
   {
@@ -71,6 +75,17 @@ export const BROKERS: BrokerProfile[] = [
     note: "The official kotakneo.com page lists F&O rates but does not say they apply to MCX commodities, and shows no exchange or statutory charges (it only links a charges PDF), so those are the MCX schedule our other profiles use. At crude lot sizes 0.05% of turnover is above Rs 10, so the flat Rs 10 is what applies. Check the charges PDF and a contract note before relying on it.",
   },
   {
+    id: "groww",
+    name: "Groww",
+    get rates() {
+      return groww();
+    },
+    verification: "published",
+    source: "groww.in/pricing/futures-and-options, commodity F&O: Rs 20 per executed order, no percentage cap; MCX 0.0021% futures and 0.0418% options; CTT 0.01% futures and 0.05% options on the sell side; SEBI 0.0001%; stamp duty 0.002% and 0.003% on the buy side; GST 18% on brokerage, SEBI and transaction charges",
+    checkedOn: "2026-10-22",
+    note: "Not compared with a Groww contract note. The main pricing page shows only equity rates; the figures above are from its futures and options page.",
+  },
+  {
     id: "custom",
     name: "Custom",
     get rates() {
@@ -93,7 +108,11 @@ export function matchBroker(rates: CostRates): BrokerProfile | undefined {
 }
 
 /** A saved or server-stored rates object with every field present, an untouched old Upstox table upgraded (`currentRates`), unknown or missing fields defaulted. */
-export const normalizeRates = (saved: Partial<CostRates> | undefined | null): CostRates => currentRates({ ...UPSTOX_MCX_RATES, ...(saved ?? {}) });
+export const normalizeRates = (saved: Partial<CostRates> | undefined | null): CostRates => {
+  const merged = { ...UPSTOX_MCX_RATES, ...(saved ?? {}) };
+  // only a table saved before broker profiles existed (no brokerage percentage fields) can be the old Upstox default; a newer table with Rs 20 is Groww's or the user's own
+  return saved && "brokeragePctFutures" in saved ? merged : currentRates(merged);
+};
 
 export interface BrokerComparison {
   broker: BrokerProfile;
