@@ -54,7 +54,7 @@ const chains = new LruCache<{ at: number; chain: Chain }>(64);
 const feedCache = new LruCache<{ at: number; chain: Chain }>(64);
 const tvExpiries = new LruCache<{ at: number; list: { expiry: number; ticker: string }[] }>(16);
 
-async function loadContracts(): Promise<OptionContract[]> {
+export async function loadContracts(): Promise<OptionContract[]> {
   if (master && Date.now() - master.at < MASTER_TTL_MS) return master.contracts;
   const res = await fetch(MASTER_URL, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`instrument master ${res.status}`);

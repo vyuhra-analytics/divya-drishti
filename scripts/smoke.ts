@@ -128,6 +128,28 @@ await check("market status: the API reads the exchange's own MCX status and the 
   need("mcxStatus" in h, "the stream health does not carry the status");
   return `MCX ${s.mcx.state}`;
 });
+await check("option candles: the recorder's status answers, bad reads are a 400, and stored candles come back with open interest", async () => {
+  for (const q of ["", "key=NSE_FO|1&from=2026-10-20&to=2026-10-22", "key=MCX_FO|582939&from=bad&to=2026-10-22", "key=MCX_FO|582939&from=2026-10-22&to=2026-10-20", "key=MCX_FO|582939&from=2026-01-01&to=2026-10-22"]) {
+    const r = await get(`/option-candles?${q}`);
+    need(r.status === 400, `${q} → HTTP ${r.status}`);
+  }
+  const st = await ok("/option-candles/status");
+  need(typeof st.candles === "number" && typeof st.contracts === "number", "status shape");
+  if (st.candles === 0) throw new Error("SKIP: nothing recorded yet (the recorder runs once after a session has closed)");
+  const day = new Date((st.lastTime ?? Date.now() / 1000) * 1000 + 5.5 * 3600_000).toISOString().slice(0, 10);
+  const chain = await ok("/options?underlying=CRUDEOIL&strikes=4");
+  const atm = chain.rows.find((r: any) => r.strike === chain.atm);
+  let withOi = 0;
+  for (const key of [atm?.ce?.ukey, atm?.pe?.ukey].filter(Boolean)) {
+    const rows = await ok(`/option-candles?key=${encodeURIComponent(key)}&from=${day}&to=${day}`);
+    need(Array.isArray(rows), "not a list");
+    if (rows.length) {
+      need(rows.every((b: any) => b.high >= b.low && b.volume >= 0), "impossible candle stored");
+      withOi += rows.filter((b: any) => typeof b.oi === "number").length;
+    }
+  }
+  return `${st.candles} candles for ${st.contracts} contracts; ${withOi} at-the-money candles with open interest on ${day}`;
+});
 await check("server alerts: channels, create, list, delete (never fires, sends nothing)", async () => {
   const ch = await ok("/alerts/channels");
   need("telegram" in ch && "webhook" in ch, "channel status missing");
