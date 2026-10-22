@@ -110,6 +110,7 @@ test("a layout saved before JODI was removed still loads: the JODI panel is drop
 });
 
 test("the default chart and every watchlist row say where their price comes from; no simulated-prices banner on the live feed", async ({ page }) => {
+  await openPanel(page, "W", ".watchlist"); // the Evening desk has no watchlist: open one
   await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 20_000 });
   const rows = await page.locator(".watchlist .badge").allInnerTexts();
   assert(rows.every((t) => ["UPSTOX", "TV", "YAHOO", "≠"].includes(t.trim())), `unexpected watchlist badges: ${rows.join(",")}`);
@@ -135,6 +136,7 @@ test("demo feed: the SIMULATED PRICES banner and a DEMO badge on every chart, qu
     await page.goto(WEB);
     await page.locator("h1").first().waitFor({ timeout: 20_000 });
     await page.keyboard.press("Escape");
+    await openPanel(page, "W", ".watchlist"); // the Evening desk has no watchlist: open one
     await page.locator(".sim-banner").waitFor({ timeout: 15_000 });
     assert((await page.locator(".sim-banner").innerText()).includes("SIMULATED PRICES"), "banner text wrong");
     await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 15_000 });
@@ -181,6 +183,7 @@ test("Several charts, each on its own symbol: a chart added beside a linked one 
 });
 
 test("USD/INR: live in the watchlist, on a chart with history, and not offered where it makes no sense (paper trading, futures curve)", async ({ page }) => {
+  await openPanel(page, "W", ".watchlist");
   await page.waitForFunction(() => /USDINR.*?\d{2}\.\d{4}/.test(document.querySelector(".watchlist")?.textContent ?? ""), undefined, { timeout: 20_000 });
   const bars = await (await fetch(`${API}/bars?symbol=FX:USDINR&tf=5m`)).json();
   assert(Array.isArray(bars) && bars.length > 100, `USD/INR history has ${bars?.length} bars`);
@@ -423,6 +426,8 @@ test("Instruments: add a NYMEX future in Settings, see it priced in the watchlis
   await drop(); // a leftover from an aborted run
   await page.goto(WEB);
   await page.locator("h1").first().waitFor();
+  await openPanel(page, "W", ".watchlist");
+  await page.keyboard.press("Escape");
   try {
     await page.keyboard.press("Control+,");
     const dialog = page.getByRole("dialog", { name: "Settings" });

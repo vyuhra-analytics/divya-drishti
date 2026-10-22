@@ -33,64 +33,85 @@ export interface Preset {
   build: () => Snapshot;
 }
 
-/** Ready-made desks, F1…F5. Saved workspaces follow them (F6…F9). */
+/**
+ * Ready-made desks, F1…F6; saved workspaces follow them (F7…F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
+ * comfortable), so 28 rows fit a 1080p monitor without scrolling in compact, and every desk's first screen is built to that height (the Report prep desk scrolls for its last row).
+ * `docs/redesign/RESEARCH_DESK.md` says what question each desk answers. The Evening desk here is an interim of today's panels for the
+ * evening session; the purpose-built evening screen (`EIA_SCREENS.md`) replaces it when it is built.
+ */
 export const PRESETS: Preset[] = [
   {
-    key: "crude",
-    name: "MCX crude",
-    hint: "Chart, quote and watchlist on top; news and calendar below",
+    key: "evening",
+    name: "Evening",
+    hint: "The evening session: the future's 5-minute chart, quote, the next release, and the options chain under them",
     build: () =>
-      snapshot("crude", [
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 16],
-        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 9],
-        ["watch-1", "watchlist", "amber", "MCX:CRUDEOIL", "5m", 8, 9, 4, 7],
-        ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 0, 16, 6, 10],
-        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 16, 6, 10],
+      snapshot("evening", [
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 17],
+        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 8],
+        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 8, 8, 4, 9],
+        ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 17, 12, 11],
       ]),
   },
   {
-    key: "gas",
-    name: "Natural gas",
-    hint: "MCX and Henry Hub charts side by side, with gas news and the EIA storage report",
+    key: "presession",
+    name: "Pre-session",
+    hint: "Before the evening: the plain-language recap, today's releases, the futures curve, the chart and the news",
     build: () =>
-      snapshot("gas", [
-        ["chart-1", "advchart", "green", "MCX:NATURALGAS", "5m", 0, 0, 6, 12],
-        ["chart-2", "advchart", "red", "NYMEX:NG", "5m", 6, 0, 6, 12],
-        ["quote-1", "quote", "green", "MCX:NATURALGAS", "5m", 0, 12, 4, 10],
-        ["news-1", "news", "green", "MCX:NATURALGAS", "5m", 4, 12, 4, 10],
-        ["cal-1", "calendar", null, "MCX:NATURALGAS", "5m", 8, 12, 4, 10],
+      snapshot("presession", [
+        ["recap-1", "recap", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 4, 11],
+        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 4, 0, 4, 11],
+        ["curve-1", "curve", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 11],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 11, 8, 17],
+        ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 8, 11, 4, 17],
       ]),
   },
   {
-    key: "options",
-    name: "Options",
-    hint: "Detailed options chain under its underlying chart and quote",
+    key: "reportprep",
+    name: "Report prep",
+    hint: "Tuesday to Thursday: the EIA numbers and the calendar over the options chain; the chart and positioning below",
     build: () =>
-      snapshot("options", [
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 12],
-        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 12],
-        ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 12, 12, 16],
+      snapshot("reportprep", [
+        ["eia-1", "eia", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 11],
+        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 0, 6, 11],
+        ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 11, 12, 17],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 28, 6, 12],
+        ["cot-1", "cot", "amber", "MCX:CRUDEOIL", "5m", 6, 28, 6, 12],
       ]),
   },
   {
-    key: "research",
-    name: "Research",
-    hint: "News and the calendar",
+    key: "review",
+    name: "Review",
+    hint: "After the session: the paper journal, the chart with replay, the costs and the data quality",
     build: () =>
-      snapshot("research", [
-        ["news-1", "news", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 16],
-        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 0, 6, 16],
+      snapshot("review", [
+        ["paper-1", "paper", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 14],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 14],
+        ["costs-1", "costs", "amber", "MCX:CRUDEOIL", "5m", 0, 14, 6, 14],
+        ["quality-1", "quality", null, "MCX:CRUDEOIL", "5m", 6, 14, 6, 14],
       ]),
   },
   {
-    key: "watch",
-    name: "Live watch",
-    hint: "Live TV and news over a crude chart",
+    key: "study",
+    name: "Study",
+    hint: "Weekends: the strategy tester with the chart, the costs and the speculators' positioning",
     build: () =>
-      snapshot("watch", [
-        ["tv-1", "tv", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 10],
-        ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 10],
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 10, 12, 10],
+      snapshot("study", [
+        ["backtest-1", "backtest", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 16],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 16],
+        ["costs-1", "costs", "amber", "MCX:CRUDEOIL", "5m", 0, 16, 6, 12],
+        ["cot-1", "cot", "amber", "MCX:CRUDEOIL", "5m", 6, 16, 6, 12],
+      ]),
+  },
+  {
+    key: "macro",
+    name: "Macro and TV",
+    hint: "The wider energy picture: shipping chokepoints, the futures curve, live TV and the news",
+    build: () =>
+      snapshot("macro", [
+        ["choke-1", "chokepoints", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 14],
+        ["curve-1", "curve", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 14],
+        ["tv-1", "tv", null, "MCX:CRUDEOIL", "5m", 0, 14, 6, 14],
+        ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 6, 14, 6, 14],
       ]),
   },
 ];

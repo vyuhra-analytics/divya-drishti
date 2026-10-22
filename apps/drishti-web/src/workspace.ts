@@ -68,24 +68,11 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   optionchain: { w: 12, h: 26 }, // the full grid width: the detailed chain needs it
 };
 
-const defaults = () => ({
-  widgets: [
-    { id: "chart-1", type: "advchart", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
-    { id: "quote-1", type: "quote", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
-    { id: "watch-1", type: "watchlist", group: "amber", symbol: "MCX:CRUDEOIL", tf: "1m" },
-    { id: "chart-2", type: "advchart", group: "blue", symbol: "NYMEX:CL", tf: "5m" },
-    { id: "chart-3", type: "advchart", group: null, symbol: "MCX:NATURALGAS", tf: "5m" },
-  ] satisfies Widget[] as Widget[],
-  layout: [
-    { i: "chart-1", x: 0, y: 0, w: 8, h: 12 },
-    { i: "quote-1", x: 8, y: 0, w: 4, h: 9 },
-    { i: "watch-1", x: 8, y: 9, w: 4, h: 9 },
-    { i: "chart-2", x: 0, y: 12, w: 4, h: 10 },
-    { i: "chart-3", x: 4, y: 12, w: 4, h: 10 },
-  ],
-  groups: { amber: "MCX:CRUDEOIL", blue: "NYMEX:CL", green: "MCX:NATURALGAS", red: "NYMEX:NG" } as Record<Group, string>,
-  focusedId: "chart-1" as string | null,
-});
+/** First run, "Reset layout" and a damaged saved layout all start from the Evening desk (the first built-in desk). */
+const defaults = () => {
+  const { widgets, layout, groups, focusedId } = PRESETS[0].build();
+  return { widgets, layout, groups, focusedId: focusedId as string | null };
+};
 
 let idSeq = 0;
 const symbolOf = (w: Widget, groups: Record<Group, string>) => (w.group ? groups[w.group] : w.symbol);

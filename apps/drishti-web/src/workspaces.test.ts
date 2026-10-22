@@ -19,25 +19,25 @@ test("every preset is a valid grid: unique ids, one layout item per widget, insi
 });
 
 test("loading a preset replaces the layout and marks it active", () => {
-  useWorkspace.getState().loadWorkspace("preset:research");
+  useWorkspace.getState().loadWorkspace("preset:presession");
   const s = useWorkspace.getState();
-  expect(s.widgets.map((w) => w.type)).toEqual(["news", "calendar"]);
-  expect(s.activeWorkspace).toBe("Research");
+  expect(s.widgets.map((w) => w.type)).toEqual(["recap", "calendar", "curve", "advchart", "news"]);
+  expect(s.activeWorkspace).toBe("Pre-session");
   useWorkspace.getState().loadWorkspace("preset:nope"); // unknown key: no change
-  expect(useWorkspace.getState().activeWorkspace).toBe("Research");
+  expect(useWorkspace.getState().activeWorkspace).toBe("Pre-session");
 });
 
 test("saved workspaces round-trip, are copies, and can be deleted", () => {
   const ws = useWorkspace.getState();
-  ws.loadWorkspace("preset:crude");
+  ws.loadWorkspace("preset:evening");
   expect(ws.saveWorkspace("  My   desk ")).toBe(true);
   expect(Object.keys(useWorkspace.getState().saved)).toEqual(["My desk"]);
 
-  useWorkspace.getState().removeWidget("crude-chart-1"); // editing the live layout must not touch the stored one
-  expect(useWorkspace.getState().saved["My desk"].widgets.some((w) => w.id === "crude-chart-1")).toBe(true);
+  useWorkspace.getState().removeWidget("evening-chart-1"); // editing the live layout must not touch the stored one
+  expect(useWorkspace.getState().saved["My desk"].widgets.some((w) => w.id === "evening-chart-1")).toBe(true);
 
   useWorkspace.getState().loadWorkspace("saved:My desk");
-  expect(useWorkspace.getState().widgets.some((w) => w.id === "crude-chart-1")).toBe(true);
+  expect(useWorkspace.getState().widgets.some((w) => w.id === "evening-chart-1")).toBe(true);
   expect(workspaceList(useWorkspace.getState().saved).map((w) => w.name).slice(-1)).toEqual(["My desk"]);
 
   useWorkspace.getState().deleteWorkspace("My desk");
@@ -47,7 +47,8 @@ test("saved workspaces round-trip, are copies, and can be deleted", () => {
 
 test("saving refuses empty names and built-in names", () => {
   expect(useWorkspace.getState().saveWorkspace("   ")).toBe(false);
-  expect(useWorkspace.getState().saveWorkspace("research")).toBe(false);
+  expect(useWorkspace.getState().saveWorkspace("evening")).toBe(false);
+  expect(useWorkspace.getState().saveWorkspace("Macro and TV")).toBe(false);
 });
 
 // ---- several charts, each on its own symbol
@@ -126,4 +127,44 @@ test("panels added in the same millisecond get different ids, so changing one ne
   }
   const ids = useWorkspace.getState().widgets.map((w) => w.id);
   expect(new Set(ids).size).toBe(ids.length);
+});
+
+// ---- the redesigned desks (docs/redesign/RESEARCH_DESK.md): six built-in desks, F1 to F6
+const types = (key: string) => PRESETS.find((p) => p.key === key)!.build().widgets.map((w) => w.type);
+
+test("the built-in desks are the Evening desk and the five research workspaces, in F-key order", () => {
+  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro"]);
+  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV"]);
+  // six built-in desks leave F7 to F9 for three saved ones
+  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, true]);
+});
+
+test("each desk holds what its question needs", () => {
+  expect(types("evening")).toEqual(expect.arrayContaining(["advchart", "quote", "calendar", "optionchain"]));
+  expect(types("presession")).toEqual(expect.arrayContaining(["recap", "calendar", "curve", "advchart", "news"]));
+  expect(types("reportprep")).toEqual(expect.arrayContaining(["eia", "calendar", "optionchain", "advchart", "cot"]));
+  expect(types("review")).toEqual(expect.arrayContaining(["paper", "advchart", "costs", "quality"]));
+  expect(types("study")).toEqual(expect.arrayContaining(["backtest", "advchart", "costs", "cot"]));
+  expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));
+});
+
+test("the first screen of every desk fits one monitor: 28 grid rows (34 px each in the default compact density, a 1080p monitor), the Report prep desk scrolling only for its last row", () => {
+  for (const p of PRESETS) {
+    const { layout } = p.build();
+    const first = layout.filter((l) => l.y < 28);
+    const reach = Math.max(...first.map((l) => l.y + l.h));
+    expect([p.key, reach <= 28]).toEqual([p.key, true]);
+    // nothing important hides below the fold except the deliberate last row of Report prep
+    const below = layout.filter((l) => l.y >= 28);
+    expect([p.key, below.length === 0 || p.key === "reportprep"]).toEqual([p.key, true]);
+  }
+});
+
+test("the evening desk is the first run, the reset and the fallback for a damaged saved layout", () => {
+  useWorkspace.getState().reset();
+  const s = useWorkspace.getState();
+  expect(s.widgets.map((w) => w.type)).toEqual(types("evening"));
+  expect(s.widgets[0].id).toBe("evening-chart-1");
+  expect(s.focusedId).toBe("evening-chart-1"); // the chart is focused: a symbol typed in the palette goes to it
+  expect(s.widgets.find((w) => w.type === "advchart")).toMatchObject({ group: "amber", symbol: "MCX:CRUDEOIL", tf: "5m" });
 });

@@ -37,3 +37,7 @@ Phone width; what the Pre-session Recap should say for an options trader (it is 
 1. **All five workspaces stay.**
 2. Pre-session: the owner's answer is "check", which repeats the earlier walk-through without saying what is looked at. **Kept as the default list above (Recap, Calendar, Curve, Advanced chart, News)**; to refine when the owner names what they open (candidates: NYMEX price, USD/INR, the calendar for the day, headlines, the chain).
 3. **Review shows numbers and a note** (entry, exit, rupee P&L, which exit ended the day, plus a free-text note). No screenshot.
+
+## Built (2026-10-22)
+
+The five workspaces and an interim Evening desk exist as the built-in presets F1 to F6 (`apps/drishti-web/src/presets.ts`), laid out for a 1080p monitor in the default density. Not built: the `Esc` toggle between the Evening and Research desks (the Evening screen is still the interim preset) and alerts reaching every desk as banners (toasts already do). The old crude, gas, options, research and live-watch presets were replaced.

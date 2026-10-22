@@ -54,7 +54,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
       <div className="settings-body">
         {!seen && (
           <p className="hint">
-            Live MCX and NYMEX energy prices, news, options and calendar in panels you arrange. Try <kbd>F2</kbd> for the natural-gas desk, or{" "}
+            Live MCX and NYMEX energy prices, news, options and calendar in panels you arrange. <kbd>F1</kbd> is the Evening desk and <kbd>F2</kbd> to <kbd>F6</kbd> the research desks, or{" "}
             <kbd>Ctrl K</kbd> and type <b>OC</b>.
           </p>
         )}
