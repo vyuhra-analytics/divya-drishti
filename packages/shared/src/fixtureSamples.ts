@@ -86,7 +86,7 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
   {
     id: "yahoo-chart",
     source: "yahoo",
-    run: async (io) => parseYahooCandles(await json(io, "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?interval=5m&range=1d")),
+    run: async (io) => parseYahooCandles(await json(io, "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?interval=5m&range=5d")),
     check: (bars) => (bars.length >= 20 && bars.every((b: any) => num(b.close) && b.high >= b.low) ? undefined : "expected 20+ consistent 5m bars"),
   },
   ...(
