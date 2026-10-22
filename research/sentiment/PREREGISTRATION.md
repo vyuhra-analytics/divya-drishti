@@ -94,3 +94,4 @@ A result that meets some but not all is reported as **inconclusive**, not as a w
 | date | entry |
 |---|---|
 | (at commit) | pre-registration written; trial counter = 18 |
+| 2026-10-22 | data audit run (see DATA_AUDIT.md): gate items 1 to 4 failed, item 5 not run; experiments NOT run; thresholds unchanged; trial counter still 18 |

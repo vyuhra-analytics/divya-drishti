@@ -1,0 +1,54 @@
+# Data audit (gate B) for the headline sentiment study
+
+Run on 2026-10-22 against the live database, after the pre-registration (`876d857`) was committed. **Result: the data cannot answer the question.
+Gate B failed on four of five items, so by the pre-registration no experiment was run and no threshold was relaxed.**
+
+## Gate items
+
+| # | Requirement (from the pre-registration) | Found | Result |
+|---|---|---|---|
+| 1 | At least 1,500 independent events in the primary cell | 2,207 headlines in total, 1,572 tagged crude or oil, 1,235 of those inside the MCX session (Mon-Fri 09:00-23:30 IST). Headlines cluster: only **123** distinct 15-minute buckets contain one, which is the most independent events there can be. That is 8% of the 1,500 needed. | **FAIL** |
+| 2 | At least 60 trading days, at least two volatility terciles | Headlines run from 2026-10-19 07:34 IST to 2026-10-22: 4 calendar days, the first nearly empty (17 headlines), so about 3 trading days. Per day: 17, 217, 1,410, 563. | **FAIL** |
+| 3 | Timestamps: first-seen recorded, or publish time validated against an independent clock with median lag 5 minutes or less | The `news` table has no first-seen column. Its `updated_at` moves every time a story is touched by a poll, so it is not a first-seen time (the proxy `updated_at - published_at` has median 89 minutes and is meaningless for this). `published_at` is the feed's own time, which can trail the wire. No independent validation exists yet. Every event is `unverified_time`. | **FAIL** |
+| 4 | 1-minute bars present for at least 99% of session minutes, no gaps, rolls accounted for | 1-minute MCX CRUDEOIL bars exist only from 2026-10-14 (7 days). 870 of 870 session minutes on 14, 15, 16, 19 and 21 October, but **390 of 870 (45%) on 20 October**: the hours before 17:00 IST are missing. 22 October is partial (live). **Rolls recorded: 0.** The history is front-month only (provider limit), and between the 19 October close (9455) and the first bar on 20 October (9596 at 17:00) there is a 141-point jump that cannot be told apart from a contract roll. | **FAIL** |
+| 5 | A look-ahead test showing that shifting event times changes the returns used | The analysis pipeline does not exist yet, so the test cannot be run. | **NOT RUN** (moot: items 1 to 4 fail) |
+
+## Other findings that matter for the plan
+
+- **Price history depth is the second limit.** Our providers give 1-minute bars for about 7 days, 5-minute for about 30 days, hourly for about 90 days
+  (Upstox) and daily for about 2 years. A 60-trading-day study at a 60-minute horizon is possible only on hourly bars, and only with the roll problem solved.
+- **Licences.** FinBERT's model card says CC BY-NC-SA 4.0 (checked via the Hugging Face API). CrudeBERT's model card declares **no licence**, and its
+  thesis repository (`Captain-1337/Master-Thesis`, last pushed 2021-11-25) has no licence either. With no licence, the default is that all rights are
+  reserved: we must not redistribute it and should ask the author before relying on it.
+- **Positive control.** The thesis repository contains notebooks (preprocessing, FinBERT fine-tuning, logistic regression, N-BEATS) and no data file that
+  I could find at the top level of its folders. The published result cannot be replicated from it as it stands.
+- **GDELT as an independent source** (checked, not yet used): its 2026-10-22 files exist and downloads work. One 15-minute GKG file (06:00 UTC) had
+  877 rows, **every row with a page title** (`PAGE_TITLE`), a 15-minute timestamp, the source domain and themes; about 42 of the 877 matched an oil theme
+  or phrase, and some of those were not oil headlines, so a relevance filter is needed. Older files exist (a 2023 file answered 200). The timestamp is
+  GDELT's processing time, in 15-minute batches: that is a conservative first-seen clock, but it makes a 15-minute horizon meaningless.
+
+## Verdict (gate D)
+
+**No result.** The question "does headline sentiment carry information about crude returns net of costs" **cannot be answered with the data we have**: roughly
+8% of the independent events needed, 5% of the trading days, no verified clock, a gap and an unrecorded roll in the price series. The experiments were not
+run. This is a statement about the data, not about FinBERT or CrudeBERT, and it is not evidence for or against sentiment.
+
+## Acquisition plan (what would make the study answerable)
+
+1. **Start the clock today: record first-seen.** Add `first_seen_at` to the `news` table, set once on first insert and never updated. Until that
+   exists every future event is also `unverified_time`. Our own capture produces about 41 in-session independent events a day (123 buckets in 3 days),
+   so the 1,500-event gate needs about 37 trading days and the 60-day gate needs about 12 weeks: **roughly mid-January 2027.** The IC 0.05 sample (5,870)
+   needs about 5 months.
+2. **Backfill from GDELT** (free, timestamped, with titles): stream each 15-minute GKG file, keep only rows that match a crude-oil title or theme filter,
+   deduplicate. One file is about 3.7 MB, so a year is about 125 GB of downloads if every file is fetched; the streaming filter keeps only the oil rows.
+   Resolution is 15 minutes, so the study would use horizons of 60 minutes and 1 day only.
+3. **Change the primary cell, and log it before any analysis.** MCX history is too short. Run the information test on NYMEX CL (Yahoo hourly, about 2 years)
+   and treat MCX only as the tradable translation (costs, lot size) for the forward paper test. This is a deviation from the pre-registration, so it must
+   be entered in its log with the reason, before any result exists.
+4. **Roll handling:** build the contract calendar and drop any forward-return window that crosses a roll, instead of trusting a spliced series.
+5. **Positive control:** obtain the CrudeBERT thesis dataset from its author, or use a published result that is reproducible on free data (time-series momentum
+   on crude, Moskowitz, Ooi and Pedersen 2012) to validate the price and backtest side of the pipeline.
+6. **Licences:** ask the CrudeBERT author in writing. If there is no answer, use FinBERT locally for private research only, plus the word-list baseline,
+   or train our own classifier on the collected headlines.
+7. **Build the remaining pipeline** (look-ahead test, second implementation of IC and P&L, controls) before the data is ready, so the day it is ready
+   the pre-registered experiments run once.
