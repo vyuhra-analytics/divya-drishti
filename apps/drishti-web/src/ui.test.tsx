@@ -148,7 +148,7 @@ test("HelpDialog welcomes first-time users once, lists codes and the glossary", 
   const onClose = mock(() => {});
   const { rerender } = render(<HelpDialog open={true} onClose={onClose} />);
   expect(document.body.textContent).toContain("Welcome to Divya Drishti");
-  expect(document.body.textContent).toContain("Energy Calendar"); // from the panel codes
+  expect(document.body.textContent).toContain("Economic Calendar"); // from the panel codes
   expect(document.body.textContent).toContain("Open interest");
   fireEvent.click(screen.getByText("Got it"));
   expect(onClose).toHaveBeenCalled();

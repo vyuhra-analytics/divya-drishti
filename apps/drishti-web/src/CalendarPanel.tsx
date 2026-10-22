@@ -53,7 +53,7 @@ function until(at: number, now: number) {
   return mins >= 0 ? `in ${text}` : `${text} ago`;
 }
 
-/** Energy calendar: the live list (US inventory and rig reports, OPEC, high-impact US macro, MCX holidays) or what the recorder has stored. */
+/** Economic calendar: the live list (US inventory and rig reports, OPEC, high-impact US macro, MCX holidays) or what the recorder has stored. */
 export function CalendarWidget({ widget }: { widget: Widget }) {
   const [view, setView] = useState<"live" | "stored">("live");
   return (

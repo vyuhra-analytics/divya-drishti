@@ -1,4 +1,4 @@
-// Energy calendar: the weekly releases that move crude and gas, plus macro events and MCX holidays.
+// Economic calendar: the weekly releases that move crude and gas, plus macro events and MCX holidays.
 // Pure so the schedule rules (New York time, DST) are unit-tested.
 import { tzOffsetSec } from "./index";
 import { occurrences, SERIES, zonedTime } from "./eventSeries";

@@ -191,7 +191,7 @@ export const WIDGETS: Record<
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },
   news: { title: "News", component: NewsWidget, linked: true, showSymbol: false },
-  calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
+  calendar: { title: "Economic Calendar", component: CalendarWidget, linked: false, showSymbol: false },
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
   briefing: { title: "AI Briefing", component: BriefingWidget, linked: true, showSymbol: true },
   cot: { title: "Positioning (COT)", component: CotWidget, linked: true, showSymbol: false },
