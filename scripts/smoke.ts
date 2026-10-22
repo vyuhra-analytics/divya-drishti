@@ -76,6 +76,11 @@ await check("calendar: events with periods", async () => {
   need(ev.length > 0 && ev.every((e: any) => e.id && e.title && Number.isFinite(e.at)), "bad events");
   return `${ev.length} events`;
 });
+await check("calendar: stored events carry their figures", async () => {
+  const rows = await ok("/calendar/stored?from=2026-01-01&to=2026-12-31");
+  need(Array.isArray(rows) && rows.every((r: any) => r.series_code && Array.isArray(r.observations)), "bad stored rows");
+  return `${rows.length} stored`;
+});
 await check("market sessions", async () => void (await ok("/market/sessions")));
 await check("COT: WTI has 3 years of weekly rows", async () => {
   const c = await ok("/cot?market=wti&weeks=156");
@@ -181,6 +186,9 @@ for (const [name, path] of [
   ["unknown chokepoint", "/chokepoints?id=x"],
   ["unknown curve symbol", "/curve?symbol=x"],
   ["calendar days out of range", "/calendar?days=999"],
+  ["stored calendar bad date", "/calendar/stored?from=bad"],
+  ["stored calendar bad series", "/calendar/stored?series=a%20b"],
+  ["stored calendar bad id", "/calendar/stored/0/eia"],
 ] as const) {
   await check(`refuses: ${name}`, () => bad(path));
 }

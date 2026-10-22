@@ -89,3 +89,43 @@ test("releasePending is true while a release is due or just out without its numb
   expect(releasePending([e(-60 * 7)], now)).toBe(false); // too old to keep polling for
   expect(energyReleases(now, now + 1).length).toBe(0);
 });
+
+// ---- every figure of the two EIA files, from the recorded real responses
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { wngsrPoints, wpsrPoints } from "./actuals";
+const recorded = (id: string): string => JSON.parse(readFileSync(join(import.meta.dir, `../fixtures/${id}.json`), "utf8"))[0].text;
+
+test("wpsrPoints reads every row of the stocks table with level, last week and change, flags the headline and ignores the second block", () => {
+  const pts = wpsrPoints(recorded("eia-wpsr-csv"));
+  expect(pts.length).toBeGreaterThanOrEqual(15);
+  const by = Object.fromEntries(pts.map((p) => [p.seriesId, p]));
+  expect(by["WPSR:COMMERCIAL_EXCLUDING_SPR"]).toMatchObject({ value: 415.577, prior: 424.134, change: -8.557, headline: true, unit: "million barrels", periodEnd: Date.UTC(2026, 9, 9) });
+  expect(by["WPSR:CRUDE_OIL"].value).toBe(698.56);
+  expect(by["WPSR:DISTILLATE_FUEL_OIL"].change).toBe(-2.527);
+  expect(by["WPSR:TOTAL_STOCKS_INCLUDING_SPR"].value).toBe(1506.999); // a thousands separator is read right
+  expect(pts.filter((p) => p.headline)).toHaveLength(1);
+  expect(new Set(pts.map((p) => p.seriesId)).size).toBe(pts.length);
+  expect(pts.some((p) => /DOMESTIC_PRODUCTION|CRUDE_OIL_SUPPLY/.test(p.seriesId))).toBe(false); // the supply and demand block is not stocks
+  expect(wpsrPoints("")).toEqual([]);
+  expect(wpsrPoints("garbage,1,2")).toEqual([]);
+});
+
+test("wngsrPoints reads the regions with stocks, last week's stocks and the net change, and flags the Lower 48 total", () => {
+  const pts = wngsrPoints(recorded("eia-wngsr-csv"));
+  const by = Object.fromEntries(pts.map((p) => [p.seriesId, p]));
+  expect(pts.map((p) => p.label)).toEqual(["East", "Midwest", "Mountain", "Pacific", "South Central", "Salt", "Nonsalt", "Total"]);
+  expect(by["WNGSR:TOTAL"]).toMatchObject({ value: 3567, prior: 3500, change: 67, headline: true, unit: "Bcf", periodEnd: Date.UTC(2026, 9, 9) });
+  expect(by["WNGSR:SOUTH_CENTRAL"]).toMatchObject({ value: 1097, prior: 1076, change: 21 });
+  expect(by["WNGSR:PACIFIC"].change).toBe(-5);
+  expect(pts.filter((p) => p.headline)).toHaveLength(1);
+  expect(wngsrPoints("")).toEqual([]);
+  expect(wngsrPoints("Region,x\nEast,1")).toEqual([]);
+});
+
+test("the points agree with what the calendar already uses as the headline: the commercial crude change and the total gas change", () => {
+  const w = parseWpsr(recorded("eia-wpsr-csv"))!;
+  const wp = wpsrPoints(recorded("eia-wpsr-csv")).find((p) => p.headline)!;
+  expect(wp.change).toBe(w.change["Commercial (Excluding SPR)"]);
+  expect(wngsrPoints(recorded("eia-wngsr-csv")).find((p) => p.headline)!.change).toBe(parseWngsr(recorded("eia-wngsr-csv"))!.netChange);
+});

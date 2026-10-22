@@ -344,6 +344,8 @@ export * from "./upstoxCharges";
 export * from "./optionQuote";
 export * from "./optionCandles";
 export * from "./upstoxAccount";
+export * from "./eventSeries";
+export * from "./eventPlan";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

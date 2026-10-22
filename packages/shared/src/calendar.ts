@@ -1,6 +1,7 @@
 // Energy calendar: the weekly releases that move crude and gas, plus macro events and MCX holidays.
 // Pure so the schedule rules (New York time, DST) are unit-tested.
 import { tzOffsetSec } from "./index";
+import { occurrences, SERIES, zonedTime } from "./eventSeries";
 
 export type CalKind = "energy" | "macro" | "holiday";
 
@@ -38,21 +39,24 @@ interface Release {
   ff?: RegExp;
 }
 
-const RELEASES: Release[] = [
-  { key: "api", title: "API crude inventories", weekday: 2, hour: 16, minute: 30, impact: "medium", detail: "American Petroleum Institute, weekly" },
-  { key: "eia-oil", title: "EIA crude inventories", weekday: 3, hour: 10, minute: 30, impact: "high", detail: "EIA Weekly Petroleum Status Report", ff: /^crude oil inventories$/i },
-  { key: "eia-gas", title: "EIA natural gas storage", weekday: 4, hour: 10, minute: 30, impact: "high", detail: "EIA weekly storage report", ff: /^natural gas storage$/i },
-  { key: "rigs", title: "Baker Hughes rig count", weekday: 5, hour: 13, minute: 0, impact: "medium", detail: "US oil and gas rigs, weekly" },
-];
+/**
+ * The weekly releases, derived from the event dictionary (`eventSeries.ts`) so there is one list of them. Built on first use, not at load:
+ * this file and the package index import each other, and the dictionary is not yet defined while that cycle is still loading.
+ */
+let releasesCache: Release[] | undefined;
+const releaseDefs = (): Release[] =>
+  (releasesCache ??= SERIES.flatMap((d): Release[] =>
+    d.legacyKey && d.schedule.kind === "weekly"
+      ? [{ key: d.legacyKey, title: d.title, weekday: d.schedule.weekday, hour: d.schedule.hour, minute: d.schedule.minute, impact: d.importance, detail: d.detail, ff: d.forecastFrom?.title }]
+      : [],
+  ));
 
 const NY = "America/New_York";
 const DAY = 86_400_000;
 
 /** Epoch ms of a New York wall-clock time (DST-aware: the offset is re-read at the resolved instant). */
 export function nyTime(year: number, month: number, day: number, hour: number, minute: number): number {
-  const guess = Date.UTC(year, month, day, hour, minute);
-  const first = guess - tzOffsetSec(NY, guess) * 1000;
-  return guess - tzOffsetSec(NY, first) * 1000;
+  return zonedTime(NY, year, month, day, hour, minute);
 }
 
 /**
@@ -62,14 +66,9 @@ export function nyTime(year: number, month: number, day: number, hour: number, m
  */
 export function energyReleases(from: number, to: number): CalEvent[] {
   const out: CalEvent[] = [];
-  const start = new Date(from + tzOffsetSec(NY, from) * 1000); // New York "today" as UTC fields
-  for (let d = -1; d <= Math.ceil((to - from) / DAY) + 1; d++) {
-    const day = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + d));
-    for (const r of RELEASES) {
-      if (day.getUTCDay() !== r.weekday) continue;
-      const at = nyTime(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), r.hour, r.minute);
-      if (at >= from && at < to) out.push({ id: `${r.key}-${at}`, title: r.title, at, kind: "energy", impact: r.impact, detail: r.detail });
-    }
+  for (const def of SERIES) {
+    if (def.schedule.kind === "feed") continue; // a feed supplies its own rows
+    for (const at of occurrences(def, from, to)) out.push({ id: `${def.legacyKey ?? `ser:${def.code}`}-${at}`, title: def.title, at, kind: def.category === "energy" ? "energy" : "macro", impact: def.importance, detail: def.detail, country: def.legacyKey ? undefined : def.country });
   }
   return out.sort((a, b) => a.at - b.at);
 }
@@ -93,7 +92,7 @@ const FF_IMPACT: Record<string, CalEvent["impact"]> = { High: "high", Medium: "m
 export function mergeForexFactory(releases: CalEvent[], rows: FFRow[], from: number, to: number): CalEvent[] {
   const out = releases.map((e) => ({ ...e }));
   const used = new Set<FFRow>();
-  for (const r of RELEASES) {
+  for (const r of releaseDefs()) {
     if (!r.ff) continue;
     const row = rows.find((x) => x.country === "USD" && r.ff!.test(x.title));
     if (!row) continue;
