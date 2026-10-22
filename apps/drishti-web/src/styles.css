@@ -115,10 +115,6 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .tf { padding: 2px 8px; color: var(--muted); border-radius: 4px; }
 .tf:hover { color: var(--text); }
 .tf.active { color: var(--on-accent); background: var(--accent); font-weight: 700; }
-.chart-wrap { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
-.chart { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.chart-legend { position: absolute; left: 8px; top: 4px; z-index: 2; display: flex; flex-wrap: wrap; gap: 2px 12px; max-width: calc(100% - 80px); padding: 2px 6px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); border-radius: 4px; pointer-events: none; }
-.chart-legend b { font-weight: 600; color: var(--text); }
 .main-area { flex: 1; min-height: 0; display: flex; }
 .main-area .workspace { flex: 1; min-width: 0; }
 .sidebar { flex: none; width: 168px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; }
@@ -170,14 +166,7 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .badge.closed { color: var(--muted); }
 .badge.stale { color: var(--down); border-color: color-mix(in srgb, var(--down) 50%, transparent); }
 .not-live { opacity: 0.55; }
-.chart-legend b.up { color: var(--up); }
-.chart-legend b.down { color: var(--down); }
 .toolbar .tf { white-space: nowrap; }
-.chart-type { padding: 1px 4px; font: inherit; font-size: 12px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 4px; }
-.ind-menu { margin: 0; inset: unset; position: fixed; padding: 6px 0; min-width: 180px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.25); }
-.ind-menu label { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; }
-.ind-menu label:hover { background: var(--hover); }
-.chart-hint { position: absolute; left: 12px; top: 8px; margin: 0; padding: 4px 8px; font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; pointer-events: none; z-index: 2; }
 
 .quote { padding: 8px 12px; }
 .quote-last { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }

@@ -1,6 +1,5 @@
-import { daysToExpiry, describeProvenance, instrument, quoteProvenance, SYMBOLS, TIMEFRAMES, type Quote, type Timeframe } from "@drishti/shared";
+import { daysToExpiry, describeProvenance, instrument, quoteProvenance, SYMBOLS, type Quote } from "@drishti/shared";
 import type { ComponentType } from "react";
-import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, type Indicator } from "./Chart";
 import { TvWidget } from "./TvWidget";
 import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { CalendarWidget } from "./CalendarPanel";
@@ -52,79 +51,6 @@ export function Price({ symbol }: { symbol: string }) {
     <span key={flash ? price : undefined} className={cls} title={fresh === "live" ? undefined : fresh === "closed" ? "Market closed: last price" : "No update from the feed for over a minute"}>
       {fmt.price(price)}
     </span>
-  );
-}
-
-const INDICATOR_LABEL: Record<Indicator, string> = {
-  VOL: "Volume",
-  SMA20: "SMA 20",
-  SMA50: "SMA 50",
-  SMA200: "SMA 200",
-  EMA20: "EMA 20",
-  VWAP: "VWAP (session)",
-  BOLL: "Bollinger 20, 2",
-  RSI: "RSI 14",
-  MACD: "MACD 12, 26, 9",
-};
-
-function ChartWidget({ widget }: { widget: Widget }) {
-  const symbol = useWidgetSymbol(widget);
-  const setTf = useWorkspace((s) => s.setTf);
-  const updateWidget = useWorkspace((s) => s.updateWidget);
-  const type = widget.chartType ?? "candles";
-  const on = widget.indicators ?? DEFAULT_INDICATORS;
-  const menuId = `ind-${widget.id}`;
-  const toggle = (k: Indicator) =>
-    updateWidget(widget.id, { indicators: on.includes(k) ? on.filter((x) => x !== k) : INDICATORS.filter((x) => x === k || on.includes(x)) });
-  return (
-    <>
-      <div className="toolbar no-drag">
-        {(Object.keys(TIMEFRAMES) as Timeframe[]).map((t) => (
-          <button key={t} className={t === widget.tf ? "tf active" : "tf"} onClick={() => setTf(widget.id, t)}>
-            {t}
-          </button>
-        ))}
-        <select
-          className="chart-type"
-          aria-label="Chart type"
-          value={type}
-          onChange={(e) => updateWidget(widget.id, { chartType: e.target.value as ChartType })}
-        >
-          {CHART_TYPES.map((c) => (
-            <option key={c} value={c}>
-              {c[0].toUpperCase() + c.slice(1)}
-            </option>
-          ))}
-        </select>
-        {/* native popover: light-dismiss and Esc for free */}
-        <button className="tf" popoverTarget={menuId} aria-label="Indicators">
-          ƒx {on.filter((k) => k !== "VOL").length || ""}
-        </button>
-        <div
-          id={menuId}
-          popover="auto"
-          className="ind-menu"
-          onToggle={(e) => {
-            // place the popover under its button (popovers open in the top layer, centred by default)
-            const btn = document.querySelector<HTMLElement>(`[popovertarget="${menuId}"]`);
-            if (!btn || (e.nativeEvent as ToggleEvent).newState !== "open") return;
-            const r = btn.getBoundingClientRect();
-            const menu = e.currentTarget;
-            menu.style.top = `${Math.min(r.bottom + 4, innerHeight - menu.offsetHeight - 8)}px`;
-            menu.style.left = `${Math.min(r.left, innerWidth - menu.offsetWidth - 8)}px`;
-          }}
-        >
-          {INDICATORS.map((k) => (
-            <label key={k}>
-              <input type="checkbox" checked={on.includes(k)} onChange={() => toggle(k)} />
-              {INDICATOR_LABEL[k]}
-            </label>
-          ))}
-        </div>
-        <SourceBadge symbol={symbol} />
-      </div>
-      <Chart symbol={symbol} tf={widget.tf} type={type} indicators={on} />
-    </>
   );
 }
 
@@ -262,7 +188,6 @@ export const WIDGETS: Record<
   { title: string; component: ComponentType<{ widget: Widget }>; linked: boolean; showSymbol: boolean }
 > = {
   advchart: { title: "Chart", component: AdvancedChartWidget, linked: true, showSymbol: true },
-  chart: { title: "Simple Chart", component: ChartWidget, linked: true, showSymbol: true },
   quote: { title: "Quote", component: QuoteWidget, linked: true, showSymbol: true },
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },

@@ -3,10 +3,9 @@ import { persist } from "zustand/middleware";
 import type { LayoutItem } from "react-grid-layout";
 import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
-import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
+export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -20,8 +19,6 @@ export interface Widget {
   /** tv widgets: selected stream URL */
   channel?: string;
   /** chart widgets: series type and enabled indicators (defaults: candles + volume) */
-  chartType?: ChartType;
-  indicators?: Indicator[];
 }
 
 interface WorkspaceState {
@@ -41,9 +38,7 @@ interface WorkspaceState {
   setLayout: (layout: readonly LayoutItem[]) => void;
   cycleGroup: (id: string) => void;
   loadSymbol: (id: string, symbol: string) => void;
-  setTf: (id: string, tf: Timeframe) => void;
   setChannel: (id: string, channel: string) => void;
-  updateWidget: (id: string, change: Partial<Pick<Widget, "chartType" | "indicators">>) => void;
   focus: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   reset: () => void;
@@ -53,7 +48,6 @@ interface WorkspaceState {
 export const GRID_COLS = 12;
 
 export const SIZE: Record<WidgetType, { w: number; h: number }> = {
-  chart: { w: 8, h: 12 },
   quote: { w: 4, h: 9 },
   watchlist: { w: 4, h: 7 },
   tv: { w: 5, h: 9 },
@@ -101,7 +95,7 @@ const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
   widgets.map((w) => (w.id === id ? { ...w, ...change } : w));
 
 /** Panel types that no longer exist. A saved layout that holds one loses just that panel (a panel type missing from the registry would crash the grid). */
-export const REMOVED_WIDGET_TYPES = ["jodi", "insider", "options"];
+export const REMOVED_WIDGET_TYPES = ["jodi", "insider", "options", "chart"];
 
 function withoutRemoved<T extends { widgets: Widget[]; layout: LayoutItem[]; focusedId: string | null }>(s: T): T {
   const gone = new Set(s.widgets.filter((w) => REMOVED_WIDGET_TYPES.includes(w.type)).map((w) => w.id));
@@ -204,9 +198,7 @@ export const useWorkspace = create<WorkspaceState>()(
             : { widgets: patch(s.widgets, id, { symbol }) };
         }),
 
-      setTf: (id, tf) => set((s) => ({ widgets: patch(s.widgets, id, { tf }) })),
       setChannel: (id, channel) => set((s) => ({ widgets: patch(s.widgets, id, { channel }) })),
-      updateWidget: (id, change) => set((s) => ({ widgets: patch(s.widgets, id, change) })),
       focus: (focusedId) => set({ focusedId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       reset: () => set({ ...defaults(), activeWorkspace: null }),

@@ -25,7 +25,7 @@ Desks: **Evening** (the one-monitor trading screens, see `EIA_SCREENS.md`) and *
 | COST | Costs | Research desk | Needed by paper trading for options costs. |
 | BT | Strategy tester | Research desk | To be rebuilt around the owner's real rules (rupee-capped scalp), not generic strategies. |
 | DQ | Data quality | Research desk | Feed health stays visible as one line in the status bar. |
-| GS | Simple chart | **Cut** | Duplicate of GP. |
+| GS | Simple chart | **Cut, deleted** | Duplicate of GP. |
 | OC | Option chain (compact) | **Cut, deleted** | Duplicate of OCX. |
 | HM | Energy heatmap | **Cut** | Not used by either strategy. |
 | SCR | Energy screener | **Cut** | Not used by either strategy. |
