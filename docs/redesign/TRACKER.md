@@ -11,7 +11,7 @@ Status key: done, active, next, later, blocked.
 |---|---|---|---|
 | 1 | Define the user and the jobs | **done** | `USER_AND_JOBS.md`: day in the life, decisions, risk rules, strategy rules |
 | 2 | Information architecture and design system on paper | **done** | desks, panel and command grammar, design spec, cut list, mock-ups |
-| 3 | Prototype on a replayed real session | **next** | replay tool, clickable prototype |
+| 3 | Prototype on a replayed real session | **active** | replay tool, clickable prototype |
 | 4 | Build in thin slices with trader-terms acceptance | later | slices, each with a timed task |
 | 5 | Verify to level 4, then a forward paper run | later | task timings, latency, data-truth audit, paper run |
 
@@ -37,6 +37,7 @@ Status key: done, active, next, later, blocked.
 | 2026-10-22 | Live TV kept |
 | 2026-10-22 | Insider trades, energy heatmap, energy screener, ticker tape: cut or optional, decide in step 2 |
 | 2026-10-22 | Simple chart and compact option chain: cut as duplicates, decide in step 2 |
+| 2026-10-22 | Prototype built (`prototype/eia-replay.html`, replay of 7 Oct): chart, report block, simulated chain, trade, alerts, timed-task stopwatch; first run: Rs 500 loss limit fired on a late entry although the day later moved 68 pts the trade's way |
 | 2026-10-22 | Step 2 complete: dark theme everywhere, alert sounds accepted, no colour issues |
 | 2026-10-22 | Design system spec drafted (`DESIGN_SYSTEM.md`): position colours (`--good`/`--bad`) separate from market direction (`--up`/`--down`), 28 px numbers, four alert classes with sounds; 3 questions open |
 | 2026-10-22 | Research desk drafted (`RESEARCH_DESK.md`): five workspaces on F2 to F6, Esc toggles desks, alerts reach any desk; accepted: all five workspaces, review = numbers + note |
