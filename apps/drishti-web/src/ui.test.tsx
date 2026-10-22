@@ -5,7 +5,6 @@ import { PanelBoundary } from "./PanelBoundary";
 import { NewsWidget } from "./NewsWidget";
 import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { Palette } from "./Palette";
-import { InsiderWidget } from "./InsiderPanel";
 import { OptionsWidget } from "./OptionsPanel";
 import { useStore } from "./store";
 import { useWorkspace, type Widget } from "./workspace";
@@ -82,18 +81,6 @@ test("Palette runs a command and closes", () => {
 const mockFetch = (body: unknown, ok = true) => {
   globalThis.fetch = mock(async () => ({ ok, status: ok ? 200 : 503, json: async () => body })) as never;
 };
-
-test("InsiderWidget shows trades, or the server's hint when SEC contact is missing", async () => {
-  mockFetch({ message: "Set SEC_EDGAR_CONTACT in .env" }, false);
-  render(<InsiderWidget widget={widget("insider")} />);
-  expect(await screen.findByText(/SEC_EDGAR_CONTACT/)).toBeTruthy();
-  cleanup();
-
-  mockFetch({ tickers: ["XOM"], trades: [{ ticker: "XOM", owner: "DOE JANE", date: "2026-10-02", code: "S", shares: -1000, price: 110.5, value: 110500, url: "https://sec.test/x" }] });
-  render(<InsiderWidget widget={widget("insider")} />);
-  const row = (await screen.findByText(/DOE JANE/)).closest("tr")!;
-  expect(within(row).getByText("Sell").closest("td")!.className).toBe("down");
-});
 
 test("OptionsWidget renders the chain rows and summary", async () => {
   mockFetch({

@@ -6,7 +6,7 @@ import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -61,7 +61,6 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   heatmap: { w: 6, h: 12 },
   screener: { w: 7, h: 12 },
   options: { w: 7, h: 14 },
-  insider: { w: 7, h: 12 },
   calendar: { w: 6, h: 14 },
   alerts: { w: 5, h: 12 },
   advchart: { w: 8, h: 16 },
@@ -103,7 +102,7 @@ const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
   widgets.map((w) => (w.id === id ? { ...w, ...change } : w));
 
 /** Panel types that no longer exist. A saved layout that holds one loses just that panel (a panel type missing from the registry would crash the grid). */
-export const REMOVED_WIDGET_TYPES = ["jodi"];
+export const REMOVED_WIDGET_TYPES = ["jodi", "insider"];
 
 function withoutRemoved<T extends { widgets: Widget[]; layout: LayoutItem[]; focusedId: string | null }>(s: T): T {
   const gone = new Set(s.widgets.filter((w) => REMOVED_WIDGET_TYPES.includes(w.type)).map((w) => w.id));

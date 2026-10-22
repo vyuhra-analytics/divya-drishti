@@ -4,7 +4,6 @@ import { Chart, CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, type ChartType, typ
 import { TvWidget } from "./TvWidget";
 import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
 import { OptionsWidget } from "./OptionsPanel";
-import { InsiderWidget } from "./InsiderPanel";
 import { CalendarWidget } from "./CalendarPanel";
 import { AlertsWidget } from "./AlertsPanel";
 import { AdvancedChartWidget } from "./AdvancedChart";
@@ -272,7 +271,6 @@ export const WIDGETS: Record<
   heatmap: { title: "Energy Heatmap", component: HeatmapWidget, linked: false, showSymbol: false },
   screener: { title: "Energy Screener", component: ScreenerWidget, linked: false, showSymbol: false },
   options: { title: "Options Chain", component: OptionsWidget, linked: true, showSymbol: true },
-  insider: { title: "Insider Trades", component: InsiderWidget, linked: false, showSymbol: false },
   calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },
   briefing: { title: "AI Briefing", component: BriefingWidget, linked: true, showSymbol: true },

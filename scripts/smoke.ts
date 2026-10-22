@@ -109,11 +109,6 @@ await check("options chain: strikes outside 4..40 or not a number is a 400", asy
     need(r.status === 400, `strikes=${s} → HTTP ${r.status}`);
   }
 });
-await check("insider trades (needs SEC_EDGAR_CONTACT)", async () => {
-  const r = await get("/insider?ticker=XOM");
-  if (r.status === 503) throw new Error("SKIP: SEC_EDGAR_CONTACT not set");
-  need(r.status === 200, `HTTP ${r.status}`);
-});
 await check("server alerts: channels, create, list, delete (never fires, sends nothing)", async () => {
   const ch = await ok("/alerts/channels");
   need("telegram" in ch && "webhook" in ch, "channel status missing");

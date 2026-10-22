@@ -32,7 +32,7 @@ test("withUserAgent adds the pool UA unless the caller set one", () => {
   expect((added.headers as Record<string, string>).Accept).toBe("text/xml");
   expect(withUserAgent("https://x.example").headers).toEqual({ "User-Agent": userAgentFor("x.example") });
   const own = { headers: { "user-agent": "DivyaDrishti me@example.com" } };
-  expect(withUserAgent("https://www.sec.gov/x", own)).toBe(own); // an honest contact UA is left alone
+  expect(withUserAgent("https://x.example/x", own)).toBe(own); // an honest contact UA is left alone
 });
 
 test("official data hosts get no browser User-Agent at all (FRED stalls on one)", () => {

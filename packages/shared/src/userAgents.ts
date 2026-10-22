@@ -1,7 +1,6 @@
 // A small pool of ordinary browser User-Agent strings instead of one hardcoded string repeated across the code: the same string on
 // every request from every source is itself a fingerprint. One UA is kept per host for the life of the process (a site sees a consistent
-// client), and a restart may pick a different one. Not an evasion tool: no spoofing of anything but the UA, and sec.gov, which asks
-// for an honest contact, gets its own header (insider.controller.ts) and never comes from this pool.
+// client), and a restart may pick a different one. Not an evasion tool: no spoofing of anything but the UA.
 
 export const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
@@ -45,8 +44,6 @@ export const OFFICIAL_HOSTS = [
   "api.eia.gov",
   "publicreporting.cftc.gov",
   "services9.arcgis.com",
-  "data.sec.gov",
-  "www.sec.gov",
   "api.upstox.com",
   "assets.upstox.com",
   "api.anthropic.com",

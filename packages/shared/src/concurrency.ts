@@ -1,4 +1,4 @@
-// One place for "do at most N of these at once" against third-party services (sec.gov, EIA, TradingView), instead of hand-written batches.
+// One place for "do at most N of these at once" against third-party services (EIA, TradingView), instead of hand-written batches.
 
 /** A gate: `run(fn)` starts fn when fewer than `limit` calls are running, otherwise queues it. Errors reach only their own caller. */
 export function limiter(limit: number) {
