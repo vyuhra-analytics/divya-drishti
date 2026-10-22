@@ -42,6 +42,7 @@ const ago = (t: number | null) => (t ? `${Math.max(0, Math.round((Date.now() - t
 export function Feeds() {
   const upstox = usePoll<UpstoxStatus>(`${apiUrl()}/auth/upstox/status`, 10_000);
   const health = usePoll<Health>(streamHttpUrl("/health"), 3_000);
+  const account = usePoll<{ access: string; hint: string }>(`${apiUrl()}/auth/upstox/account`, 60_000); // can the app read your account? (needs the static IP registered in Upstox)
   const clock = useClock();
   const [primary, setPrimary] = useState<string | null>(null); // optimistic: shown until the next health poll agrees
   const setMcxPrimary = (source: string) => {
@@ -75,6 +76,18 @@ export function Feeds() {
           {upstox?.via === "login" ? "Reconnect" : "Connect Upstox"}
         </button>
       </div>
+
+      {upstox?.connected && (
+        <div className="field">
+          <span>
+            Upstox account (positions, funds, trades)
+            <small className="muted">{account ? account.hint : "checking…"}</small>
+          </span>
+          <span className={account?.access === "ok" ? "badge up" : "badge"} title="Market data works with any valid token; the account endpoints answer only from the static IP registered in your Upstox app.">
+            {account?.access === "ok" ? "readable" : account?.access === "static_ip" ? "needs static IP" : account?.access === "token" ? "refused" : "unavailable"}
+          </span>
+        </div>
+      )}
 
       <div className="field">
         <span>

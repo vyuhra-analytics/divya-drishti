@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Header, Query, Redirect } from "@nestjs/common";
-import { upstoxTokenExpiry } from "@drishti/shared";
+import { ACCOUNT_ACCESS_HINT, classifyAccountAccess, upstoxTokenExpiry, type AccountAccess } from "@drishti/shared";
 import { Db } from "./db";
 
 // Upstox OAuth: the user logs in on upstox.com; we exchange the one-time code for an access token
@@ -12,6 +12,13 @@ const page = (title: string, body: string) =>
   `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
   `<body style="font:15px system-ui;background:#131722;color:#d1d4dc;display:grid;place-items:center;height:100vh;margin:0">` +
   `<div style="text-align:center"><h2>${title}</h2><p>${body}</p></div></body>`;
+
+const ACCOUNT_CACHE_MS = 60_000;
+let accountCache: { at: number; access: AccountAccess } | null = null;
+/** Tests only: forget the cached account check. */
+export const resetAccountCache = () => {
+  accountCache = null;
+};
 
 @Controller("auth/upstox")
 export class UpstoxController {
@@ -74,5 +81,27 @@ export class UpstoxController {
       via: ttl > 0 ? "login" : envToken ? "env" : null,
       expiresAt: ttl > 0 ? Date.now() + ttl : null, // .env tokens: expiry unknown to us (daily or analytics)
     };
+  }
+
+  /**
+   * Can this app read your Upstox account (positions, funds, orders, trades)? Upstox answers those only from the static IP registered in
+   * the Upstox app, so a working token alone is not enough. Asks for the profile (cached 60 s) and returns only the verdict and what to do:
+   * nothing from the profile itself is returned or stored. GET /auth/upstox/account
+   */
+  @Get("account")
+  async account(): Promise<{ access: AccountAccess; hint: string }> {
+    const done = (access: AccountAccess) => ({ access, hint: ACCOUNT_ACCESS_HINT[access] });
+    if (accountCache && Date.now() - accountCache.at < ACCOUNT_CACHE_MS) return done(accountCache.access);
+    const token = (await this.db.redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim();
+    if (!token) return done("no_token");
+    let access: AccountAccess = "unavailable";
+    try {
+      const res = await fetch("https://api.upstox.com/v2/user/profile", { headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
+      access = classifyAccountAccess(res.status, await res.json().catch(() => null));
+    } catch {
+      access = "unavailable";
+    }
+    accountCache = { at: Date.now(), access };
+    return done(access);
   }
 }

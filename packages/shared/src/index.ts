@@ -342,6 +342,7 @@ export * from "./costs";
 export * from "./upstoxCharges";
 export * from "./optionQuote";
 export * from "./optionCandles";
+export * from "./upstoxAccount";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

@@ -1,5 +1,5 @@
 import { Controller, Get, HttpException, ServiceUnavailableException } from "@nestjs/common";
-import { parseUpstoxPositions, type OpenPosition } from "@drishti/shared";
+import { ACCOUNT_ACCESS_HINT, classifyAccountAccess, parseUpstoxPositions, type OpenPosition } from "@drishti/shared";
 import { Db } from "./db";
 
 const CACHE_MS = 5_000;
@@ -24,8 +24,10 @@ export class PositionsController {
       signal: AbortSignal.timeout(8000),
     }).catch(() => null);
     if (!res) throw new ServiceUnavailableException("Upstox unreachable");
-    if (res.status === 401 || res.status === 403)
-      throw new HttpException("Upstox refused to show positions: this token may be read-only for market data. Log in from Settings → Data feeds to grant portfolio access.", 403);
+    if (res.status === 401 || res.status === 403) {
+      const why = classifyAccountAccess(res.status, await res.json().catch(() => null));
+      throw new HttpException(ACCOUNT_ACCESS_HINT[why === "static_ip" ? "static_ip" : "token"], res.status);
+    }
     if (!res.ok) throw new ServiceUnavailableException(`Upstox ${res.status}`);
     const json: any = await res.json();
     const positions = parseUpstoxPositions(Array.isArray(json?.data) ? json.data : []);

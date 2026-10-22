@@ -79,6 +79,16 @@ Paper specs, in the agreed order. Nothing here is built. Evidence labels: **test
 **Acceptance.** `bun run smoke` gets an "account read access" check that skips cleanly when the IP is not registered; with access, a real fill appears in the journal within 5 seconds, and a day's charges match Upstox's report within Rs 1.
 **Size.** Medium to large; the first step is the owner's (registering the IP) and a 10-minute test of which endpoints answer.
 
+## Status (2026-10-22, end of the build)
+
+| Spec | State |
+|---|---|
+| 1 Costs from Upstox | **Built** and live-checked (`fdc1083`): brokerage Rs 30, contract test, `GET /costs/check`, panel button, smoke |
+| 4 Market status | **Built** and live-checked (`beab73b`) |
+| 2 Live option premiums over the WebSocket | **Built** and live-checked (`ff5a1dc`): streamed premium, depth, OI, IV and greeks; lag is measured on new trades only and needs a busy evening to read (`/health.options.lagP95Ms`); the trade block that will show it does not exist in the app yet |
+| 3 OI in candles and option candle recorder | **Built** (`9ce827f`, `6237826`): first run stored 119,937 candles for 64 contracts, identical to a fresh fetch; the first run that includes today's session (intraday endpoint) happens after tonight's close |
+| 5 Account reads | **Partly**: a status line and an accurate hint. **Blocked on the owner registering a static IP in the Upstox app**; the funds, trade journal, P&L reconciliation and Portfolio Stream wait for that |
+
 ## Not worth doing
 
 - **PCR, Max Pain, Change in OI, OI APIs for MCX**: PCR and Max Pain answer `data: null` for MCX. We compute these ourselves from the chain, and keep doing so.

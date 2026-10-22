@@ -150,6 +150,13 @@ await check("option candles: the recorder's status answers, bad reads are a 400,
   }
   return `${st.candles} candles for ${st.contracts} contracts; ${withOi} at-the-money candles with open interest on ${day}`;
 });
+await check("Upstox account access: the API says whether your account can be read, and never returns anything from the profile", async () => {
+  const a = await ok("/auth/upstox/account");
+  need(["ok", "static_ip", "token", "no_token", "unavailable"].includes(a.access), `unknown state ${a.access}`);
+  need(typeof a.hint === "string" && a.hint.length > 10, "no hint");
+  need(Object.keys(a).sort().join() === "access,hint", `extra fields: ${Object.keys(a)}`);
+  return a.access;
+});
 await check("server alerts: channels, create, list, delete (never fires, sends nothing)", async () => {
   const ch = await ok("/alerts/channels");
   need("telegram" in ch && "webhook" in ch, "channel status missing");
