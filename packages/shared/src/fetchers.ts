@@ -4,7 +4,6 @@ import { CHOKEPOINT_PORTNAME, parseTransits, type ChokepointId, type TransitDay 
 import { COT_DATASET, COT_MARKETS, parseCot, type CotMarketId, type CotRow } from "./cot";
 import { curveCodes, curveInstruments, parseCurve, type CurvePoint } from "./curve";
 import type { Fetcher } from "./fetcher";
-import { JODI_COUNTRIES, parseJodi, type JodiPoint } from "./jodi";
 import { userAgentFor } from "./userAgents";
 
 const HOUR = 3600_000;
@@ -85,30 +84,6 @@ export const curveFetcher: Fetcher<{ symbol: string }, unknown, CurvePoint[]> = 
   isUsable: (pts) => pts.length >= 2, // a curve needs two contracts
 };
 
-// ---- JODI Oil World (annual CSVs, keyless) -> JodiPoint[]
-const JODI_BASE = "https://www.jodidata.org/_resources/files/downloads/oil-data/annual-csv/primary";
-export const jodiFetcher: Fetcher<Record<string, never>, string[], JodiPoint[]> = {
-  id: "jodi",
-  label: "JODI Oil World",
-  website: "https://www.jodidata.org",
-  ttlMs: 12 * HOUR, // monthly data
-  key: () => "all",
-  async extract(_q, io) {
-    // the current year's file is primaryyear{Y}.csv and earlier years {Y}.csv: try both so a rename does not break us. Never the 285 MB all-world file.
-    const y = new Date(io.now()).getUTCFullYear();
-    const year = async (n: number) => {
-      for (const name of [`${n}`, `primaryyear${n}`]) {
-        const res = await io.fetch(`${JODI_BASE}/${name}.csv`, { signal: timeout(60_000) }).catch(() => null);
-        if (res?.ok) return res.text();
-      }
-      return "";
-    };
-    return Promise.all([year(y - 1), year(y)]);
-  },
-  transform: (texts) => texts.flatMap((t) => parseJodi(t, JODI_COUNTRIES.map((c) => c.code))),
-  isUsable: (points) => points.length > 0,
-};
-
 export type SourceRisk = "low" | "medium" | "high";
 
 export interface SourceInfo {
@@ -135,7 +110,6 @@ export const SOURCES: readonly SourceInfo[] = [
   { id: "yahoo", label: "Yahoo Finance", website: "https://finance.yahoo.com", kind: "NYMEX prices and history", credentials: [], fetcher: false, risk: "medium", fallback: "auto", note: "unofficial, 10 minutes delayed; its continuous history has roll jumps" },
   { id: "cftc-cot", label: "CFTC positioning", website: cotFetcher.website, kind: "weekly positioning", credentials: [], fetcher: "cftc-cot", risk: "low", fallback: "auto", note: "official government data" },
   { id: "imf-portwatch", label: "IMF PortWatch", website: chokepointFetcher.website, kind: "chokepoint transits", credentials: [], fetcher: "imf-portwatch", risk: "low", fallback: "auto", note: "official public dataset" },
-  { id: "jodi", label: "JODI Oil World", website: jodiFetcher.website, kind: "country oil balances", credentials: [], fetcher: "jodi", risk: "low", fallback: "auto", note: "official data; large downloads, so fetched rarely" },
   { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: false, risk: "low", fallback: "auto", note: "official API with a free key; the shared DEMO_KEY is never used" },
   { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official files" },
   { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official keyless CSV" },

@@ -12,7 +12,6 @@ import { BriefingFactsController } from "./briefing-facts.controller";
 import { CotController } from "./cot.controller";
 import { ChokepointsController } from "./chokepoints.controller";
 import { CurveController } from "./curve.controller";
-import { JodiController } from "./jodi.controller";
 import { EiaController } from "./eia.controller";
 import { CanaryController, CanaryService } from "./canary.controller";
 import { ServerAlertsController } from "./server-alerts.controller";
@@ -20,5 +19,5 @@ import { PositionsController } from "./positions.controller";
 import { InstrumentSync } from "./instruments.sync";
 import { AnalysisController } from "./analysis.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, JodiController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, InsiderController, CalendarController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync] })
 export class AppModule {}

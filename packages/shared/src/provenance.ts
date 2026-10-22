@@ -17,7 +17,7 @@ export interface Provenance {
 }
 
 /** What kind of data, for the freshness budget. */
-export type DataKind = "quote" | "bars" | "options" | "curve" | "calendar" | "news" | "positioning" | "inventory" | "spot" | "transits" | "balances";
+export type DataKind = "quote" | "bars" | "options" | "curve" | "calendar" | "news" | "positioning" | "inventory" | "spot" | "transits";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -35,7 +35,6 @@ export const FRESHNESS_BUDGET_MS: Record<DataKind, number> = {
   inventory: 14 * DAY, // EIA weekly: the week-ending Friday is 12 days old when the next report comes out on a Wednesday, plus slack
   spot: 10 * DAY, // EIA spot prices are published weekly and run up to a week behind
   transits: 14 * DAY, // PortWatch: weekly, a few days behind
-  balances: 270 * DAY, // JODI: countries report up to ~8 months late
 };
 
 export const withinBudget = (kind: DataKind, asOf: number, now: number) => now - asOf <= FRESHNESS_BUDGET_MS[kind];

@@ -25,7 +25,6 @@ test("freshness budgets: weekly reports tolerate their cadence, quotes do not", 
   expect(withinBudget("positioning", NOW - 10 * day, NOW)).toBe(true); // Tuesday data on the next Friday: due, not late
   expect(withinBudget("positioning", NOW - 13 * day, NOW)).toBe(false); // a missed release
   expect(withinBudget("inventory", NOW - 12 * day, NOW)).toBe(true); // week ending Friday 9 Oct, still the latest on release day 21 Oct
-  expect(withinBudget("balances", NOW - 200 * day, NOW)).toBe(true); // India reports about 6 months late
   expect(FRESHNESS_BUDGET_MS.inventory).toBe(14 * day);
 });
 

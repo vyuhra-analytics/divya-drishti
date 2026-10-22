@@ -18,8 +18,8 @@ test("data older than its budget is marked OUTDATED with how old it is and what 
   expect(badge.getAttribute("title")).toContain("no older than 12 days");
 });
 
-test("each kind has its own budget: India's JODI month is fine at 200 days, the same age fails for a weekly report", () => {
-  const { container } = render(<Outdated kind="balances" asOf={NOW - 200 * DAY} now={NOW} />);
+test("each kind has its own budget: a weekly report at 200 days is outdated, a transit count at 10 days is not", () => {
+  const { container } = render(<Outdated kind="transits" asOf={NOW - 10 * DAY} now={NOW} />);
   expect(container.textContent).toBe("");
   cleanup();
   render(<Outdated kind="inventory" asOf={NOW - 200 * DAY} now={NOW} />);

@@ -3,11 +3,10 @@
 import { parseWngsr, parseWpsr, parseFredCsv } from "./actuals";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
-import { chokepointFetcher, cotFetcher, curveFetcher, jodiFetcher } from "./fetchers";
+import { chokepointFetcher, cotFetcher, curveFetcher } from "./fetchers";
 import { parseEia } from "./eia";
 import type { shrink } from "./fixtures";
 import { parseYahooCandles } from "./index";
-import { summarizeJodi } from "./jodi";
 import { parseRss } from "./news";
 
 type ShrinkOpts = NonNullable<Parameters<typeof shrink>[1]>;
@@ -55,15 +54,6 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
     source: "tradingview",
     run: (io) => createRunner(io)(curveFetcher, { symbol: "NYMEX:CL" }).then((r) => r.data),
     check: (pts) => (pts.length >= 3 && pts.every((p: any) => num(p.price) && num(p.expiry)) ? undefined : "expected 3+ priced contracts"),
-  },
-  {
-    id: "jodi",
-    source: "jodi",
-    everyMs: 24 * 3600_000, // about 18 MB of CSV: once a day is enough
-    // the real files are ~12 MB: keep the header and the five countries' crude rows only
-    shrink: { keepLine: (l) => /^(IN|US|CN|SA|JP),[^,]*,CRUDEOIL,/.test(l) },
-    run: (io) => createRunner(io)(jodiFetcher, {}).then((r) => r.data),
-    check: (points) => (summarizeJodi(points, "US").some((s) => s.latest && s.flow === "REFINOBS") ? undefined : "expected US refinery intake"),
   },
   {
     id: "eia-wpsr-csv",

@@ -83,6 +83,32 @@ test("the app loads with the default workspace and no script errors", async ({ p
   assert(errors.length === 0, `script errors: ${errors.join(" | ")}`);
 });
 
+test("a layout saved before JODI was removed still loads: the JODI panel is dropped, the others stay, nothing crashes", async ({ context, page, errors }) => {
+  const w = (id: string, type: string) => ({ id, type, group: "amber", symbol: "MCX:CRUDEOIL", tf: "5m" });
+  const old = {
+    state: {
+      widgets: [w("quote-1", "quote"), w("jodi-1", "jodi"), w("watch-1", "watchlist")],
+      layout: [{ i: "quote-1", x: 0, y: 0, w: 4, h: 9 }, { i: "jodi-1", x: 4, y: 0, w: 4, h: 8 }, { i: "watch-1", x: 8, y: 0, w: 4, h: 7 }],
+      groups: { amber: "MCX:CRUDEOIL", blue: "NYMEX:CL", green: "MCX:NATURALGAS", red: "NYMEX:NG" },
+      focusedId: "jodi-1",
+      saved: {},
+      activeWorkspace: null,
+    },
+    version: 2,
+  };
+  const page2 = await context.newPage();
+  await page2.addInitScript((v) => localStorage.setItem("drishti-workspace", JSON.stringify(v)), old);
+  await page2.goto(WEB);
+  await page2.locator("h1").first().waitFor();
+  await page2.waitForTimeout(1500);
+  assert((await page2.locator(".react-grid-item").count()) === 2, "the layout should keep exactly the quote and the watchlist");
+  assert((await page2.locator(".jodi").count()) === 0, "a JODI panel is still on screen");
+  const kept = JSON.parse((await page2.evaluate(() => localStorage.getItem("drishti-workspace"))) ?? "{}");
+  assert(kept.version === 3 && !JSON.stringify(kept).includes("jodi"), "the stored layout still mentions JODI or was not migrated");
+  void page;
+  void errors;
+});
+
 test("the default chart and every watchlist row say where their price comes from; no simulated-prices banner on the live feed", async ({ page }) => {
   await page.waitForFunction(() => document.querySelectorAll(".watchlist .badge").length >= 6, undefined, { timeout: 20_000 });
   const rows = await page.locator(".watchlist .badge").allInnerTexts();
@@ -438,7 +464,6 @@ for (const [code, selector, text, name] of [
   ["COT", ".cot", "Managed money net", "cot"],
   ["CHK", ".chk", "Strait of Hormuz", "chokepoints"],
   ["CRV", ".curve", "Shape", "curve"],
-  ["JODI", ".jodi", "Crude oil", "jodi"],
   ["RCP", ".recap", "Built from fixed templates", "recap"],
   ["EIA", ".eia", "Crude stocks", "eia"],
 ] as const) {

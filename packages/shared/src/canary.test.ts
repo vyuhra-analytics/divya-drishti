@@ -43,11 +43,11 @@ test("a source needing a missing key is skipped with the reason, and runs once t
 test("the start-up table has one line per source", () => {
   const t = formatCanaryTable([
     { id: "cftc-cot", status: "ok", at: 0, ms: 812 },
-    { id: "jodi", status: "format", at: 0, ms: 5200, detail: "expected US refinery intake" },
+    { id: "yahoo-chart", status: "format", at: 0, ms: 5200, detail: "expected 20+ consistent 5m bars" },
   ]);
   const lines = t.split("\n");
   expect(lines).toHaveLength(3);
   expect(lines[1]).toContain("OK");
   expect(lines[2]).toContain("FORMAT");
-  expect(lines[2]).toContain("expected US refinery intake");
+  expect(lines[2]).toContain("expected 20+ consistent 5m bars");
 });

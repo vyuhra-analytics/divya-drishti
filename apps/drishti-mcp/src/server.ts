@@ -181,15 +181,6 @@ export function createServer(cfg: McpConfig) {
   );
 
   server.registerTool(
-    "get_jodi",
-    { description: "JODI monthly crude balance for one country: production, imports, exports, refinery intake and closing stocks, each with its latest reported month and the change on the month before and the year before. Countries report with a lag (India about six months).", inputSchema: { country: z.enum(["IN", "US", "CN", "SA", "JP"]).optional().describe("default IN") } },
-    async ({ country }) => {
-      const r = await call(cfg.api, `/jodi?country=${country ?? "IN"}`);
-      return r.ok ? ok(r.json) : err(r.error);
-    },
-  );
-
-  server.registerTool(
     "get_chokepoints",
     { description: "Tankers per day through an oil chokepoint (IMF PortWatch, a few days behind): the recent days, the 30-day average against the same days a year ago, and a normal, reduced or disrupted flag.", inputSchema: { id: z.enum(["hormuz", "babelmandeb", "suez", "malacca", "capegood", "bosporus"]).optional().describe("default hormuz"), days_shown: z.number().int().min(7).max(60).optional().describe("recent days to include (default 14)") } },
     async ({ id, days_shown }) => {

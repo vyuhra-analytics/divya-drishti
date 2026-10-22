@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chokepointFetcher, cotFetcher, curveFetcher, jodiFetcher, SOURCES } from "./fetchers";
+import { chokepointFetcher, cotFetcher, curveFetcher, SOURCES } from "./fetchers";
 import { createRunner, type FetchIO } from "./fetcher";
 
 /** a fake network keyed by URL substring: returns the recorded-style body for the first match, 404 otherwise */
@@ -48,15 +48,6 @@ test("curveFetcher posts the dated contract codes and needs two contracts", asyn
   expect(urls[0]).toContain("NYMEX:CLX2026"); // codes built from the injected clock: October 2026 onwards
   const one = net({ "scanner.tradingview.com": { data: [scan.data[0]] } });
   await expect(createRunner(one.io)(curveFetcher, { symbol: "NYMEX:CL" })).rejects.toThrow(/TradingView futures curve unavailable/);
-});
-
-test("jodiFetcher tries both file names for each year and keeps only our countries' crude rows", async () => {
-  const csv = "REF_AREA,TIME_PERIOD,ENERGY_PRODUCT,FLOW_BREAKDOWN,UNIT_MEASURE,OBS_VALUE,ASSESSMENT_CODE\nIN,2026-03,CRUDEOIL,REFINOBS,KBD,5568.6294,3\nFR,2026-03,CRUDEOIL,REFINOBS,KBD,1.0,1\n";
-  const { io, urls } = net({ "/2025.csv": csv.replace("2026-03", "2025-03"), "/primaryyear2026.csv": csv }); // 2026's file only under its current-year name
-  const { data } = await createRunner(io)(jodiFetcher, {});
-  expect(data.map((p) => `${p.country} ${p.month}`).sort()).toEqual(["IN 2025-03", "IN 2026-03"]);
-  expect(urls.some((u) => u.endsWith("/2026.csv"))).toBe(true); // tried the plain name first, then the current-year name
-  expect(urls.some((u) => u.endsWith("/primaryyear2026.csv"))).toBe(true);
 });
 
 test("every source in the registry names its credentials and any fetcher that serves it", () => {

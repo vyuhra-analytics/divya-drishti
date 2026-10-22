@@ -36,14 +36,14 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
   expect(await names(client)).toEqual([
-    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_futures_curve", "get_jodi", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
+    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
   ].sort());
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(22);
+  expect((await names(client)).length).toBe(21);
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {
@@ -248,13 +248,11 @@ test("the analysis tools read the API's computed views", async () => {
   expect(calls.at(-1)!.url).toBe("http://api.test/eia");
 });
 
-test("the option chain, JODI and chokepoint tools pass their choices through and keep results small", async () => {
+test("the option chain and chokepoint tools pass their choices through and keep results small", async () => {
   const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-09-${String(i + 1).padStart(2, "0")}`, tankers: 40 + i }));
-  const { call, calls } = await connect({}, respondWith({ "/options": { rows: [] }, "/jodi": { flows: [] }, "/chokepoints": { chokepoint: { id: "suez" }, summary: { flag: "normal" }, days, fetchedAt: 1 } }));
+  const { call, calls } = await connect({}, respondWith({ "/options": { rows: [] }, "/chokepoints": { chokepoint: { id: "suez" }, summary: { flag: "normal" }, days, fetchedAt: 1 } }));
   await call("get_option_chain", { underlying: "CRUDEOIL", expiry: "2026-11-17", strikes_each_side: 12 });
   expect(calls.at(-1)!.url).toBe("http://api.test/options?underlying=CRUDEOIL&strikes=12&expiry=2026-11-17");
-  await call("get_jodi", { country: "CN" });
-  expect(calls.at(-1)!.url).toBe("http://api.test/jodi?country=CN");
   const cp = JSON.parse((await call("get_chokepoints", { id: "suez", days_shown: 7 })).text);
   expect(cp.recentDays).toHaveLength(7);
   expect(cp.recentDays[6].tankers).toBe(69);
@@ -271,7 +269,6 @@ test("bad arguments to the new read tools are refused before any request", async
     ["get_bars", { symbol: "MCX:CRUDEOIL", timeframe: "2h" }],
     ["get_option_chain", { underlying: "GOLD" }],
     ["get_option_chain", { underlying: "CRUDEOIL", expiry: "17-11-2026" }],
-    ["get_jodi", { country: "RU" }],
     ["get_chokepoints", { id: "panama" }],
   ] as const) expect((await call(tool, args as never)).isError).toBe(true);
   expect(calls).toHaveLength(0);

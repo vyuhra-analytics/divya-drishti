@@ -36,7 +36,7 @@ test("withUserAgent adds the pool UA unless the caller set one", () => {
 });
 
 test("official data hosts get no browser User-Agent at all (FRED stalls on one)", () => {
-  for (const url of ["https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL", "https://ir.eia.gov/wpsr/table1.csv", "https://publicreporting.cftc.gov/resource/x.json", "https://www.jodidata.org/a.csv"]) {
+  for (const url of ["https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL", "https://ir.eia.gov/wpsr/table1.csv", "https://publicreporting.cftc.gov/resource/x.json"]) {
     const init = { signal: undefined };
     expect(withUserAgent(url, init)).toBe(init);
   }

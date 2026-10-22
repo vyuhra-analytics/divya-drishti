@@ -6,7 +6,7 @@ import { useSettings } from "./settings";
 import type { ChartType, Indicator } from "./Chart";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "jodi" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
+export type WidgetType = "chart" | "quote" | "watchlist" | "tv" | "news" | "heatmap" | "screener" | "options" | "insider" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -69,7 +69,6 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   cot: { w: 7, h: 17 },
   chokepoints: { w: 6, h: 16 },
   curve: { w: 6, h: 18 },
-  jodi: { w: 6, h: 14 },
   eia: { w: 6, h: 17 },
   recap: { w: 6, h: 12 },
   costs: { w: 6, h: 20 },
@@ -102,6 +101,26 @@ const symbolOf = (w: Widget, groups: Record<Group, string>) => (w.group ? groups
 
 const patch = (widgets: Widget[], id: string, change: Partial<Widget>) =>
   widgets.map((w) => (w.id === id ? { ...w, ...change } : w));
+
+/** Panel types that no longer exist. A saved layout that holds one loses just that panel (a panel type missing from the registry would crash the grid). */
+export const REMOVED_WIDGET_TYPES = ["jodi"];
+
+function withoutRemoved<T extends { widgets: Widget[]; layout: LayoutItem[]; focusedId: string | null }>(s: T): T {
+  const gone = new Set(s.widgets.filter((w) => REMOVED_WIDGET_TYPES.includes(w.type)).map((w) => w.id));
+  if (gone.size === 0) return s;
+  const widgets = s.widgets.filter((w) => !gone.has(w.id));
+  return { ...s, widgets, layout: s.layout.filter((l) => !gone.has(l.i)), focusedId: s.focusedId && gone.has(s.focusedId) ? (widgets[0]?.id ?? null) : s.focusedId };
+}
+
+/**
+ * Persisted layouts: version 2 is kept (minus removed panels, in the live layout and in every saved workspace); anything older is the equity mock
+ * layout and resets to the defaults.
+ */
+export function migrateWorkspace(persisted: any, version: number): any {
+  if (version !== 2 || !persisted || !Array.isArray(persisted.widgets) || !Array.isArray(persisted.layout)) return defaults();
+  const saved = Object.fromEntries(Object.entries(persisted.saved ?? {}).map(([name, snap]) => [name, withoutRemoved(snap as any)]));
+  return { ...withoutRemoved(persisted), saved };
+}
 
 export const useWorkspace = create<WorkspaceState>()(
   persist(
@@ -196,8 +215,8 @@ export const useWorkspace = create<WorkspaceState>()(
     }),
     {
       name: "drishti-workspace",
-      version: 2,
-      migrate: () => defaults(), // ponytail: any schema change resets the layout (v2: equity mocks → energy futures); write real migrations once layouts are worth keeping
+      version: 3,
+      migrate: migrateWorkspace,
       partialize: ({ widgets, layout, groups, focusedId, saved, activeWorkspace }) => ({ widgets, layout, groups, focusedId, saved, activeWorkspace }),
     },
   ),

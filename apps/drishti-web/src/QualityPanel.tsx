@@ -142,7 +142,7 @@ export function QualityWidget(_: { widget: Widget }) {
           </table>
         )}
         <p className="muted dq-note">
-          Each source's real parser runs against the live provider every hour (JODI daily). "Format changed" means the provider answered but its data no longer parses. Not checked: Upstox login, the Forex Factory calendar, SEC EDGAR and the AI service.
+          Each source's real parser runs against the live provider every hour. "Format changed" means the provider answered but its data no longer parses. Not checked: Upstox login, the Forex Factory calendar, SEC EDGAR and the AI service.
         </p>
       </div>
     </div>

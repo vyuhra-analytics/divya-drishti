@@ -83,7 +83,6 @@ await check("COT: WTI has 3 years of weekly rows", async () => {
 });
 await check("chokepoints: Hormuz summary", async () => need((await ok("/chokepoints?id=hormuz")).summary?.asOf, "no summary"));
 await check("curve: MCX crude has 2+ contracts", async () => need((await ok("/curve?symbol=MCX:CRUDEOIL")).points.length >= 2, "curve too short"));
-await check("JODI: India has reported flows", async () => need((await ok("/jodi?country=IN")).flows.some((f: any) => f.latest), "no India data"));
 await check("EIA: key set and series load", async () => {
   const r = await get("/eia");
   if (r.status === 503 && /EIA_API_KEY/.test(JSON.stringify(r.json))) throw new Error("SKIP: EIA_API_KEY not set");
@@ -138,7 +137,6 @@ for (const [name, path] of [
   ["COT weeks out of range", "/cot?market=wti&weeks=1"],
   ["unknown chokepoint", "/chokepoints?id=x"],
   ["unknown curve symbol", "/curve?symbol=x"],
-  ["unknown JODI country", "/jodi?country=ZZ"],
   ["calendar days out of range", "/calendar?days=999"],
 ] as const) {
   await check(`refuses: ${name}`, () => bad(path));

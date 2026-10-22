@@ -4,7 +4,7 @@ import { canaryInterval, FIXTURE_SAMPLES, formatCanaryTable, mapLimit, runCanary
 const HOUR = 3600_000;
 const HISTORY = 24; // results kept per source
 const FIRST_RUN_DELAY_MS = 4_000; // let the server finish starting before probing the internet
-const HEAVY_DELAY_MS = 10 * 60_000; // daily-sized downloads (JODI) do not run on every dev restart
+const HEAVY_DELAY_MS = 10 * 60_000; // daily-sized downloads do not run on every dev restart (there are none at the moment)
 
 /**
  * Source canaries: every few minutes to hours, each source's real code path runs against the live provider and is checked

@@ -45,7 +45,6 @@ export const OFFICIAL_HOSTS = [
   "api.eia.gov",
   "publicreporting.cftc.gov",
   "services9.arcgis.com",
-  "www.jodidata.org",
   "data.sec.gov",
   "www.sec.gov",
   "api.upstox.com",

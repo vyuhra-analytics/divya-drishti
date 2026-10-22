@@ -22,7 +22,7 @@ beforeEach(() => {
   const canaries = {
     canaries: [
       { id: "cftc-cot", status: "ok", at: now - 60_000, ms: 900, recent: [{ at: now - 60_000, status: "ok" }] },
-      { id: "jodi", status: "format", at: now - 120_000, ms: 5000, detail: "expected US refinery intake", recent: [{ at: now - 120_000, status: "format" }] },
+      { id: "yahoo-chart", status: "format", at: now - 120_000, ms: 5000, detail: "expected 20+ consistent 5m bars", recent: [{ at: now - 120_000, status: "format" }] },
       { id: "eia-v2-stocks", status: "skipped", at: now, ms: 0, detail: "set EIA_API_KEY", recent: [{ at: now, status: "skipped" }] },
     ],
     sources: [],
@@ -47,13 +47,13 @@ test("shows feed health, price agreement with a drift flag, and source checks wi
   expect(screen.getByText("DRIFTING")).toBeTruthy();
   expect(screen.getByText(/upstox 9483 \(shown\)/)).toBeTruthy();
 
-  await screen.findByText("jodi");
+  await screen.findByText("yahoo-chart");
   expect(screen.getByText(/FORMAT CHANGED/)).toBeTruthy();
-  expect(screen.getByText(/expected US refinery intake/)).toBeTruthy();
+  expect(screen.getByText(/expected 20\+ consistent 5m bars/)).toBeTruthy();
   expect(screen.getByText(/SKIPPED/)).toBeTruthy();
   const rows = screen.getAllByRole("row").map((r) => r.textContent ?? "");
   const idx = (id: string) => rows.findIndex((r) => r.startsWith(id));
-  expect(idx("jodi")).toBeLessThan(idx("cftc-cot")); // the failing source is listed before the healthy one
+  expect(idx("yahoo-chart")).toBeLessThan(idx("cftc-cot")); // the failing source is listed before the healthy one
 });
 
 test("says so when the stream is unreachable", async () => {

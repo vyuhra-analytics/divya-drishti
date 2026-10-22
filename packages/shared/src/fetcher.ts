@@ -2,7 +2,7 @@
 // tests live in one place instead of being rewritten in every controller. Shape borrowed from OpenBB's Fetcher (original code):
 //   key       the cache key, from an already validated query
 //   extract   the only step that touches the network or a key
-//   transform raw response -> our standard model (the shapes in cot.ts, curve.ts, jodi.ts ... are the standard models)
+//   transform raw response -> our standard model (the shapes in cot.ts, curve.ts ... are the standard models)
 // `fetch`, the environment and the clock are injected, so the same code runs against recorded responses in tests.
 import { LruCache } from "./lru";
 import { withUserAgent } from "./userAgents";

@@ -5,7 +5,6 @@ import { ChokepointsController } from "./chokepoints.controller";
 import { CotController } from "./cot.controller";
 import { CurveController } from "./curve.controller";
 import { EiaController } from "./eia.controller";
-import { JodiController } from "./jodi.controller";
 import { MarketController } from "./market.controller";
 
 // Every endpoint refuses bad input with a 400 BEFORE it touches the network or the database; the live smoke test (bun run smoke)
@@ -36,11 +35,6 @@ test("curve: only our instruments", async () => {
   const c = new CurveController();
   expect((await refused(() => c.curve("DOGE"))).message).toMatch(/symbol must be one of/);
   await refused(() => c.curve("MCX:CRUDEOIL; DROP TABLE"));
-});
-
-test("JODI: only the five countries", async () => {
-  await refused(() => new JodiController().jodi("ZZ"));
-  await refused(() => new JodiController().jodi("us")); // case matters: no loose matching
 });
 
 test("calendar: days must be a whole number from 1 to 60", async () => {
