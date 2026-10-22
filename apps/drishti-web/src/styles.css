@@ -135,14 +135,6 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
   .sidebar.mobile-open { display: flex; position: absolute; z-index: 20; top: 36px; bottom: 24px; left: 0; width: 200px; box-shadow: 4px 0 16px rgb(0 0 0 / 0.3); }
   .sidebar.mobile-open.collapsed { width: 200px; }
 }
-.heatmap { padding: 6px 8px; overflow-y: auto; }
-.heat-group h2 { margin: 8px 0 4px; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
-.heat-tiles { display: flex; flex-wrap: wrap; gap: 3px; }
-.heat-tile { flex-basis: 96px; min-height: 52px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 6px; text-align: center; border-radius: 4px; border: 1px solid transparent; color: var(--text); }
-.heat-tile:hover { border-color: var(--text); }
-.heat-tile.ours { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
-.heat-tile .name { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.heat-tile .pct { font-size: 12px; }
 .screener { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .screener-scroll { flex: 1; min-height: 0; overflow: auto; }
 .screener table { width: 100%; border-collapse: collapse; }

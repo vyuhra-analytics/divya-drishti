@@ -27,7 +27,7 @@ Desks: **Evening** (the one-monitor trading screens, see `EIA_SCREENS.md`) and *
 | DQ | Data quality | Research desk | Feed health stays visible as one line in the status bar. |
 | GS | Simple chart | **Cut, deleted** | Duplicate of GP. |
 | OC | Option chain (compact) | **Cut, deleted** | Duplicate of OCX. |
-| HM | Energy heatmap | **Cut** | Not used by either strategy. |
+| HM | Energy heatmap | **Cut, deleted** | Not used by either strategy. |
 | SCR | Energy screener | **Cut** | Not used by either strategy. |
 | INS | Insider trades | **Cut, deleted** | Not used by either strategy. |
 | (ticker tape) | Ticker tape | **Cut, deleted** | A scrolling strip is noise on a one-monitor trading screen. |

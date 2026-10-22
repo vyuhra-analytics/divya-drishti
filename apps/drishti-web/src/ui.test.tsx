@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import type { NewsItem } from "@drishti/shared";
 import { PanelBoundary } from "./PanelBoundary";
 import { NewsWidget } from "./NewsWidget";
-import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
+import { ScreenerWidget } from "./EnergyPanels";
 import { Palette } from "./Palette";
 import { useStore } from "./store";
 import { useWorkspace, type Widget } from "./workspace";
@@ -53,11 +53,7 @@ test("NewsWidget filters by tag and by search text", () => {
   expect(screen.getByText("Henry Hub gas climbs")).toBeTruthy();
 });
 
-test("Heatmap renders a tile per energy ticker; Screener sorts by column", () => {
-  render(<HeatmapWidget widget={widget("heatmap")} />);
-  expect(document.querySelectorAll(".heat-tile").length).toBeGreaterThan(20);
-  cleanup();
-
+test("Screener sorts by column", () => {
   useStore.setState({ universe: { "NYMEX:CL1!": { price: 90, changePct: 1 }, "NYMEX:NG1!": { price: 3, changePct: -2 } } as never });
   render(<ScreenerWidget widget={widget("screener")} />);
   const rows = () => [...document.querySelectorAll(".screener tbody tr")].map((r) => r.querySelector("td")!.textContent);
@@ -71,7 +67,7 @@ test("Palette runs a command and closes", () => {
   const before = useWorkspace.getState().widgets.length;
   render(<Palette />);
   const input = screen.getByRole("textbox");
-  fireEvent.change(input, { target: { value: "HM" } });
+  fireEvent.change(input, { target: { value: "CAL" } });
   fireEvent.keyDown(input, { key: "Enter" });
   expect(useWorkspace.getState().widgets.length).toBe(before + 1);
   expect(useWorkspace.getState().paletteOpen).toBe(false);

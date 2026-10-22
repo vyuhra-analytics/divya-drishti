@@ -20,6 +20,7 @@ test("JODI is one of the removed panel types", () => {
   expect(REMOVED_WIDGET_TYPES).toContain("insider");
   expect(REMOVED_WIDGET_TYPES).toContain("options");
   expect(REMOVED_WIDGET_TYPES).toContain("chart");
+  expect(REMOVED_WIDGET_TYPES).toContain("heatmap");
 });
 
 test("a saved layout that held a removed panel loses only that panel, not the whole layout", () => {

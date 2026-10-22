@@ -1,7 +1,7 @@
 import { daysToExpiry, describeProvenance, instrument, quoteProvenance, SYMBOLS, type Quote } from "@drishti/shared";
 import type { ComponentType } from "react";
 import { TvWidget } from "./TvWidget";
-import { HeatmapWidget, ScreenerWidget } from "./EnergyPanels";
+import { ScreenerWidget } from "./EnergyPanels";
 import { CalendarWidget } from "./CalendarPanel";
 import { AlertsWidget } from "./AlertsPanel";
 import { AdvancedChartWidget } from "./AdvancedChart";
@@ -192,7 +192,6 @@ export const WIDGETS: Record<
   watchlist: { title: "Watchlist", component: WatchlistWidget, linked: true, showSymbol: false },
   tv: { title: "Live TV", component: TvWidget, linked: false, showSymbol: false },
   news: { title: "News", component: NewsWidget, linked: true, showSymbol: false },
-  heatmap: { title: "Energy Heatmap", component: HeatmapWidget, linked: false, showSymbol: false },
   screener: { title: "Energy Screener", component: ScreenerWidget, linked: false, showSymbol: false },
   calendar: { title: "Energy Calendar", component: CalendarWidget, linked: false, showSymbol: false },
   alerts: { title: "Alerts", component: AlertsWidget, linked: false, showSymbol: false },

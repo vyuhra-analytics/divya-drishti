@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { UNIVERSE_GROUPS, type UniverseGroup } from "@drishti/shared";
-import { heatColor, useUniverse, type UniverseView } from "./universe";
+import { useUniverse, type UniverseView } from "./universe";
 import { makeFormat, useSettings } from "./settings";
 import { useWorkspace, type Widget } from "./workspace";
 
@@ -21,40 +21,6 @@ function useOpen() {
     const target = widgets.find((w) => w.id === focusedId) ?? widgets[0];
     if (target) loadSymbol(target.id, row.symbol);
   };
-}
-
-/** Energy heatmap: one block per group, tiles sized by market cap (equal for futures/FX), coloured by % change. */
-export function HeatmapWidget(_: { widget: Widget }) {
-  const rows = useUniverse();
-  const open = useOpen();
-  const locale = useSettings((s) => s.locale);
-  return (
-    <div className="heatmap">
-      {UNIVERSE_GROUPS.map((g) => {
-        const items = rows.filter((r) => r.group === g);
-        const weight = (r: UniverseView) => (r.marketCap ? Math.max(1, Math.log10(r.marketCap) - 8) : 2); // mcap in log steps: no tile dwarfs the rest
-        return (
-          <section key={g} className="heat-group">
-            <h2>{g}</h2>
-            <div className="heat-tiles">
-              {items.map((r) => (
-                <button
-                  key={r.tv}
-                  className={r.symbol ? "heat-tile ours" : "heat-tile"}
-                  style={{ background: heatColor(r.changePct), flexGrow: weight(r) }}
-                  onClick={() => open(r)}
-                  title={`${r.name}: ${priceText(locale, r.price)} ${r.currency} · ${pctText(r.changePct)} · ${delayText(r.delayedBy)}`}
-                >
-                  <span className="name">{r.name}</span>
-                  <span className="pct">{pctText(r.changePct)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
 }
 
 type SortKey = "name" | "price" | "changePct" | "volume" | "range52";
