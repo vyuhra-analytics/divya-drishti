@@ -89,6 +89,14 @@ Paper specs, in the agreed order. Nothing here is built. Evidence labels: **test
 | 3 OI in candles and option candle recorder | **Built** (`9ce827f`, `6237826`): first run stored 119,937 candles for 64 contracts, identical to a fresh fetch; the first run that includes today's session (intraday endpoint) happens after tonight's close |
 | 5 Account reads | **Partly**: a status line and an accurate hint. **Blocked on the owner registering a static IP in the Upstox app**; the funds, trade journal, P&L reconciliation and Portfolio Stream wait for that |
 
+## Static IP: what it limits (researched 2026-10-22, from Upstox's own pages; the login-token reading is untested)
+
+- **Analytics token** (what `.env` holds, read-only, valid 1 year, one per account): no static IP needed for WebSocket (the live feed), Market Quote, Historical Data, Option Chain, Market Information, Charges, Margins. Static IP needed for User, Orders, Portfolio, Trade P&L, Payments, GTT. It can never place orders.
+- **Registering or changing the IP** is per account (all apps), once per calendar week, one primary and one optional secondary, and **invalidates existing access tokens**; the docs do not say whether that includes the Analytics token, so register outside MCX hours with a new token ready (generate, paste into `.env`, restart).
+- **A dynamic home IP** would break the restricted endpoints and could not be changed for a week; the feed would be unaffected.
+- **Reading of the SEBI notice:** the IP rule applies to order placement; holdings, positions, funds and historical candles are named as not restricted, so a normal **login token** probably reads the account from any IP. To test: Settings -> Data feeds -> Connect Upstox after the close, then `GET /auth/upstox/account` (the app prefers the login token over `.env`). If it says `ok`, the journal, funds and P&L reads need no registered IP.
+- **Order placement** (later, gated) needs a login token and a registered IP.
+
 ## Not worth doing
 
 - **PCR, Max Pain, Change in OI, OI APIs for MCX**: PCR and Max Pain answer `data: null` for MCX. We compute these ourselves from the chain, and keep doing so.
