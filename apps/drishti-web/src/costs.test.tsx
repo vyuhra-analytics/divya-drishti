@@ -91,7 +91,7 @@ test("choosing Zerodha loads its rates (Rs 20 capped at 0.03% on futures) and hi
   pick("kotakneo");
   expect(brokerageBox().value).toBe("10");
   expect(screen.getAllByText(/UNVERIFIED: not confirmed for MCX/).length).toBeGreaterThan(0);
-  expect(screen.getByText(/Check kotakneo\.com and a contract note/)).toBeTruthy();
+  expect(screen.getByText(/Check the charges PDF and a contract note/)).toBeTruthy();
 });
 
 test("editing any rate makes the rates Custom, and picking a broker again restores its published rates", () => {
