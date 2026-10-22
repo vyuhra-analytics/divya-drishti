@@ -66,9 +66,9 @@ export const BROKERS: BrokerProfile[] = [
       return kotak();
     },
     verification: "unverified",
-    source: "third-party comparison sites list a flat Rs 10 per order for MCX futures and options; no official Kotak Neo tariff was found",
+    source: "kotakneo.com/pricing: Rs 10 per order for F&O carry-forward, and Rs 10 or 0.05% (whichever is lower) intraday, on Trade Free Youth, Trade Free and Trade Free Pro; the page does not name MCX",
     checkedOn: "2026-10-22",
-    note: "The sites disagree on which plans include commodities (one marks them unavailable on the base plan, one shows Rs 10 only on the Youth and Pro plans, one a Rs 249 monthly fee on Pro), and Kotak's own FAQ shows older exchange charges. Check kotakneo.com and a contract note before relying on it.",
+    note: "The official kotakneo.com page lists F&O rates but does not say they apply to MCX commodities, and shows no exchange or statutory charges (it only links a charges PDF), so those are the MCX schedule our other profiles use. At crude lot sizes 0.05% of turnover is above Rs 10, so the flat Rs 10 is what applies. Check the charges PDF and a contract note before relying on it.",
   },
   {
     id: "custom",

@@ -90,7 +90,7 @@ test("choosing Zerodha loads its rates (Rs 20 capped at 0.03% on futures) and hi
   expect(screen.queryByText("Check with Upstox", { exact: false })).toBeNull(); // that check compares with Upstox's calculation, not Zerodha's
   pick("kotakneo");
   expect(brokerageBox().value).toBe("10");
-  expect(screen.getAllByText(/UNVERIFIED: third-party sites only/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/UNVERIFIED: not confirmed for MCX/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Check kotakneo\.com and a contract note/)).toBeTruthy();
 });
 

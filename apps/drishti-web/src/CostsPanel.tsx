@@ -36,7 +36,7 @@ const RATE_FIELDS: [keyof CostRates, string, string][] = [
 const VERIFICATION: Record<Verification, string> = {
   api: "checked against the broker's own calculation",
   published: "from the broker's published pricing",
-  unverified: "UNVERIFIED: third-party sites only",
+  unverified: "UNVERIFIED: not confirmed for MCX",
   custom: "your own rates",
 };
 
