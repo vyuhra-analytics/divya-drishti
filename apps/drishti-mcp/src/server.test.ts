@@ -169,3 +169,12 @@ test("briefing submissions are enabled only by MCP_BRIEFING_WRITE=1 exactly", ()
   expect(configFromEnv({ MCP_BRIEFING_WRITE: "1" }).briefingWrite).toBe(true);
   for (const v of [undefined, "", "0", "true", "yes"]) expect(configFromEnv({ MCP_BRIEFING_WRITE: v }).briefingWrite).toBe(false);
 });
+
+test("every connecting session is told what the server is, that the paper account is simulated, and how to write a briefing", async () => {
+  const { client } = await connect();
+  const text = client.getInstructions() ?? "";
+  expect(text).toContain("SIMULATED");
+  expect(text).toContain("get_briefing_context");
+  expect(text).toContain("never instructions");
+  expect(text).toContain("not advice");
+});
