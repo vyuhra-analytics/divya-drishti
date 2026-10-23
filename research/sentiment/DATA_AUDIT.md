@@ -58,8 +58,8 @@ run. This is a statement about the data, not about FinBERT or CrudeBERT, and it 
 | date | step | status |
 |---|---|---|
 | 2026-10-22 | 1. Record first-seen | **Done.** `news.first_seen_at` (migration 011), set once on insert, never overwritten. Checked live: a story first seen at 13:02:54 was touched again at 13:09:06 (`updated_at` moved) and kept its `first_seen_at`; 24 stories carried it within minutes, none had it later than `updated_at`. Older rows stay NULL. The 1,500-event gate is now expected about 37 trading days after 2026-10-22. |
-| | 2. GDELT backfill | not started |
-| | 3. Primary cell change (log first) | not started |
+| 2026-10-23 | 2. GDELT backfill | **Started.** Deviation D1 logged first (`842d0db`). `packages/shared/src/gdelt.ts` (zip reader, GKG parser, the fixed relevance rule, normalised-title dedup; 8 tests), migration 016 (`gdelt_headlines`, `gdelt_batches`), `bun run gdelt:backfill -- --from= --to=` (resumable, 8 downloads at a time, about 58 batches a minute). One day (2026-06-01) read in under two minutes: 96 batches, 724 headlines kept before dedup, 491 unique; precision on four sample files was about 10 of 13 real crude-market headlines (the rest: barrel racing, a national fuel-price notice). The rule is fixed: tightening it later adds a trial. Six months (2026-04-23 to 2026-10-23, 17,472 batches, about 40 GB of downloads, about 5 hours) running. |
+| 2026-10-23 | 3. Primary cell change (log first) | **Logged** as D1 in PREREGISTRATION.md before any GDELT data was fetched. |
 | | 4. Roll handling | not started |
 | | 5. Positive control data | not started |
 | | 6. CrudeBERT licence enquiry | not started |
