@@ -5,7 +5,7 @@ import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
+export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -61,6 +61,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   curve: { w: 6, h: 18 },
   eia: { w: 6, h: 17 },
   eiareport: { w: 6, h: 22 },
+  drivers: { w: 3, h: 14 },
   recap: { w: 6, h: 12 },
   costs: { w: 6, h: 20 },
   backtest: { w: 7, h: 26 },

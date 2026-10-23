@@ -207,6 +207,14 @@ export function todayEvents(events: CalEvent[], now: number, focus: TodayFocus =
     .sort((a, b) => a.at - b.at);
 }
 
+/** The first event after `now` that matters for the focus, however far off: what to say when Today is empty. Holidays are skipped. */
+export function nextRelevant(events: CalEvent[], now: number, focus: TodayFocus = "crude", bigOnly = false): CalEvent | undefined {
+  const tags = TODAY_FOCUS[focus];
+  return events
+    .filter((e) => e.kind !== "holiday" && e.at > now && (!bigOnly || e.impact !== "low") && (!tags || (e.relevance ?? []).some((t) => (tags as readonly string[]).includes(t))))
+    .sort((a, b) => a.at - b.at)[0];
+}
+
 export function decorateEvents(events: CalEvent[]): CalEvent[] {
   return events.map((e) => {
     const d = decorateOne(e);

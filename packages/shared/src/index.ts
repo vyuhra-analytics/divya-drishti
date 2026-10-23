@@ -351,6 +351,7 @@ export * from "./eiaWatch";
 export * from "./eiaAnalysis";
 export * from "./calendarSources";
 export * from "./eiaSchedule";
+export * from "./drivers";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

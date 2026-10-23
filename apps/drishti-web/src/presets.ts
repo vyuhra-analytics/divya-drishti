@@ -43,12 +43,13 @@ export const PRESETS: Preset[] = [
   {
     key: "evening",
     name: "Evening",
-    hint: "The evening session: the future's 5-minute chart, quote, the next release, and the options chain under them",
+    hint: "The crude evening: the MCX 5-minute chart, what drives it (NYMEX CL and USD/INR), the quote, what is coming that moves crude or the rupee, and the options chain under them",
     build: () =>
       snapshot("evening", [
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 17],
-        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 8, 0, 4, 8],
-        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 8, 8, 4, 9],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 6, 17],
+        ["drivers-1", "drivers", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 3, 17],
+        ["quote-1", "quote", "amber", "MCX:CRUDEOIL", "5m", 9, 0, 3, 8],
+        ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 9, 8, 3, 9],
         ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 17, 12, 11],
       ]),
   },

@@ -100,7 +100,7 @@ describe("previous figures of the EIA reports from our own record", () => {
   });
 });
 
-import { relevanceOf, todayEvents } from "./calendar";
+import { nextRelevant, relevanceOf, todayEvents } from "./calendar";
 
 describe("what an event moves, and the Today list", () => {
   const now = Date.UTC(2026, 9, 28, 14, 0);
@@ -135,6 +135,13 @@ describe("what an event moves, and the Today list", () => {
     expect(ids).not.toContain("eia-gas-3"); // gas storage is not a crude event
     expect(ids).not.toContain("eia-oil-8");
     expect(ids).not.toContain("eia-oil-9");
+  });
+
+  it("when Today is empty, the next relevant event however far off", () => {
+    const far = decorateEvents([ev("eia-oil-20", { at: now + 5 * 86_400_000 }), ev("eia-gas-21", { at: now + 2 * 86_400_000 }), ev("mcx-2026-10-30", { kind: "holiday", at: now + 86_400_000 })]);
+    expect(nextRelevant(far, now, "crude")!.id).toBe("eia-oil-20"); // gas is not crude, a holiday is not a release
+    expect(nextRelevant(far, now, "gas")!.id).toBe("eia-gas-21");
+    expect(nextRelevant(far, now + 6 * 86_400_000, "crude")).toBeUndefined();
   });
 
   it("Today for gas and for everything, and the High + Med switch", () => {

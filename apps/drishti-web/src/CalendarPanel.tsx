@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { releasePending, todayEvents, type CalEvent, type CalKind, type TodayFocus } from "@drishti/shared";
+import { nextRelevant, releasePending, todayEvents, type CalEvent, type CalKind, type TodayFocus } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useNow } from "./market";
@@ -200,7 +200,15 @@ function LiveCalendar({ kind, bigOnly, focus }: { kind: CalKind | "today"; bigOn
     <>
       {error && <p className="down" title={error}>stale: {error}</p>}
       <div className="calendar-list" tabIndex={0} role="region" aria-label="Calendar events">
-        {days.length === 0 && <p className="empty muted">Nothing scheduled.</p>}
+        {days.length === 0 && (
+          <p className="empty muted">
+            {kind === "today" ? "Nothing in the next 24 hours that moves this." : "Nothing scheduled."}
+            {kind === "today" && (() => {
+              const next = nextRelevant(events, now, focus, bigOnly);
+              return next ? ` Next: ${next.title}, ${dayLabel(next.at, locale)} ${clock.time(next.at)} (${until(next.at, now)}).` : "";
+            })()}
+          </p>
+        )}
         {days.map(([day, list]) => (
           <section key={day}>
             <div className="cal-day">

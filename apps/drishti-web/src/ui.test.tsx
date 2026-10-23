@@ -245,6 +245,32 @@ test("CalendarWidget opens on Today: the next 24 hours of what moves crude, with
   expect(screen.getByText("BoJ rate")).toBeTruthy();
 });
 
+test("DriversWidget shows the NYMEX and rupee legs with the delay, the fair value, the premium and the split of the day move", async () => {
+  const q = (symbol: string, price: number, prevClose: number, delayedBy = 0) => ({ symbol, price, prevClose, time: Date.now(), source: "tradingview", delayedBy });
+  useStore.setState({ quotes: { "MCX:CRUDEOIL": q("MCX:CRUDEOIL", 9600, 9500) as never, "NYMEX:CL": q("NYMEX:CL", 101, 100, 600) as never, "FX:USDINR": q("FX:USDINR", 95.2, 95) as never } });
+  const times = Array.from({ length: 40 }, (_, i) => 1000 + i * 300);
+  globalThis.fetch = mock(async (url: string) => {
+    const close = String(url).includes("MCX") ? 9500 : String(url).includes("NYMEX") ? 100 : 95;
+    return { ok: true, status: 200, json: async () => times.map((time) => ({ time, open: close, high: close, low: close, close, volume: 0 })) };
+  }) as never;
+  const { DriversWidget } = require("./DriversPanel") as typeof import("./DriversPanel");
+  render(<DriversWidget widget={{ ...widget("drivers"), symbol: "MCX:CRUDEOIL" }} />);
+  expect(screen.getByText("MCX MCX:CRUDEOIL".replace("MCX MCX:", "MCX "))).toBeTruthy();
+  expect(screen.getByText("10 min late")).toBeTruthy(); // the free NYMEX feed
+  expect(screen.getByText("9,615")).toBeTruthy(); // 101 x 95.2
+  expect(document.querySelector(".drv-fair")!.textContent).toContain("-15 (-0.16%)"); // MCX 9600 against 9615.2
+  expect(document.querySelector(".drv-split")!.textContent).toContain("+1.05%");
+  expect(document.querySelector(".drv-split")!.textContent).toMatch(/NYMEX\+1\.00.*Rupee\+0\.21.*Premium-0\.16/);
+  expect(await screen.findByText(/now higher than \d+% of the last 40 bars/)).toBeTruthy();
+  expect(document.body.textContent).toContain("NYMEX is 10 minutes late");
+});
+
+test("DriversWidget explains itself on a symbol it does not cover", () => {
+  const { DriversWidget } = require("./DriversPanel") as typeof import("./DriversPanel");
+  render(<DriversWidget widget={{ ...widget("drivers"), symbol: "NYMEX:CL" }} />);
+  expect(screen.getByText(/four MCX energy futures/)).toBeTruthy();
+});
+
 test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {
   const row = (seriesId: string, table: string, label: string, value: number, change: number, extra: object = {}) => ({ seriesId, report: "WPSR", table, group: "", parent: "", label, unit: "million barrels", seq: 0, periodEnd: 0, value, prior: value - change, change, headline: false, ...extra });
   const body = {
