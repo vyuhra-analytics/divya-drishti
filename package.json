@@ -15,6 +15,7 @@
     "db:clean": "bun scripts/db-clean.ts",
     "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
     "gdelt:backfill": "bun --env-file=.env scripts/gdelt-backfill.ts",
+    "cl:history": "bun --env-file=.env scripts/cl-history.ts",
     "fixtures:upstox-charges": "bun --env-file=.env scripts/upstox-charges-fixture.ts",
     "e2e": "bun e2e/run.ts",
     "smoke": "bun scripts/smoke.ts"
