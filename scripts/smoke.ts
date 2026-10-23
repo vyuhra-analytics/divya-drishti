@@ -210,6 +210,13 @@ await check("refuses: a typed-in forecast that is not a figure, a kind that is n
   need((await post("1", { kind: "actual", text: "3" })).status === 400, "an actual was accepted");
   need((await post("999999999", { kind: "forecast", text: "3" })).status === 404, "an unknown event was accepted");
 });
+await check("refuses: a bad label, a bad labeler and an unknown headline (nothing stored)", async () => {
+  const post = (body: unknown) => get("/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  need((await post({ sampleId: 1, labeler: "smoke", label: "great" })).status === 400, "a made-up label was accepted");
+  need((await post({ sampleId: 1, labeler: "bad name", label: "bullish" })).status === 400, "a bad labeler name was accepted");
+  need((await post({ sampleId: 999999999, labeler: "smoke", label: "bullish" })).status === 404, "an unknown headline was accepted");
+  need((await get("/labels/next?labeler=bad%20name")).status === 400, "a bad labeler name was accepted for next");
+});
 await check("refuses: a malformed server alert", async () => {
   const r = await get("/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "price", symbol: "DOGE", op: "above", value: 1 }) });
   need(r.status === 400, `HTTP ${r.status}`);

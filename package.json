@@ -16,6 +16,7 @@
     "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
     "gdelt:backfill": "bun --env-file=.env scripts/gdelt-backfill.ts",
     "cl:history": "bun --env-file=.env scripts/cl-history.ts",
+    "gold:sample": "bun --env-file=.env research/sentiment/make-gold-sample.ts",
     "fixtures:upstox-charges": "bun --env-file=.env scripts/upstox-charges-fixture.ts",
     "e2e": "bun e2e/run.ts",
     "smoke": "bun scripts/smoke.ts"

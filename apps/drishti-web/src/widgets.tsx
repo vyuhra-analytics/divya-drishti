@@ -10,6 +10,7 @@ import { ChokepointsWidget } from "./ChokepointsPanel";
 import { CurveWidget } from "./CurvePanel";
 import { EiaWidget } from "./EiaPanel";
 import { DriversWidget } from "./DriversPanel";
+import { LabelWidget } from "./LabelPanel";
 import { EiaReportWidget } from "./EiaReportPanel";
 import { RecapWidget } from "./RecapPanel";
 import { CostsWidget } from "./CostsPanel";
@@ -202,6 +203,7 @@ export const WIDGETS: Record<
   eia: { title: "EIA petroleum data", component: EiaWidget, linked: false, showSymbol: false },
   eiareport: { title: "EIA Report", component: EiaReportWidget, linked: false, showSymbol: false },
   drivers: { title: "Drivers", component: DriversWidget, linked: true, showSymbol: true },
+  labels: { title: "Label headlines", component: LabelWidget, linked: false, showSymbol: false },
   recap: { title: "Energy recap", component: RecapWidget, linked: true, showSymbol: true },
   costs: { title: "Costs and size", component: CostsWidget, linked: true, showSymbol: true },
   backtest: { title: "Strategy tester", component: BacktestWidget, linked: true, showSymbol: true },

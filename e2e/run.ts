@@ -490,6 +490,7 @@ for (const [code, selector, text, name] of [
   ["EIA", ".eia", "Crude stocks", "eia"],
   ["ER", ".eia-report", "Surprise vs forecast", "eia report"],
   ["DRV", ".drivers", "Fair value", "drivers"],
+  ["LBL", ".labeller", "Label what the headline implies", "label headlines"],
 ] as const) {
   test(`${name} panel renders real data`, async ({ page }) => {
     const root = await openPanel(page, code, selector);

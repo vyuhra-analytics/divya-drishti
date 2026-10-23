@@ -637,3 +637,21 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .drv-bar { position: relative; height: 8px; background: var(--hover); border-radius: 2px; }
 .drv-bar i { position: absolute; top: 0; bottom: 0; background: var(--up); border-radius: 2px; }
 .drv-bar i.down { background: var(--down); }
+.labeller { padding: 10px 14px; height: 100%; overflow: auto; outline: none; }
+.labeller:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.lb-progress { position: relative; height: 18px; background: var(--hover); border-radius: 3px; overflow: hidden; margin-bottom: 14px; }
+.lb-progress i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.lb-progress span { position: relative; padding: 0 8px; font-size: 11px; line-height: 18px; }
+.lb-title { margin: 6px 0 4px; font-size: 18px; line-height: 1.4; font-weight: 600; }
+.lb-outlet { margin: 0 0 14px; font-size: 11px; }
+.lb-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lb-buttons button { text-align: left; padding: 10px 12px; font-size: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.lb-buttons button small { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
+.lb-bullish { border-left: 3px solid var(--up) !important; }
+.lb-bearish { border-left: 3px solid var(--down) !important; }
+.lb-neutral { border-left: 3px solid var(--muted) !important; }
+.lb-not_crude { border-left: 3px solid var(--line) !important; }
+.lb-move { display: block; margin: 12px 0 8px; font-size: 12px; }
+.lb-extra { display: flex; gap: 8px; margin-bottom: 10px; }
+.lb-rule { font-size: 10px; line-height: 1.5; }
+.labeller kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin-right: 4px; font-size: 11px; text-align: center; border: 1px solid var(--line); border-radius: 3px; }

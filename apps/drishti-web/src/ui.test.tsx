@@ -271,6 +271,35 @@ test("DriversWidget explains itself on a symbol it does not cover", () => {
   expect(screen.getByText(/four MCX energy futures/)).toBeTruthy();
 });
 
+test("LabelWidget shows one headline, labels it from the keyboard, flags a reported move, takes the last label back and skips", async () => {
+  const items = [{ id: 1, title: "Oil jumps as tankers are attacked", outlet: "Reuters" }, { id: 2, title: "OPEC secretary general to speak", outlet: "Bloomberg" }];
+  let next = 0;
+  const calls: [string, RequestInit | undefined][] = [];
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    calls.push([String(url), init]);
+    if (init?.method === "POST") next++;
+    if (init?.method === "DELETE") next = 0;
+    return { ok: true, status: 200, json: async () => ({ item: items[next] ?? null, total: 2, done: next }) };
+  }) as never;
+  const { LabelWidget } = require("./LabelPanel") as typeof import("./LabelPanel");
+  render(<LabelWidget widget={widget("labels")} />);
+  expect(await screen.findByText("Oil jumps as tankers are attacked")).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/lexicon|score|\d{4}-\d{2}-\d{2}/i); // no model score and no date is shown to the labeler
+  const box = screen.getByRole("region");
+  fireEvent.keyDown(box, { key: "m" });
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+  fireEvent.keyDown(box, { key: "1" }); // bullish, with the flag
+  expect(await screen.findByText("OPEC secretary general to speak")).toBeTruthy();
+  const post = calls.find(([, i]) => i?.method === "POST")!;
+  expect(JSON.parse(post[1]!.body as string)).toEqual({ sampleId: 1, labeler: "owner", label: "bullish", afterMove: true });
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false); // the flag does not carry over
+  fireEvent.keyDown(box, { key: "u" }); // take it back
+  expect(await screen.findByText("Oil jumps as tankers are attacked")).toBeTruthy();
+  expect(calls.some(([u, i]) => u.includes("/labels/last") && i?.method === "DELETE")).toBe(true);
+  fireEvent.keyDown(box, { key: "s" });
+  expect(calls.filter(([u]) => u.includes("/labels/next")).at(-1)![0]).toContain("skip=1");
+});
+
 test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {
   const row = (seriesId: string, table: string, label: string, value: number, change: number, extra: object = {}) => ({ seriesId, report: "WPSR", table, group: "", parent: "", label, unit: "million barrels", seq: 0, periodEnd: 0, value, prior: value - change, change, headline: false, ...extra });
   const body = {
