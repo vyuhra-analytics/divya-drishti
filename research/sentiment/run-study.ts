@@ -3,7 +3,7 @@
 //   bun --env-file=.env research/sentiment/run-study.ts --run [--from=...] [--to=...]                  run the pre-registered experiments, ONLY if every gate passes
 // Nothing is tuned here. The tone is the fixed crude lexicon, the horizons are 60 minutes and 1 day, the thresholds are the ones written down before any result.
 import { SQL } from "bun";
-import { clExpiries } from "../../packages/shared/src/clExpiry";
+import { clExpiries, usHolidays } from "../../packages/shared/src/clExpiry";
 import { crudeTone } from "../../packages/shared/src/crudeLexicon";
 import { batchTimes } from "../../packages/shared/src/gdelt";
 import { buildObservations, holm, icTest, lookAheadShift, shuffledControl, type HBar, type Headline, type Observation } from "../../packages/shared/src/sentimentStudy";
@@ -56,7 +56,7 @@ for (let t = from; t < to; t += DAY) {
   const dow = new Date(t).getUTCDay();
   if (dow === 0 || dow === 6) continue;
   const bs = byDay.get(dayOf(t)) ?? [];
-  if (bs.length === 0) continue; // an exchange holiday has no bars at all
+  if (usHolidays(new Date(t).getUTCFullYear()).has(t) || bs.length === 0) continue; // exchange holidays are excluded (D3)
   weekdays++;
   if (bs.length >= 20) covered++;
   for (let i = 1; i < bs.length; i++) worstGap = Math.max(worstGap, Math.round((bs[i].time - bs[i - 1].time) / 3600) - 1);
