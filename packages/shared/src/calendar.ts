@@ -1,7 +1,7 @@
 // Economic calendar: the weekly releases that move crude and gas, plus macro events and MCX holidays.
 // Pure so the schedule rules (New York time, DST) are unit-tested.
 import { tzOffsetSec } from "./index";
-import { occurrences, SERIES, zonedTime } from "./eventSeries";
+import { occurrences, SERIES, seriesByCode, seriesByLegacyKey, zonedTime } from "./eventSeries";
 import { weekEndingIso } from "./eventPlan";
 
 export type CalKind = "energy" | "macro" | "holiday";
@@ -21,6 +21,8 @@ export interface CalEvent {
   src?: { forecast?: string; previous?: string; actual?: string };
   /** set when EIA moved this release from its standard day and time (a holiday): why, and when it would normally have come out */
   delay?: { holiday: string; normalAt: number };
+  /** what it moves, as instrument tags: crude, gas, usdinr, mcx (see eventSeries.ts); the Today tab filters on them */
+  relevance?: string[];
   /** two-letter market code for the list (US, IN, EA…) */
   country?: string;
   /** the period the figure covers, as a short tag: "OCT/16" for the week ending 16 Oct */
@@ -178,12 +180,44 @@ export async function fillEiaPrevious(events: CalEvent[], lookup: (report: "WPSR
   );
 }
 
+/** What an event moves: the tags of its series, or, for a feed row, by country (US data moves crude and the rupee; Indian data the rupee and MCX). */
+export function relevanceOf(e: Pick<CalEvent, "id" | "kind">, country?: string): string[] {
+  const legacy = /^(api|eia-oil|eia-gas|rigs|mcx)-/.exec(e.id);
+  const series = legacy ? seriesByLegacyKey(legacy[1]) : e.id.startsWith("ser:") ? seriesByCode(/^ser:(.+)-\d+$/.exec(e.id)?.[1] ?? "") : undefined;
+  if (series) return series.code === "MCX_HOLIDAY" ? ["crude", "gas", "mcx"] : [...series.relevance];
+  if (e.kind === "energy") return ["crude", "gas"]; // OPEC and other energy rows
+  return country === "US" ? ["crude", "usdinr"] : country === "IN" ? ["usdinr", "mcx"] : ["usdinr"];
+}
+
+/** What the Today tab is about: the tags of the instrument being traded (crude desk: crude, the rupee and MCX itself). */
+export const TODAY_FOCUS = { crude: ["crude", "usdinr", "mcx"], gas: ["gas", "usdinr", "mcx"], all: undefined } as const;
+export type TodayFocus = keyof typeof TODAY_FOCUS;
+
+/**
+ * The events that matter right now for one focus, in time order: from two hours ago (so a release just missed, with its actual, stays) to 24 hours ahead.
+ * A holiday counts while its day is near (it has no time of day). `low` impact rows are left out when `bigOnly`.
+ */
+export function todayEvents(events: CalEvent[], now: number, focus: TodayFocus = "crude", bigOnly = false): CalEvent[] {
+  const tags = TODAY_FOCUS[focus];
+  return events
+    .filter((e) => {
+      const near = e.kind === "holiday" ? e.at >= now - 12 * 3600_000 && e.at <= now + 36 * 3600_000 : e.at >= now - 2 * 3600_000 && e.at <= now + 24 * 3600_000;
+      return near && (!bigOnly || e.impact !== "low") && (!tags || (e.relevance ?? []).some((t) => (tags as readonly string[]).includes(t)));
+    })
+    .sort((a, b) => a.at - b.at);
+}
+
 export function decorateEvents(events: CalEvent[]): CalEvent[] {
   return events.map((e) => {
-    if (/^(api|eia-oil|eia-gas)-/.test(e.id)) return { ...e, country: "US", period: weekEndingTag(e.at) };
-    if (e.id.startsWith("rigs-")) return { ...e, country: "US" };
-    if (e.id.startsWith("mcx-")) return { ...e, country: "IN" };
-    const ff = /^ff-([A-Za-z]+)-/.exec(e.id);
-    return ff ? { ...e, country: FF_COUNTRY[ff[1]] ?? "" } : e;
+    const d = decorateOne(e);
+    return { ...d, relevance: relevanceOf(d, d.country) };
   });
+}
+
+function decorateOne(e: CalEvent): CalEvent {
+  if (/^(api|eia-oil|eia-gas)-/.test(e.id)) return { ...e, country: "US", period: weekEndingTag(e.at) };
+  if (e.id.startsWith("rigs-")) return { ...e, country: "US" };
+  if (e.id.startsWith("mcx-")) return { ...e, country: "IN" };
+  const ff = /^ff-([A-Za-z]+)-/.exec(e.id);
+  return ff ? { ...e, country: FF_COUNTRY[ff[1]] ?? "" } : e;
 }

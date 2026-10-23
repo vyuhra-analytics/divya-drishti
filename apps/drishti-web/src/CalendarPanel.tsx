@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { releasePending, type CalEvent, type CalKind } from "@drishti/shared";
+import { releasePending, todayEvents, type CalEvent, type CalKind, type TodayFocus } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useNow } from "./market";
@@ -7,8 +7,9 @@ import { StoredEvents } from "./StoredEvents";
 import type { EiaScheduleException } from "@drishti/shared";
 import type { Widget } from "./workspace";
 
-type Tab = CalKind | "recorded";
+type Tab = CalKind | "today" | "recorded";
 const TABS: [Tab, string][] = [
+  ["today", "Today"],
   ["energy", "Energy"],
   ["macro", "Macro"],
   ["holiday", "Holidays"],
@@ -56,8 +57,25 @@ function until(at: number, now: number) {
 
 /** Calendar in four tabs: energy releases, macro and central bank events, MCX holidays, and what the recorder has stored. */
 export function CalendarWidget(_: { widget: Widget }) {
-  const [tab, setTab] = useState<Tab>("energy");
-  const [bigOnly, setBigOnly] = useState(false);
+  const [tab, setTab] = useState<Tab>("today");
+  const [big, setBig] = useState<Record<string, boolean>>({ today: true }); // High + Med is on for Today, off for the browsing tabs
+  const [focus, setFocus] = useState<TodayFocus>(() => {
+    try {
+      const f = localStorage.getItem("drishti-calendar-focus");
+      return f === "gas" || f === "all" ? f : "crude";
+    } catch {
+      return "crude";
+    }
+  });
+  const bigOnly = big[tab] ?? false;
+  const pickFocus = (f: TodayFocus) => {
+    setFocus(f);
+    try {
+      localStorage.setItem("drishti-calendar-focus", f);
+    } catch {
+      /* the choice just is not remembered */
+    }
+  };
   return (
     <div className="calendar">
       <div className="toolbar no-drag">
@@ -67,13 +85,22 @@ export function CalendarWidget(_: { widget: Widget }) {
           </button>
         ))}
         {tab !== "recorded" && tab !== "holiday" && (
-          <button className={bigOnly ? "tf active" : "tf"} aria-pressed={bigOnly} onClick={() => setBigOnly(!bigOnly)} title="Hide low-impact events">
+          <button className={bigOnly ? "tf active" : "tf"} aria-pressed={bigOnly} onClick={() => setBig({ ...big, [tab]: !bigOnly })} title="Hide low-impact events">
             High + Med
           </button>
         )}
+        {tab === "today" && (
+          <span className="cal-focus" role="group" aria-label="What to show Today">
+            {([["crude", "Crude"], ["gas", "Gas"], ["all", "All"]] as const).map(([f, label]) => (
+              <button key={f} className={f === focus ? "tf active" : "tf"} onClick={() => pickFocus(f)} title={f === "all" ? "Every event" : `Events that move ${label.toLowerCase()}, the rupee and MCX itself`}>
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       {tab === "energy" && <EiaDelays />}
-      {tab === "recorded" ? <StoredEvents /> : <LiveCalendar kind={tab} bigOnly={bigOnly} />}
+      {tab === "recorded" ? <StoredEvents /> : <LiveCalendar kind={tab} bigOnly={bigOnly} focus={focus} />}
     </div>
   );
 }
@@ -106,7 +133,7 @@ function EiaDelays() {
   );
 }
 
-function LiveCalendar({ kind, bigOnly }: { kind: CalKind; bigOnly: boolean }) {
+function LiveCalendar({ kind, bigOnly, focus }: { kind: CalKind | "today"; bigOnly: boolean; focus: TodayFocus }) {
   const [events, setEvents] = useState<CalEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const now = useNow(30_000);
@@ -153,7 +180,7 @@ function LiveCalendar({ kind, bigOnly }: { kind: CalKind; bigOnly: boolean }) {
 
   if (!events) return <p className="empty muted">{error ? `Calendar unavailable: ${error}` : "Loading calendar…"}</p>;
 
-  const shown = events.filter((e) => e.kind === kind && (!bigOnly || e.impact !== "low"));
+  const shown = kind === "today" ? todayEvents(events, now, focus, bigOnly) : events.filter((e) => e.kind === kind && (!bigOnly || e.impact !== "low"));
   const next = shown.find((e) => e.kind !== "holiday" && e.at >= now)?.id;
   const days: [string, CalEvent[]][] = [];
   for (const e of shown) {

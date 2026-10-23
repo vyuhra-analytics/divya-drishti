@@ -101,6 +101,7 @@ test("CalendarWidget shows forecast, previous and actual per event, and filters 
   ]);
   const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
   render(<CalendarWidget widget={widget("calendar")} />);
+  fireEvent.click(screen.getByText("Energy")); // the panel opens on Today
   expect(await screen.findByText("EIA crude inventories")).toBeTruthy();
   const upcoming = screen.getByText("EIA crude inventories").closest(".cal-row")!;
   expect(upcoming.querySelector(".cal-fc")!.textContent).toBe("-1M");
@@ -126,6 +127,7 @@ test("CalendarWidget tabs split energy from macro, and High + Med hides low-impa
   ]);
   const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
   render(<CalendarWidget widget={widget("calendar")} />);
+  fireEvent.click(screen.getByText("Energy"));
   expect(await screen.findByText("EIA crude inventories")).toBeTruthy();
   expect(screen.queryByText("CPI y/y (US)")).toBeNull();
   fireEvent.click(screen.getByText("High + Med"));
@@ -204,6 +206,7 @@ test("CalendarWidget Energy tab marks a release EIA moved and lists the official
   })) as never;
   const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
   render(<CalendarWidget widget={widget("calendar")} />);
+  fireEvent.click(screen.getByText("Energy"));
   const moved = (await screen.findByText("EIA crude inventories")).closest(".cal-row")!;
   expect(moved.textContent).toContain("DELAYED");
   expect(moved.querySelector(".cal-delayed")!.getAttribute("title")).toMatch(/EIA moved this release for Columbus Day/);
@@ -212,6 +215,34 @@ test("CalendarWidget Energy tab marks a release EIA moved and lists the official
   expect(document.querySelector(".cal-delays")!.textContent).toContain("crude (Veterans Day)");
   fireEvent.click(screen.getByText("Macro")); // the strip belongs to the Energy tab only
   expect(document.querySelector(".cal-delays")).toBeNull();
+});
+
+test("CalendarWidget opens on Today: the next 24 hours of what moves crude, with a switch to gas and to everything", async () => {
+  const now = Date.now();
+  const H = 3_600_000;
+  mockFetch([
+    { id: "eia-oil-1", title: "EIA crude inventories", at: now + 2 * H, kind: "energy", impact: "high", relevance: ["crude"] },
+    { id: "eia-gas-2", title: "EIA natural gas storage", at: now + 3 * H, kind: "energy", impact: "high", relevance: ["gas"] },
+    { id: "ff-USD-3-CPI", title: "CPI y/y (US)", at: now + 4 * H, kind: "macro", impact: "high", relevance: ["crude", "usdinr"] },
+    { id: "ff-JPY-4-BOJ", title: "BoJ rate", at: now + 5 * H, kind: "macro", impact: "high", relevance: ["usdinr"] },
+    { id: "eia-oil-5", title: "EIA crude inventories next week", at: now + 40 * H, kind: "energy", impact: "high", relevance: ["crude"] },
+  ]);
+  try {
+    localStorage.removeItem("drishti-calendar-focus");
+  } catch {
+    /* no storage: the default is crude */
+  }
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  expect(await screen.findByText("EIA crude inventories")).toBeTruthy(); // no tab clicked: Today
+  expect(screen.getByText("CPI y/y (US)")).toBeTruthy(); // a US release moves crude and the rupee
+  expect(screen.queryByText("EIA natural gas storage")).toBeNull();
+  expect(screen.queryByText("EIA crude inventories next week")).toBeNull(); // beyond 24 hours
+  fireEvent.click(screen.getByText("Gas"));
+  expect(screen.getByText("EIA natural gas storage")).toBeTruthy();
+  expect(screen.queryByText("EIA crude inventories")).toBeNull();
+  fireEvent.click(screen.getByText("All"));
+  expect(screen.getByText("BoJ rate")).toBeTruthy();
 });
 
 test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {

@@ -99,3 +99,48 @@ describe("previous figures of the EIA reports from our own record", () => {
     expect(await fillEiaPrevious([e], async () => undefined)).toEqual([e]);
   });
 });
+
+import { relevanceOf, todayEvents } from "./calendar";
+
+describe("what an event moves, and the Today list", () => {
+  const now = Date.UTC(2026, 9, 28, 14, 0);
+  const H = 3_600_000;
+  const ev = (id: string, o: Partial<CalEvent> = {}): CalEvent => ({ id, title: id, at: now + H, kind: "energy", impact: "high", ...o });
+  const decorated = decorateEvents([
+    ev("api-1"),
+    ev("eia-oil-2", { at: now + 2 * H }),
+    ev("eia-gas-3", { at: now + 3 * H }),
+    ev("rigs-4", { at: now + 4 * H, impact: "low" }),
+    ev("ff-USD-5-CPI", { kind: "macro", title: "CPI y/y (US)", at: now + 5 * H }),
+    ev("ff-INR-6-RBI", { kind: "macro", title: "RBI rate", at: now + 6 * H }),
+    ev("ff-JPY-7-BOJ", { kind: "macro", title: "BoJ rate", at: now + 7 * H }),
+    ev("mcx-2026-10-28", { kind: "holiday", at: now + 10 * H }),
+    ev("eia-oil-8", { at: now + 30 * H }), // beyond 24 hours
+    ev("eia-oil-9", { at: now - 3 * H }), // older than two hours
+    ev("eia-oil-10", { at: now - H }), // just missed: stays
+  ]);
+
+  it("tags each event with what it moves: its series, else by country", () => {
+    expect(decorated.find((e) => e.id === "api-1")!.relevance).toEqual(["crude"]);
+    expect(decorated.find((e) => e.id === "eia-gas-3")!.relevance).toEqual(["gas"]);
+    expect(decorated.find((e) => e.id === "ff-USD-5-CPI")!.relevance).toEqual(["crude", "usdinr"]);
+    expect(decorated.find((e) => e.id === "ff-INR-6-RBI")!.relevance).toEqual(["usdinr", "mcx"]);
+    expect(decorated.find((e) => e.id === "ff-JPY-7-BOJ")!.relevance).toEqual(["usdinr"]);
+    expect(relevanceOf({ id: "ff-USD-1-OPEC", kind: "energy" }, "US")).toEqual(["crude", "gas"]);
+  });
+
+  it("Today for crude: the next 24 hours and the last two, in time order, only what moves crude, the rupee or MCX", () => {
+    const ids = todayEvents(decorated, now, "crude").map((e) => e.id);
+    expect(ids).toEqual(["eia-oil-10", "api-1", "eia-oil-2", "rigs-4", "ff-USD-5-CPI", "ff-INR-6-RBI", "ff-JPY-7-BOJ", "mcx-2026-10-28"]);
+    expect(ids).not.toContain("eia-gas-3"); // gas storage is not a crude event
+    expect(ids).not.toContain("eia-oil-8");
+    expect(ids).not.toContain("eia-oil-9");
+  });
+
+  it("Today for gas and for everything, and the High + Med switch", () => {
+    expect(todayEvents(decorated, now, "gas").map((e) => e.id)).toContain("eia-gas-3");
+    expect(todayEvents(decorated, now, "gas").map((e) => e.id)).not.toContain("api-1");
+    expect(todayEvents(decorated, now, "all").length).toBeGreaterThan(todayEvents(decorated, now, "crude").length - 1);
+    expect(todayEvents(decorated, now, "crude", true).map((e) => e.id)).not.toContain("rigs-4"); // low impact
+  });
+});
