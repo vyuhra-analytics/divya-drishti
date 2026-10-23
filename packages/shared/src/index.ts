@@ -348,6 +348,7 @@ export * from "./eventSeries";
 export * from "./eventPlan";
 export * from "./eiaReport";
 export * from "./eiaWatch";
+export * from "./eiaAnalysis";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

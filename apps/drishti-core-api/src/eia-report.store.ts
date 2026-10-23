@@ -136,6 +136,12 @@ export class PgEiaReportStore {
     };
   }
 
+  /** The newest forecast figure recorded for a release (Forex Factory's, or one typed in), as a number. */
+  async forecastFor(eventId: number): Promise<{ value: number; source: string } | undefined> {
+    const r = (await this.sql`SELECT value_num, source FROM event_observations WHERE event_id = ${eventId} AND kind = 'forecast' AND value_num IS NOT NULL ORDER BY observed_at DESC, id DESC LIMIT 1`) as { value_num: number; source: string }[];
+    return r[0] && { value: Number(r[0].value_num), source: r[0].source };
+  }
+
   /** The last arrivals, newest first: what the delay log shows. */
   async arrivals(limit = 20) {
     return (await this.sql`

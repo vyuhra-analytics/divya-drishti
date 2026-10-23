@@ -127,7 +127,8 @@ export function parseWpsrTable(table: number, csv: string): EiaReportRow[] {
     if (value === undefined || !label) continue;
     const group = cols.label.length > 1 ? cleanLabel(c[cols.label[0]] ?? "") : "";
     const child = isChild(label);
-    if (!child) {
+    if (!child && label !== "Cushing") {
+      // Cushing sits between the PADD rows of the crude stocks table but is not their parent
       parent = label;
       parentUnit = /utilization/i.test(label) ? "%" : undefined;
     }

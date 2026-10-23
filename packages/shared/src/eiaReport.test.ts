@@ -31,6 +31,7 @@ describe("the petroleum report, all nine tables", () => {
     expect([c.value, c.prior, c.change, c.yearAgo, c.yearAgoPct, c.unit, c.headline]).toEqual([412.517, 415.577, -3.061, 422.824, -2.4, "million barrels", true]);
     expect(r.rows.filter((x) => x.headline)).toHaveLength(1);
     expect(row(r, "WPSR:T4:CUSHING").change).toBe(0.987);
+    expect(row(r, "WPSR:T4:COMMERCIAL_EXCLUDING_SPR:GULF_COAST_PADD_3").value).toBe(229.318); // Cushing sits among the regions but is not their parent
   });
 
   it("refinery table (2): inputs in kb/d with the 4-week average, utilisation in percent, PADD rows under their parent", () => {
