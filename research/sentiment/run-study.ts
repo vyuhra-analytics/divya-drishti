@@ -25,15 +25,27 @@ const done = (await sql`SELECT batch_at, status FROM gdelt_batches WHERE batch_a
 await sql.close();
 
 const expiries = clExpiries(from - 5 * DAY, to + 5 * DAY);
-const obs = buildObservations(headlines, bars, { tone: (t) => crudeTone(t).tone, expiries });
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+// Deviation D4: the first weekday session after each US exchange holiday is excluded (CME holiday hours give it fewer hourly bars).
+const holidays = new Set<number>([...usHolidays(2025), ...usHolidays(2026), ...usHolidays(2027)]);
+const excluded = new Set<string>();
+for (const h of holidays) {
+  let d = h + DAY;
+  while (new Date(d).getUTCDay() === 0 || new Date(d).getUTCDay() === 6 || holidays.has(d)) d += DAY; // next weekday that is not itself a holiday
+  excluded.add(dayOf(d));
+}
+const built = buildObservations(headlines, bars, { tone: (t) => crudeTone(t).tone, expiries });
+const obs = built
+  .filter((o) => !excluded.has(dayOf(o.entry)))
+  .map((o) => (o.r1d !== undefined && [...excluded].some((d) => Date.parse(`${d}T00:00:00Z`) < o.entry + DAY + 3_600_000 && Date.parse(`${d}T00:00:00Z`) + DAY > o.entry) ? { ...o, r1d: undefined } : o));
 
 // ---- the gate
 const gates: { name: string; found: string; pass: boolean }[] = [];
 const expected = batchTimes(from, to).length;
 const readBatches = done.filter((d) => d.status === "ok" || d.status === "missing").length;
 gates.push({ name: "GDELT complete: every 15-minute batch in the range read", found: `${readBatches} of ${expected}`, pass: readBatches === expected });
-gates.push({ name: "1. at least 1,500 entry bars with an event (rolls dropped)", found: `${obs.length} bars from ${headlines.length} headlines`, pass: obs.length >= 1500 });
+gates.push({ name: "1. at least 1,500 entry bars with an event (rolls dropped)", found: `${obs.length} bars from ${headlines.length} headlines (${built.length - obs.length} dropped on the D4 sessions)`, pass: obs.length >= 1500 });
 
 // volatility of a day = |close / open - 1| of its CL hourly bars, terciles over the whole history
 const byDay = new Map<string, HBar[]>();
@@ -56,7 +68,7 @@ for (let t = from; t < to; t += DAY) {
   const dow = new Date(t).getUTCDay();
   if (dow === 0 || dow === 6) continue;
   const bs = byDay.get(dayOf(t)) ?? [];
-  if (usHolidays(new Date(t).getUTCFullYear()).has(t) || bs.length === 0) continue; // exchange holidays are excluded (D3)
+  if (usHolidays(new Date(t).getUTCFullYear()).has(t) || bs.length === 0 || excluded.has(dayOf(t))) continue; // exchange holidays (D3) and the first session after one (D4) are excluded
   weekdays++;
   if (bs.length >= 20) covered++;
   for (let i = 1; i < bs.length; i++) worstGap = Math.max(worstGap, Math.round((bs[i].time - bs[i - 1].time) / 3600) - 1);
