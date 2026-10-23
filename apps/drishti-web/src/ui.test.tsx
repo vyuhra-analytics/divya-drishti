@@ -158,6 +158,42 @@ test("CalendarWidget Recorded view shows stored figures, the surprise and the lo
   expect(document.body.textContent).toContain("80B"); // the earlier forecast stays on record
 });
 
+test("CalendarWidget Recorded view flags sources that disagree, believes a typed-in forecast, and posts a new one", async () => {
+  const obs = (kind: string, text: string, num: number, source: string) => ({ kind, text, num, source, observedAt: "2026-10-22T15:00:00Z", backfilled: false });
+  const rows = [
+    {
+      id: "9",
+      series_code: "WNGSR",
+      scheduled_at: new Date(Date.now() - 3600_000).toISOString(),
+      title: "EIA natural gas storage",
+      period: "2026-10-16",
+      status: "released",
+      observations: [obs("forecast", "80B", 80, "typed in"), obs("forecast", "82B", 82, "Forex Factory"), obs("actual", "77B", 77, "EIA"), obs("actual", "75", 75, "Yahoo Finance"), obs("release_time", "2026-10-22T14:30:00.000Z", Date.UTC(2026, 9, 22, 14, 30), "Finance Calendar")],
+    },
+  ];
+  const calls: [string, RequestInit | undefined][] = [];
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    calls.push([url, init]);
+    return { ok: true, status: 200, json: async () => (init?.method === "POST" ? { ok: true } : rows) };
+  }) as never;
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  fireEvent.click(screen.getByText("Recorded"));
+  const row = (await screen.findByText("EIA natural gas storage")).closest(".cal-row")!;
+  expect(row.querySelector(".cal-fc")!.textContent).toBe("80B"); // typed in beats the newer feed figure
+  expect(row.textContent).toContain("sources differ");
+  fireEvent.click(row.querySelector("button")!);
+  expect(document.body.textContent).toContain("actuals differ: 77 (EIA) vs 75 (Yahoo Finance)");
+  expect(document.body.textContent).toContain("release time");
+  fireEvent.change(screen.getByLabelText("Typed-in forecast"), { target: { value: "-1.2M" } });
+  fireEvent.change(screen.getByLabelText("Where you read it"), { target: { value: "Trading Economics" } });
+  fireEvent.click(screen.getByText("Add forecast"));
+  await screen.findByText("EIA natural gas storage");
+  const post = calls.find(([, init]) => init?.method === "POST")!;
+  expect(post[0]).toMatch(/\/calendar\/stored\/9\/observations$/);
+  expect(JSON.parse(post[1]!.body as string)).toEqual({ kind: "forecast", text: "-1.2M", from: "Trading Economics" });
+});
+
 test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {
   const row = (seriesId: string, table: string, label: string, value: number, change: number, extra: object = {}) => ({ seriesId, report: "WPSR", table, group: "", parent: "", label, unit: "million barrels", seq: 0, periodEnd: 0, value, prior: value - change, change, headline: false, ...extra });
   const body = {

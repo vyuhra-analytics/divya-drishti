@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { believed, disagreements, FINANCE_CALENDAR_ATTRIBUTION } from "@drishti/shared";
 import { apiUrl, useClock, useSettings } from "./settings";
 
 interface Obs {
-  kind: "forecast" | "previous" | "actual" | "revised";
+  kind: "forecast" | "previous" | "actual" | "revised" | "release_time";
   text: string;
   num: number | null;
   source: string;
@@ -39,7 +40,7 @@ export const latestOf = (obs: Obs[], kind: Obs["kind"]) => obs.filter((o) => o.k
 /** Actual minus forecast, when both are numbers in the same unit. */
 export function surprise(obs: Obs[]): number | undefined {
   const a = latestOf(obs, "actual");
-  const f = latestOf(obs, "forecast");
+  const f = believed(obs, "forecast");
   return a?.num != null && f?.num != null ? Math.round((a.num - f.num) * 1e6) / 1e6 : undefined;
 }
 
@@ -81,11 +82,40 @@ function EiaTable({ id }: { id: string }) {
   );
 }
 
+/** A forecast read somewhere else (Trading Economics, Investing.com...), kept under its own name and believed over a feed. */
+function TypedForecast({ id, onSaved }: { id: string; onSaved: () => void }) {
+  const [text, setText] = useState("");
+  const [from, setFrom] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl()}/calendar/stored/${id}/observations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "forecast", text, from: from || undefined }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+      setText("");
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <div className="st-typed no-drag">
+      <input value={text} onChange={(e) => setText(e.target.value)} placeholder="forecast, e.g. -1.2M" aria-label="Typed-in forecast" size={14} />
+      <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="read on (optional)" aria-label="Where you read it" size={16} />
+      <button onClick={save} disabled={text.trim() === ""}>
+        Add forecast
+      </button>
+      {error && <span className="down">{error}</span>}
+    </div>
+  );
+}
+
 /** What the recorder has stored: every release of the last 30 days and the next two weeks, with the figures as they were seen. */
 export function StoredEvents() {
   const [rows, setRows] = useState<Stored[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const clock = useClock();
   const locale = useSettings((s) => s.locale);
 
@@ -108,7 +138,7 @@ export function StoredEvents() {
       ctrl.abort();
       clearInterval(id);
     };
-  }, []);
+  }, [reload]);
 
   if (!rows) return <p className="empty muted">{error ? `Stored events unavailable: ${error}` : "Loading stored events…"}</p>;
   if (rows.length === 0) return <p className="empty muted">Nothing stored yet. The recorder fills this in a few minutes after the API starts.</p>;
@@ -125,7 +155,8 @@ export function StoredEvents() {
       {rows.map((r) => {
         const at = Date.parse(r.scheduled_at);
         const actual = latestOf(r.observations, "actual");
-        const forecast = latestOf(r.observations, "forecast");
+        const forecast = believed(r.observations, "forecast");
+        const conflicts = disagreements(r.observations);
         const previous = latestOf(r.observations, "previous");
         const s = surprise(r.observations);
         const isOpen = open === r.id;
@@ -142,6 +173,7 @@ export function StoredEvents() {
                 <span className="muted cal-detail">
                   {dayOf(at)} · {r.series_code} · {r.status}
                   {s !== undefined && s !== 0 && <b className={s > 0 ? "up" : "down"}> · {s > 0 ? "+" : ""}{s} vs forecast</b>}
+                  {conflicts.length > 0 && <b className="down" title={conflicts.join("; ")}> · sources differ</b>}
                 </span>
               </span>
               <span className="cal-actual" title={actual ? `source: ${actual.source}` : ""}>{actual?.text ?? ""}</span>
@@ -154,22 +186,35 @@ export function StoredEvents() {
             {isOpen && (
               <div className="st-detail">
                 {r.observations.length === 0 && <p className="muted">No figures recorded.</p>}
+                {conflicts.map((c) => (
+                  <p key={c} className="down">
+                    {c}
+                  </p>
+                ))}
                 {r.observations.map((o, i) => (
                   <div key={i} className="st-obs">
-                    <span className="muted">{o.kind}</span>
-                    <b>{o.text}</b>
+                    <span className="muted">{o.kind === "release_time" ? "release time" : o.kind}</span>
+                    <b>{o.kind === "release_time" ? clock.time(Date.parse(o.text)) : o.text}</b>
                     <span className="muted">
                       {o.source} · seen {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(Date.parse(o.observedAt))} {clock.time(Date.parse(o.observedAt))}
                       {o.backfilled ? " · backfilled" : ""}
                     </span>
                   </div>
                 ))}
+                <TypedForecast id={r.id} onSaved={() => setReload((n) => n + 1)} />
                 {EIA_REPORTS.has(r.series_code) && r.status === "released" && <EiaTable id={r.id} />}
               </div>
             )}
           </div>
         );
       })}
+      {rows.some((r) => r.observations.some((o) => o.source === "Finance Calendar")) && (
+        <p className="muted st-attr">
+          <a href="https://www.financecalendar.com" target="_blank" rel="noreferrer noopener">
+            {FINANCE_CALENDAR_ATTRIBUTION}
+          </a>
+        </p>
+      )}
     </div>
   );
 }

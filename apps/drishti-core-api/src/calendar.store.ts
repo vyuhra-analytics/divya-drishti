@@ -45,6 +45,11 @@ export class PgEventStore implements EventStore {
     return fresh;
   }
 
+  /** Whether a stored event exists. */
+  async exists(id: number): Promise<boolean> {
+    return ((await this.sql`SELECT 1 FROM economic_events WHERE id = ${id}`) as unknown[]).length > 0;
+  }
+
   async markReleased(id: number, when: number) {
     await this.sql`UPDATE economic_events SET status = 'released', released_at = ${at(when)} WHERE id = ${id} AND status <> 'released'`;
   }

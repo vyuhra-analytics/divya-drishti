@@ -615,3 +615,5 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .er-table td.child { padding-left: 18px; color: var(--muted); }
 .er-table tr.headline td { font-weight: 700; }
 .er-table tr.er-group td { text-align: left; background: var(--hover); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.st-typed { display: flex; gap: 6px; align-items: center; margin: 6px 0 2px; flex-wrap: wrap; }
+.st-attr { padding: 6px 10px; font-size: 10px; }

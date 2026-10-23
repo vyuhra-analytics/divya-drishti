@@ -204,6 +204,12 @@ for (const [name, path] of [
 ] as const) {
   await check(`refuses: ${name}`, () => bad(path));
 }
+await check("refuses: a typed-in forecast that is not a figure, a kind that is not allowed, and an unknown event (nothing stored)", async () => {
+  const post = (id: string, body: unknown) => get(`/calendar/stored/${id}/observations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  need((await post("1", { kind: "forecast", text: "about 3" })).status === 400, "a text that is not a figure was accepted");
+  need((await post("1", { kind: "actual", text: "3" })).status === 400, "an actual was accepted");
+  need((await post("999999999", { kind: "forecast", text: "3" })).status === 404, "an unknown event was accepted");
+});
 await check("refuses: a malformed server alert", async () => {
   const r = await get("/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "price", symbol: "DOGE", op: "above", value: 1 }) });
   need(r.status === 400, `HTTP ${r.status}`);

@@ -120,3 +120,46 @@ describe("matching and merging into planned events", () => {
     expect(mergeSourceRows(p, "yahoo", [row({ at: release + 86_400_000, actual: "77" })]).used).toBe(1);
   });
 });
+
+import { believed, disagreements, parseTypedFigure } from "./calendarSources";
+
+describe("typed-in figures", () => {
+  it("accepts a short figure and a plain source name, and gives the number and unit", () => {
+    expect(parseTypedFigure({ kind: "forecast", text: " -1.2M ", from: "Trading Economics" })).toEqual({ kind: "forecast", text: "-1.2M", num: -1.2, unit: "M", source: "typed in (Trading Economics)" });
+    expect(parseTypedFigure({ kind: "previous", text: "83B" })).toMatchObject({ num: 83, source: "typed in" });
+    expect(parseTypedFigure({ kind: "forecast", text: "3,567" })).toMatchObject({ num: 3567 });
+  });
+
+  it("refuses anything else: a wrong kind (an actual cannot be typed in), text that is not a figure, a long string, markup in the name", () => {
+    for (const bad of [{ kind: "actual", text: "1" }, { kind: "forecast", text: "about 3" }, { kind: "forecast", text: "1".repeat(20) }, { kind: "forecast", text: "<script>" }, { kind: "forecast", text: "1", from: "<b>x</b>" }, { kind: "forecast" }, null, "x"]) expect("error" in parseTypedFigure(bad)).toBe(true);
+  });
+
+  it("what you typed beats a feed, whichever came last", () => {
+    const obs = [{ kind: "forecast", source: "typed in", text: "-1.0M" }, { kind: "forecast", source: "Forex Factory", text: "-2.0M" }];
+    expect(believed(obs, "forecast")!.text).toBe("-1.0M");
+    expect(believed(obs.slice(1), "forecast")!.text).toBe("-2.0M");
+    expect(believed(obs, "actual")).toBeUndefined();
+  });
+});
+
+describe("where sources disagree", () => {
+  const o = (kind: string, source: string, text: string, num: number) => ({ kind, source, text, num });
+
+  it("flags two different actuals and says who said which", () => {
+    expect(disagreements([o("actual", "EIA", "77B", 77), o("actual", "Yahoo Finance", "75", 75)])).toEqual(["actuals differ: 77 (EIA) vs 75 (Yahoo Finance)"]);
+  });
+
+  it("two sources that agree, in different units of writing, are not a disagreement", () => {
+    expect(disagreements([o("actual", "EIA", "77B", 77), o("actual", "Yahoo Finance", "77", 77)])).toEqual([]);
+  });
+
+  it("flags release times more than a minute apart, not seconds", () => {
+    const t = Date.UTC(2026, 9, 22, 14, 30);
+    expect(disagreements([o("release_time", "A", "x", t), o("release_time", "B", "x", t + 30_000)])).toEqual([]);
+    expect(disagreements([o("release_time", "Finance Calendar", "x", t), o("release_time", "Yahoo Finance", "x", t + 3_600_000)])[0]).toMatch(/release times differ: 14:30 UTC \(Finance Calendar\) vs 15:30 UTC \(Yahoo Finance\)/);
+  });
+
+  it("forecasts differ by nature and are never flagged", () => {
+    expect(disagreements([o("forecast", "A", "1", 1), o("forecast", "B", "9", 9)])).toEqual([]);
+  });
+});

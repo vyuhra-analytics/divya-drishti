@@ -169,3 +169,45 @@ export const CALENDAR_SOURCES = (): CalendarSource[] => [financeCalendar, yahooC
 
 /** How far around now the secondary sources are asked for: their job is the release time and the actual, so the recent days and the next two weeks. */
 export const SOURCE_WINDOW = { back: 3 * DAY, ahead: 14 * DAY };
+
+// ---- a figure typed in by the owner (a consensus read on Trading Economics or Investing.com, say)
+
+export const TYPED_SOURCE = "typed in";
+
+export interface TypedFigure {
+  kind: "forecast" | "previous";
+  text: string;
+  num?: number;
+  unit?: string;
+  /** "typed in" or "typed in (Trading Economics)" */
+  source: string;
+}
+
+/** A typed-in forecast or previous figure from a request body, strictly checked: a short figure like "-1.2M", "83B", "0.3%", and an optional plain-text name of where it was read. */
+export function parseTypedFigure(body: unknown): TypedFigure | { error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (b.kind !== "forecast" && b.kind !== "previous") return { error: "kind must be forecast or previous" };
+  const text = typeof b.text === "string" ? b.text.trim() : "";
+  if (!/^[<>≤≥]?\s*[+-]?\d[\d,]*(?:\.\d+)?\s*[A-Za-z%]{0,3}$/.test(text) || text.length > 16) return { error: "the figure must look like -1.2M, 83B or 0.3%" };
+  const from = typeof b.from === "string" ? b.from.trim() : "";
+  if (from && !/^[A-Za-z0-9 .&'-]{1,30}$/.test(from)) return { error: "the source name may use letters, digits and . & ' - only, up to 30 characters" };
+  return { kind: b.kind, text, ...parseValue(text), source: from ? `${TYPED_SOURCE} (${from})` : TYPED_SOURCE };
+}
+
+/** The figure to believe for a kind: one you typed in beats a feed (the newest of those), else the newest of any source. */
+export function believed<T extends { kind: string; source: string }>(obs: T[], kind: string): T | undefined {
+  const of = obs.filter((o) => o.kind === kind);
+  return of.filter((o) => o.source.startsWith(TYPED_SOURCE)).at(-1) ?? of.at(-1);
+}
+
+/** Where sources disagree on facts (not forecasts, which differ by nature): different actuals, or release times more than a minute apart. */
+export function disagreements(obs: { kind: string; source: string; text: string; num?: number | null }[]): string[] {
+  const out: string[] = [];
+  const actuals = obs.filter((o) => o.kind === "actual" && o.num !== null && o.num !== undefined);
+  const distinct = new Map<number, string[]>();
+  for (const o of actuals) distinct.set(Math.round((o.num as number) * 1000) / 1000, [...(distinct.get(Math.round((o.num as number) * 1000) / 1000) ?? []), o.source]);
+  if (distinct.size > 1) out.push(`actuals differ: ${[...distinct].map(([n, who]) => `${n} (${[...new Set(who)].join(", ")})`).join(" vs ")}`);
+  const times = obs.filter((o) => o.kind === "release_time" && o.num !== null && o.num !== undefined) as { source: string; num: number }[];
+  if (times.length > 1 && Math.max(...times.map((t) => t.num)) - Math.min(...times.map((t) => t.num)) > 60_000) out.push(`release times differ: ${times.map((t) => `${new Date(t.num).toISOString().slice(11, 16)} UTC (${t.source})`).join(" vs ")}`);
+  return out;
+}
