@@ -7,7 +7,7 @@ Desks: **Evening** (the one-monitor trading screens, see `EIA_SCREENS.md`) and *
 | Code | Panel | Decision | Where / change |
 |---|---|---|---|
 | GP | Chart (advanced) | **Keep, reshape** | Evening: the chart block. Follows the live candle with no zooming, no toolbar chrome, levels drawn by the app. Today's TradingView-like widget stays only for the Research desk. |
-| OCX | Option chain (detailed) | **Keep, reshape** | Evening: trimmed to four strikes and six columns (premium, delta, OI, volume, IV, theta) with the rule's suggested strike. Detailed 15-column view stays on the Research desk. |
+| OCX | Option chain | **Keep, reshape** | Evening: trimmed to four strikes and six columns (premium, delta, OI, volume, IV, theta) with the rule's suggested strike. Detailed 15-column view stays on the Research desk. |
 | CAL | Calendar | **Keep** | Feeds the report block and the countdown. |
 | EIA | EIA stocks | **Keep, reshape** | Becomes the report block (forecast, actual, surprise, allowed side). |
 | PT | Paper trading | **Keep, reshape** | Must simulate buying one lot of an option and the R stop, targets and Rs 2,000 cap; today it simulates futures. |
