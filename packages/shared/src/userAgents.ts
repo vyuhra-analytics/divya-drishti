@@ -41,6 +41,7 @@ export const uaHeader = (hostOrUrl: string, seed?: number) => ({ "User-Agent": u
 export const OFFICIAL_HOSTS = [
   "fred.stlouisfed.org",
   "ir.eia.gov",
+  "www.eia.gov",
   "api.eia.gov",
   "publicreporting.cftc.gov",
   "services9.arcgis.com",

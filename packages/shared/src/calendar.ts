@@ -19,6 +19,8 @@ export interface CalEvent {
   actual?: string;
   /** where each filled-in figure came from, shown on hover: provenance for the forecast/previous and the actual */
   src?: { forecast?: string; previous?: string; actual?: string };
+  /** set when EIA moved this release from its standard day and time (a holiday): why, and when it would normally have come out */
+  delay?: { holiday: string; normalAt: number };
   /** two-letter market code for the list (US, IN, EA…) */
   country?: string;
   /** the period the figure covers, as a short tag: "OCT/16" for the week ending 16 Oct */

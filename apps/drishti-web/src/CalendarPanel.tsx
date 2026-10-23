@@ -4,6 +4,7 @@ import { useAlerts } from "./alertsStore";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useNow } from "./market";
 import { StoredEvents } from "./StoredEvents";
+import type { EiaScheduleException } from "@drishti/shared";
 import type { Widget } from "./workspace";
 
 type Tab = CalKind | "recorded";
@@ -71,8 +72,37 @@ export function CalendarWidget(_: { widget: Widget }) {
           </button>
         )}
       </div>
+      {tab === "energy" && <EiaDelays />}
       {tab === "recorded" ? <StoredEvents /> : <LiveCalendar kind={tab} bigOnly={bigOnly} />}
     </div>
+  );
+}
+
+/** EIA's official holiday delays still ahead, from its own schedule pages: "Thu 12 Nov 12:00 pm Veterans Day (petroleum)". */
+function EiaDelays() {
+  const [list, setList] = useState<EiaScheduleException[]>([]);
+  const clock = useClock();
+  const locale = useSettings((s) => s.locale);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch(`${apiUrl()}/calendar/eia-schedule`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setList)
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, []);
+  if (list.length === 0) return null;
+  const day = (t: number) => new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short" }).format(t);
+  return (
+    <p className="muted cal-delays" title="From EIA's official release schedule pages">
+      <b>EIA delays ahead:</b>{" "}
+      {list.slice(0, 3).map((x, i) => (
+        <span key={`${x.report}${x.at}`}>
+          {i > 0 && " · "}
+          {day(x.at)} {clock.time(x.at)} {x.report === "WPSR" ? "crude" : "gas"} ({x.holiday})
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -166,6 +196,7 @@ function LiveCalendar({ kind, bigOnly }: { kind: CalKind; bigOnly: boolean }) {
                       <i className={`cal-dot ${e.impact}`} title={`${e.impact} impact`} />
                       {e.title}
                       {e.period && <small>{e.period}</small>}
+                      {e.delay && <small className="cal-delayed" title={`EIA moved this release for ${e.delay.holiday}; normally ${clock.time(e.delay.normalAt)} on ${dayLabel(e.delay.normalAt, locale)}`}>DELAYED</small>}
                     </span>
                     <span className="muted cal-detail">
                       {e.detail}

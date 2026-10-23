@@ -194,6 +194,26 @@ test("CalendarWidget Recorded view flags sources that disagree, believes a typed
   expect(JSON.parse(post[1]!.body as string)).toEqual({ kind: "forecast", text: "-1.2M", from: "Trading Economics" });
 });
 
+test("CalendarWidget Energy tab marks a release EIA moved and lists the official delays ahead", async () => {
+  const at = Date.now() + 3600_000;
+  const normalAt = at - 86_400_000;
+  globalThis.fetch = mock(async (url: string) => ({
+    ok: true,
+    status: 200,
+    json: async () => (String(url).includes("/calendar/eia-schedule") ? [{ report: "WPSR", weekKey: "2026-11-06", normalAt, at: at + 20 * 86_400_000, holiday: "Veterans Day" }] : [{ id: "eia-oil-1", title: "EIA crude inventories", at, kind: "energy", impact: "high", delay: { holiday: "Columbus Day", normalAt } }, { id: "eia-gas-2", title: "EIA natural gas storage", at: at + 3600_000, kind: "energy", impact: "high" }]),
+  })) as never;
+  const { CalendarWidget } = require("./CalendarPanel") as typeof import("./CalendarPanel");
+  render(<CalendarWidget widget={widget("calendar")} />);
+  const moved = (await screen.findByText("EIA crude inventories")).closest(".cal-row")!;
+  expect(moved.textContent).toContain("DELAYED");
+  expect(moved.querySelector(".cal-delayed")!.getAttribute("title")).toMatch(/EIA moved this release for Columbus Day/);
+  expect(screen.getByText("EIA natural gas storage").closest(".cal-row")!.textContent).not.toContain("DELAYED");
+  expect(await screen.findByText(/EIA delays ahead:/)).toBeTruthy();
+  expect(document.querySelector(".cal-delays")!.textContent).toContain("crude (Veterans Day)");
+  fireEvent.click(screen.getByText("Macro")); // the strip belongs to the Energy tab only
+  expect(document.querySelector(".cal-delays")).toBeNull();
+});
+
 test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {
   const row = (seriesId: string, table: string, label: string, value: number, change: number, extra: object = {}) => ({ seriesId, report: "WPSR", table, group: "", parent: "", label, unit: "million barrels", seq: 0, periodEnd: 0, value, prior: value - change, change, headline: false, ...extra });
   const body = {

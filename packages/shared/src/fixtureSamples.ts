@@ -3,6 +3,7 @@
 import { parseWngsr, parseWpsr, parseFredCsv } from "./actuals";
 import { parseWpsrReport } from "./eiaReport";
 import { financeCalendar, SOURCE_WINDOW, yahooCalendar } from "./calendarSources";
+import { EIA_SCHEDULE_URLS, parseEiaGasSchedule, parseEiaPetroleumSchedule } from "./eiaSchedule";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
 import { chokepointFetcher, cotFetcher, curveFetcher } from "./fetchers";
@@ -62,6 +63,12 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
     source: "eia-csv",
     run: async (io) => parseWpsr(await text(io, "https://ir.eia.gov/wpsr/table1.csv")),
     check: (w) => (w && num(w.weekEnding) && Object.keys(w.change).length > 5 ? undefined : "expected a week ending and 5+ rows of changes"),
+  },
+  {
+    id: "eia-schedule",
+    source: "eia-csv",
+    run: async (io) => ({ wpsr: parseEiaPetroleumSchedule((await text(io, EIA_SCHEDULE_URLS.WPSR)) ?? ""), wngsr: parseEiaGasSchedule((await text(io, EIA_SCHEDULE_URLS.WNGSR)) ?? "") }),
+    check: (r) => (r.wpsr.length >= 4 && r.wngsr.length >= 4 && [...r.wpsr, ...r.wngsr].every((x: any) => x.holiday && Number.isFinite(x.at) && x.at !== x.normalAt) ? undefined : "expected 4+ holiday exceptions on each EIA schedule page"),
   },
   {
     id: "finance-calendar",

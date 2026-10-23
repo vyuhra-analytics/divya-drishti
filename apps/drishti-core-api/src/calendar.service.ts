@@ -6,11 +6,15 @@ import {
   fillEiaPrevious,
   fredActual,
   fredSeriesFor,
+  applyEiaSchedule,
   CALENDAR_SOURCES,
+  EIA_SCHEDULE_URLS,
   LruCache,
   mcxHolidays,
   mergeSourceRows,
   mergeForexFactory,
+  parseEiaGasSchedule,
+  parseEiaPetroleumSchedule,
   parseFredCsv,
   parseWngsr,
   parseWpsr,
@@ -20,6 +24,7 @@ import {
   seriesByCode,
   SOURCE_WINDOW,
   type CalendarSource,
+  type EiaScheduleException,
   type PlannedEvent,
   type SourceRow,
   withUserAgent,
@@ -43,6 +48,8 @@ const RECORD_AHEAD_DAYS = 56;
 const RECORD_EVERY_MS = 5 * 60_000;
 const SOURCE_EVERY_MS = 15 * 60_000; // the extra sources are asked this often, and every minute while a release is pending
 const SOURCE_RETRY_MS = 5 * 60_000; // after a failure, leave a source alone this long
+const SCHEDULE_TTL_MS = 24 * 3600_000; // EIA changes its holiday list a few times a year
+const SCHEDULE_RETRY_MS = 10 * 60_000;
 const RECORD_PENDING_MS = 60_000; // while a release is due or just out, look every minute so the actual is stored when published
 
 /**
@@ -56,6 +63,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
   private readonly reports: PgEiaReportStore;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private failing = false;
+  private schedule: { list: EiaScheduleException[]; at: number; retryAt: number } = { list: [], at: 0, retryAt: 0 };
   private readonly sources: { source: CalendarSource; rows: SourceRow[]; at: number; retryAt: number; failing: boolean }[] = CALENDAR_SOURCES().map((source) => ({ source, rows: [], at: 0, retryAt: 0, failing: false }));
 
   constructor(private readonly db: Db) {
@@ -131,6 +139,23 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     return fresh;
   }
 
+  /**
+   * EIA's official holiday exceptions for the two weekly reports, read from its two schedule pages and kept a day. A failing page keeps the last good
+   * list and is tried again in ten minutes; with none, the standard days and Forex Factory's shifts still apply.
+   */
+  async eiaSchedule(now = Date.now()): Promise<EiaScheduleException[]> {
+    const s = this.schedule;
+    if (now - s.at < SCHEDULE_TTL_MS || now < s.retryAt) return s.list;
+    const [petroleum, gas] = await Promise.all([this.text(EIA_SCHEDULE_URLS.WPSR), this.text(EIA_SCHEDULE_URLS.WNGSR)]);
+    const list = [...(petroleum ? parseEiaPetroleumSchedule(petroleum) : []), ...(gas ? parseEiaGasSchedule(gas) : [])];
+    if (petroleum && gas && list.length) this.schedule = { list, at: now, retryAt: 0 };
+    else {
+      this.schedule = { ...s, retryAt: now + SCHEDULE_RETRY_MS };
+      if (!s.list.length) console.warn("EIA schedule pages could not be read: using the standard days and Forex Factory's shifts");
+    }
+    return this.schedule.list;
+  }
+
   private async text(url: string) {
     try {
       const res = await fetch(url, { ...withUserAgent(url), signal: AbortSignal.timeout(10_000) });
@@ -148,7 +173,8 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const to = Date.now() + days * 86_400_000;
     const [ff, holidays] = await Promise.all([this.forexFactory(), this.upstoxHolidays()]);
     const merged = [...mergeForexFactory(energyReleases(from, to), ff, from, to), ...mcxHolidays(holidays, from, to)].sort((a, b) => a.at - b.at);
-    const withPrevious = await fillEiaPrevious(decorateEvents(merged), (report, week) => this.reports.headlineChangeOf(report, week).catch(() => undefined)); // no database: no previous, not an error
+    const official = applyEiaSchedule(merged, await this.eiaSchedule()); // EIA's own days and times win over any feed
+    const withPrevious = await fillEiaPrevious(decorateEvents(official), (report, week) => this.reports.headlineChangeOf(report, week).catch(() => undefined)); // no database: no previous, not an error
     const events = await this.withActuals(withPrevious);
     // no Forex Factory rows (throttled) → look again in a minute instead of showing a forecast-less list for 15
     cache.set(String(days), { at: Date.now(), events, ttl: releasePending(events, Date.now()) || ff.length === 0 ? TTL_PENDING_MS : TTL_MS });

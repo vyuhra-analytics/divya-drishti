@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query } from "@nestjs/common";
-import { parseTypedFigure, type CalEvent } from "@drishti/shared";
+import { parseTypedFigure, upcomingExceptions, type CalEvent } from "@drishti/shared";
 import { CalendarService } from "./calendar.service";
 
 const DAY = 86_400_000;
@@ -19,6 +19,12 @@ export class CalendarController {
     const days = daysParam === undefined ? 14 : Number(daysParam);
     if (!Number.isInteger(days) || days < 1 || days > 60) throw new BadRequestException("days must be 1–60");
     return this.calendar.events(days);
+  }
+
+  /** EIA's official holiday delays still ahead for the two weekly reports, soonest first. */
+  @Get("eia-schedule")
+  async eiaSchedule() {
+    return upcomingExceptions(await this.calendar.eiaSchedule(), Date.now()).slice(0, 6);
   }
 
   @Get("stored")

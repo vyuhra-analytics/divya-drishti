@@ -350,6 +350,7 @@ export * from "./eiaReport";
 export * from "./eiaWatch";
 export * from "./eiaAnalysis";
 export * from "./calendarSources";
+export * from "./eiaSchedule";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";
