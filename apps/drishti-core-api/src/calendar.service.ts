@@ -3,7 +3,6 @@ import {
   applyEiaActuals,
   decorateEvents,
   energyReleases,
-  fileIsForEvent,
   fredActual,
   fredSeriesFor,
   LruCache,
@@ -15,8 +14,6 @@ import {
   planEvents,
   recordPlanned,
   releasePending,
-  wngsrPoints,
-  wpsrPoints,
   withUserAgent,
   type CalEvent,
   type FFRow,
@@ -67,7 +64,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       const r = await this.record();
       this.failing = false;
       if (r.pending) next = RECORD_PENDING_MS;
-      if (r.created + r.moved + r.observations + r.released + r.tables > 0) console.log(`calendar recorder: ${r.created} new, ${r.moved} moved, ${r.observations} figures, ${r.released} released, ${r.tables} EIA tables`);
+      if (r.created + r.moved + r.observations + r.released > 0) console.log(`calendar recorder: ${r.created} new, ${r.moved} moved, ${r.observations} figures, ${r.released} released`);
     } catch (e) {
       if (!this.failing) console.warn(`calendar recorder: ${(e as Error).message}`); // once per outage
       this.failing = true;
@@ -77,34 +74,13 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * One recorder pass: the live calendar for the next 8 weeks becomes stored events and appended figures (forecast, previous and actual, each with its
-   * source), then the full table of an EIA report is stored once it is out. Running it twice changes nothing.
+   * source). The full EIA tables are the EIA report watcher's job (eia-report.service.ts). Running it twice changes nothing.
    */
   async record(now = Date.now()) {
     const events = await this.events(RECORD_AHEAD_DAYS);
     const from = now - 6 * 3600_000;
     const r = await recordPlanned(this.store, planEvents(events), from, now + RECORD_AHEAD_DAYS * 86_400_000, now);
-    const tables = await this.recordEiaTables();
-    return { ...r, tables, pending: releasePending(events, now) };
-  }
-
-  private async recordEiaTables(): Promise<number> {
-    let stored = 0;
-    for (const [report, url, parse] of [
-      ["WPSR", "https://ir.eia.gov/wpsr/table1.csv", wpsrPoints],
-      ["WNGSR", "https://ir.eia.gov/ngs/wngsr.csv", wngsrPoints],
-    ] as const) {
-      const due = await this.store.needingTables(report);
-      if (due.length === 0) continue;
-      const csv = await this.text(url);
-      const points = csv ? parse(csv) : [];
-      if (points.length === 0) continue;
-      // a file that still holds last week's numbers matches no event
-      const event = due.sort((a, b) => b.scheduledAt - a.scheduledAt).find((d) => fileIsForEvent(points[0].periodEnd, d.scheduledAt));
-      if (!event) continue;
-      await this.store.saveEiaTable(report, event.id, points);
-      stored++;
-    }
-    return stored;
+    return { ...r, pending: releasePending(events, now) };
   }
 
   private async text(url: string) {

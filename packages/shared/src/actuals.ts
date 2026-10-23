@@ -110,68 +110,6 @@ export function applyEiaActuals(events: CalEvent[], files: { wpsr?: Wpsr; wngsr?
   });
 }
 
-// ---- every figure in the two EIA files, for the stored calendar (one row per series per report) ----
-
-/** One figure of an EIA report: a stock level with last week's and the change. Units: WPSR million barrels, WNGSR billion cubic feet. */
-export interface EiaReportPoint {
-  /** `WPSR:COMMERCIAL_EXCLUDING_SPR`, `WNGSR:SOUTH_CENTRAL`: the report and a slug of the row name */
-  seriesId: string;
-  label: string;
-  unit: string;
-  /** the week the report covers, UTC midnight */
-  periodEnd: number;
-  value: number;
-  prior?: number;
-  change?: number;
-  /** the figure the forecast and the market quote (commercial crude stocks excluding SPR; total Lower 48 gas storage) */
-  headline: boolean;
-}
-
-const slugRow = (label: string) =>
-  label
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-/** The stocks table of the EIA petroleum report (the first block of `table1.csv`: crude, gasoline, distillate, jet, propane, totals): every row as a point. */
-export function wpsrPoints(csv: string): EiaReportPoint[] {
-  const lines = csv.split(/\r?\n/).filter((l) => l.trim() !== "");
-  const head = lines.length ? csvCells(lines[0]) : [];
-  const periodEnd = head[1] ? mdyShort(head[1]) : undefined;
-  if (periodEnd === undefined || head[0] !== "STUB_1") return [];
-  const out: EiaReportPoint[] = [];
-  for (const l of lines.slice(1)) {
-    const c = csvCells(l);
-    if (c[0] === "STUB_1") break; // the second block (supply and demand) has other columns
-    const value = toNum(c[1]);
-    if (!c[0] || value === undefined) continue;
-    const label = c[0].trim();
-    out.push({ seriesId: `WPSR:${slugRow(label)}`, label, unit: "million barrels", periodEnd, value, prior: toNum(c[2]), change: toNum(c[3]), headline: label === "Commercial (Excluding SPR)" });
-  }
-  return out;
-}
-
-/** The regional table of the EIA natural gas storage report (`wngsr.csv`): East, Midwest, Mountain, Pacific, South Central (with Salt and Nonsalt) and the Lower 48 total. */
-export function wngsrPoints(csv: string): EiaReportPoint[] {
-  const we = /Week Ending ([A-Za-z]+ \d{1,2}, \d{4})/.exec(csv);
-  const periodEnd = we ? Date.parse(`${we[1]} UTC`) : NaN;
-  const rows = csv.split(/\r?\n/).map(csvCells);
-  const header = rows.find((c) => c.some((x) => /net change/i.test(x)));
-  const changeAt = header?.findIndex((x) => /net change/i.test(x)) ?? -1;
-  const isDate = (x: string | undefined) => /^\d{2}-[A-Za-z]{3}-\d{2}$/.test(x ?? "");
-  const dates = rows.find((c) => isDate(c[1]) && isDate(c[4]));
-  if (!Number.isFinite(periodEnd) || changeAt < 0 || !dates) return [];
-  const regions = new Set(["East", "Midwest", "Mountain", "Pacific", "South Central", "Salt", "Nonsalt", "Total"]);
-  const out: EiaReportPoint[] = [];
-  for (const c of rows) {
-    const label = (c[0] ?? "").trim();
-    const value = toNum(c[1]);
-    if (!regions.has(label) || value === undefined) continue;
-    out.push({ seriesId: `WNGSR:${slugRow(label)}`, label, unit: "Bcf", periodEnd, value, prior: toNum(c[4]), change: toNum(c[changeAt]), headline: label === "Total" });
-  }
-  return out;
-}
-
 // ---- FRED, for the US macro events Forex Factory lists ----
 
 export interface SeriesPoint {

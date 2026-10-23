@@ -346,6 +346,8 @@ export * from "./optionCandles";
 export * from "./upstoxAccount";
 export * from "./eventSeries";
 export * from "./eventPlan";
+export * from "./eiaReport";
+export * from "./eiaWatch";
 export * from "./strategies";
 export * from "./backtest";
 export * from "./paper";

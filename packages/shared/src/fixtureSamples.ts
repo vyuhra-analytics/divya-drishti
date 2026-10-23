@@ -1,6 +1,7 @@
 // The sources whose real responses are recorded as fixtures, each with the check a good response must pass.
 // `bun run fixtures:refresh` records them; the contract test replays them. A failing check after a refresh means the provider changed.
 import { parseWngsr, parseWpsr, parseFredCsv } from "./actuals";
+import { parseWpsrReport } from "./eiaReport";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
 import { chokepointFetcher, cotFetcher, curveFetcher } from "./fetchers";
@@ -60,6 +61,16 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
     source: "eia-csv",
     run: async (io) => parseWpsr(await text(io, "https://ir.eia.gov/wpsr/table1.csv")),
     check: (w) => (w && num(w.weekEnding) && Object.keys(w.change).length > 5 ? undefined : "expected a week ending and 5+ rows of changes"),
+  },
+  {
+    id: "eia-wpsr-tables",
+    source: "eia-csv",
+    run: async (io) => {
+      const files: Record<number, string | undefined> = {};
+      for (let t = 1; t <= 9; t++) files[t] = await text(io, `https://ir.eia.gov/wpsr/table${t}.csv`);
+      return parseWpsrReport(files);
+    },
+    check: (r) => (r && num(r.periodEnd) && r.rows.length > 150 && r.rows.some((x: any) => x.headline) ? undefined : "expected the nine tables of one week with a headline row"),
   },
   {
     id: "eia-wngsr-csv",
