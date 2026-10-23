@@ -81,3 +81,18 @@ Same queries against the live database, same gate. **Nothing changed in the verd
 
 At about 41 independent in-session events a day the 1,500 gate is still about 33 trading days away on the first-seen clock, mid-December 2026 at the earliest, and the 60-trading-day gate about 12 weeks. A result meeting IC 0.05 needs about five months.
 
+## Audit of the complete GDELT backfill, 2026-10-23 (deviations D1 to D3 in force)
+
+The backfill finished: **17,568 of 17,568** 15-minute batches read (23 Apr to 23 Oct 2026), 0 failed, 79,459 unique crude headlines (126,801 before dedup). Run: `bun --env-file=.env research/sentiment/run-study.ts` (audit only). **The experiments were not run.**
+
+| Gate item | Found | Result |
+|---|---|---|
+| GDELT complete | 17,568 of 17,568 batches | PASS |
+| 1. at least 1,500 entry bars with an event, rolls dropped | **2,359** bars (from 79,459 headlines) | PASS |
+| 2. at least 60 trading days, at least 10 in each of two volatility terciles | **124** days; low / mid / high volatility days 31 / 40 / 53 | PASS |
+| 3. timestamps | GDELT batch time, 15-minute resolution | PASS (by definition) |
+| 4. hourly bars: 20 or more on 99% of trading weekdays, no gap over 3 hours inside a day | 125 of 127 weekdays (98.4%) have 20+ bars; longest gap inside a day 1 hour | **FAIL** |
+| 5. look-ahead: shifting events 1 hour later changes the entry bar of at least 50% of events | 79% changed | PASS |
+
+The two failing days are the sessions after exchange holidays (Tuesday 26 May after Memorial Day and Tuesday 8 September after Labor Day, 19 hourly bars instead of the usual 20 or more). Everything else passes. By the pre-registration the experiments do not run while any item fails and no threshold is relaxed. Relaxing item 4 (or excluding those two sessions) is a change made after seeing this number and needs its own logged deviation, D4, approved by the owner before any experiment is run.
+
