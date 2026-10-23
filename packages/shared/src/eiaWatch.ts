@@ -45,3 +45,11 @@ export const weekKey = (periodEnd: number) => new Date(periodEnd).toISOString().
 
 /** Milliseconds from the official release to our first stored copy (negative is clamped to 0: a clock a little off must not show an early arrival). */
 export const arrivalDelay = (officialAt: number, storedAt: number) => Math.max(0, storedAt - officialAt);
+
+/** Whether a scheduled release is within two minutes ahead or fifteen minutes behind: the panel looks every few seconds then. */
+export function inReleaseWindow(now: number): boolean {
+  return (["WPSR", "WNGSR"] as const).some((code) => {
+    const def = seriesByCode(code);
+    return def !== undefined && occurrences(def, now - 15 * MINUTE, now + 2 * MINUTE).length > 0;
+  });
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { arrivalDelay, nextPollDelay, releaseAtFor, shouldFetch, weekKey, WATCH } from "./eiaWatch";
+import { arrivalDelay, inReleaseWindow, nextPollDelay, releaseAtFor, shouldFetch, weekKey, WATCH } from "./eiaWatch";
 
 const wed = Date.UTC(2026, 9, 28, 14, 30); // Wed 28 Oct 2026 10:30 New York (EDT)
 
@@ -46,4 +46,11 @@ describe("which release a week belongs to", () => {
 it("an arrival before the official time counts as no delay", () => {
   expect(arrivalDelay(1000, 4200)).toBe(3200);
   expect(arrivalDelay(5000, 4000)).toBe(0);
+});
+
+it("the release window is two minutes before to fifteen after a Wednesday or Thursday 10:30 New York", () => {
+  const thu = Date.UTC(2026, 9, 29, 14, 30);
+  expect([inReleaseWindow(wed - 3 * 60_000), inReleaseWindow(wed - 60_000), inReleaseWindow(wed + 14 * 60_000), inReleaseWindow(wed + 16 * 60_000)]).toEqual([false, true, true, false]);
+  expect([inReleaseWindow(thu), inReleaseWindow(thu + 5 * 3_600_000)]).toEqual([true, false]);
+  expect(inReleaseWindow(Date.UTC(2026, 9, 27, 14, 30))).toBe(false); // a Tuesday
 });

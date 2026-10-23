@@ -142,7 +142,7 @@ test("the built-in desks are the Evening desk and the five research workspaces, 
 test("each desk holds what its question needs", () => {
   expect(types("evening")).toEqual(expect.arrayContaining(["advchart", "quote", "calendar", "optionchain"]));
   expect(types("presession")).toEqual(expect.arrayContaining(["recap", "calendar", "curve", "advchart", "news"]));
-  expect(types("reportprep")).toEqual(expect.arrayContaining(["eia", "calendar", "optionchain", "advchart", "cot"]));
+  expect(types("reportprep")).toEqual(expect.arrayContaining(["eiareport", "calendar", "optionchain", "advchart", "cot"]));
   expect(types("review")).toEqual(expect.arrayContaining(["paper", "advchart", "costs", "quality"]));
   expect(types("study")).toEqual(expect.arrayContaining(["backtest", "advchart", "costs", "cot"]));
   expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));

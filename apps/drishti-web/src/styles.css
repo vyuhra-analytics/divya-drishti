@@ -591,3 +591,27 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .st-eia td { text-align: right; padding: 1px 8px; }
 .st-eia th:first-child, .st-eia td:first-child { text-align: left; }
 .st-eia tr.headline td { font-weight: 700; }
+.eia-report { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.eia-report .er-body { overflow: auto; padding: 6px 10px 12px; font-size: 12px; }
+.er-forecast { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.er-forecast input { width: 128px; }
+.er-live { margin-left: 8px; font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--on-accent); background: var(--accent); border-radius: 3px; padding: 0 5px; }
+.er-headline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px 0 6px; }
+.er-headline.fresh { animation: cal-fresh 1.2s ease-out 6; }
+.er-big { font-size: 22px; font-variant-numeric: tabular-nums; }
+.er-big small { font-size: 11px; color: var(--muted); }
+.er-side { margin: 2px 0 4px; font-weight: 600; }
+.er-meta { margin: 0 0 6px; font-size: 11px; }
+.eia-report h2 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.eia-report ul { list-style: none; margin: 0; padding: 0; }
+.er-line { display: grid; grid-template-columns: 12px 1fr; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line); line-height: 1.4; }
+.er-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--muted); }
+.er-line.flag .er-dot { background: var(--down); }
+.er-line.note .er-dot { background: var(--accent); }
+.er-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.er-table th { text-align: right; font-weight: 400; color: var(--muted); padding: 2px 6px; }
+.er-table td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line); }
+.er-table th:first-child, .er-table td:first-child { text-align: left; }
+.er-table td.child { padding-left: 18px; color: var(--muted); }
+.er-table tr.headline td { font-weight: 700; }
+.er-table tr.er-group td { text-align: left; background: var(--hover); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }

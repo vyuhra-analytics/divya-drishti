@@ -81,6 +81,15 @@ await check("calendar: stored events carry their figures", async () => {
   need(Array.isArray(rows) && rows.every((r: any) => r.series_code && Array.isArray(r.observations)), "bad stored rows");
   return `${rows.length} stored`;
 });
+await check("EIA report: the stored report has every table, the analysis and the release delay", async () => {
+  const r = await ok("/eia-report?report=WPSR");
+  need(r.rows.length > 150 && new Set(r.rows.map((x: any) => x.table)).size === 9, "missing tables");
+  need(r.analysis?.headline && r.analysis.sections.length >= 3, "no analysis");
+  const g = await ok("/eia-report?report=WNGSR&forecast=70");
+  need(g.rows.some((x: any) => x.label === "Total" && x.fiveYear > 0) && g.forecast.source === "typed in", "gas report incomplete");
+  need(Array.isArray(await ok("/eia-report/arrivals")), "no arrivals list");
+  return `${r.rows.length} petroleum rows, week ${r.weekEnding}`;
+});
 await check("market sessions", async () => void (await ok("/market/sessions")));
 await check("COT: WTI has 3 years of weekly rows", async () => {
   const c = await ok("/cot?market=wti&weeks=156");
@@ -187,6 +196,9 @@ for (const [name, path] of [
   ["unknown curve symbol", "/curve?symbol=x"],
   ["calendar days out of range", "/calendar?days=999"],
   ["stored calendar bad date", "/calendar/stored?from=bad"],
+  ["EIA report unknown kind", "/eia-report?report=X"],
+  ["EIA report bad week", "/eia-report?report=WPSR&week=bad"],
+  ["EIA report bad forecast", "/eia-report?report=WPSR&forecast=abc"],
   ["stored calendar bad series", "/calendar/stored?series=a%20b"],
   ["stored calendar bad id", "/calendar/stored/0/eia"],
 ] as const) {

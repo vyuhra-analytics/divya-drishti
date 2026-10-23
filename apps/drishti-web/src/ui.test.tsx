@@ -158,6 +158,40 @@ test("CalendarWidget Recorded view shows stored figures, the surprise and the lo
   expect(document.body.textContent).toContain("80B"); // the earlier forecast stays on record
 });
 
+test("EiaReportWidget shows the headline, the surprise side, the analysis lines and the tables, and sends a typed forecast", async () => {
+  const row = (seriesId: string, table: string, label: string, value: number, change: number, extra: object = {}) => ({ seriesId, report: "WPSR", table, group: "", parent: "", label, unit: "million barrels", seq: 0, periodEnd: 0, value, prior: value - change, change, headline: false, ...extra });
+  const body = {
+    weekEnding: "2026-10-16",
+    scheduledAt: Date.now(),
+    officialReleaseAt: Date.now() - 5000,
+    delayMs: 3400,
+    backfilled: false,
+    forecast: { value: 0.5, source: "typed in" },
+    rows: [row("WPSR:T1:COMMERCIAL_EXCLUDING_SPR", "T1", "Commercial (Excluding SPR)", 412.517, -3.061, { headline: true }), row("WPSR:T4:CUSHING", "T4", "Cushing", 27.594, 0.987)],
+    analysis: {
+      report: "WPSR",
+      weekEnding: "2026-10-16",
+      headline: { label: "Commercial crude stocks (excluding SPR)", unit: "MB", level: 412.517, change: -3.061, yearAgoPct: -2.4, forecast: 0.5, surprise: -3.561, threshold: 3, passes: true, side: "long", sideText: "Surprise -3.6 MB (below forecast) passes 3.0: the rule allows long (calls) only" },
+      sections: [{ id: "crude", title: "Crude stocks", lines: [{ id: "a", severity: "flag", text: "Cushing built 0.987 MB to 27.6 MB.", cites: ["WPSR:T4:CUSHING"] }] }],
+    },
+  };
+  mockFetch(body);
+  const { EiaReportWidget } = require("./EiaReportPanel") as typeof import("./EiaReportPanel");
+  render(<EiaReportWidget widget={widget("eiareport")} />);
+  fireEvent.click(screen.getByText("Petroleum (WPSR)")); // the default report follows the weekday in New York
+  expect(await screen.findByText(/allows long \(calls\) only/)).toBeTruthy();
+  expect(document.querySelector(".er-sur .er-big")!.textContent).toBe("-3.6");
+  expect(document.querySelector(".er-sur .er-big")!.className).toContain("up"); // long side, up colour
+  expect(screen.getByText("Cushing built 0.987 MB to 27.6 MB.")).toBeTruthy();
+  expect(document.body.textContent).toContain("stored 3.4 s after the release");
+  fireEvent.click(screen.getByText("T4")); // the tables: switch to table 4
+  expect(screen.getAllByText("Cushing").length).toBeGreaterThan(0);
+  fireEvent.change(screen.getByLabelText("Forecast of the change"), { target: { value: "-1.2" } });
+  await screen.findByText(/allows long/);
+  const urls = ((globalThis.fetch as any).mock.calls as [string][]).map((c) => c[0]);
+  expect(urls.some((u) => u.includes("forecast=-1.2") && u.includes("report=WPSR"))).toBe(true);
+});
+
 test("HelpDialog welcomes first-time users once, lists codes and the glossary", () => {
   const { HelpDialog } = require("./HelpDialog") as typeof import("./HelpDialog");
   const { useSettings } = require("./settings") as typeof import("./settings");

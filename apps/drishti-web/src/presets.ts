@@ -71,7 +71,7 @@ export const PRESETS: Preset[] = [
     hint: "Tuesday to Thursday: the EIA numbers and the calendar over the options chain; the chart and positioning below",
     build: () =>
       snapshot("reportprep", [
-        ["eia-1", "eia", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 11],
+        ["eiareport-1", "eiareport", null, "MCX:CRUDEOIL", "5m", 0, 0, 6, 11],
         ["cal-1", "calendar", null, "MCX:CRUDEOIL", "5m", 6, 0, 6, 11],
         ["optionchain-1", "optionchain", "amber", "MCX:CRUDEOIL", "5m", 0, 11, 12, 17],
         ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 28, 6, 12],

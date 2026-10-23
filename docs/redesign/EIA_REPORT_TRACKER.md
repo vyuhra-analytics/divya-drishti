@@ -23,13 +23,14 @@ Status key: done, active, next, later, blocked. Update this file at the end of e
 | 3.1 | Crude analysis rules: headline vs forecast and threshold, drivers (runs, imports, exports, demand, production), regions (PADD 3, Cushing), history | **done** | shared `eiaAnalysis.ts` |
 | 3.2 | Products analysis: gasoline, distillate, jet, propane, days of supply | **done** | same |
 | 3.3 | Consistency checks: does the headline agree with the drivers | **done** | same |
-| 4.1 | EIA Report panel (grouped tables, facts, analysis lines, surprise block) | later | `EiaReportPanel.tsx`, code `ER` |
-| 4.2 | Put it on the Report prep desk and the report-day layout | later | `presets.ts` |
+| 4.1 | EIA Report panel (grouped tables, facts, analysis lines, surprise block) | **done** | `EiaReportPanel.tsx`, code `ER` |
+| 4.2 | Put it on the Report prep desk and the report-day layout | **done** | `presets.ts` |
 | 5.1 | Gas analysis: regions vs 5-year and year ago, implied flow, surprise in Bcf vs 5.0 | **done** | shared `eiaAnalysis.ts` |
-| 6.1 | Smoke checks, e2e panel check, mutation checks, CLAUDE.md and docs | later | tests, docs |
+| 6.1 | Smoke checks, e2e panel check, mutation checks, CLAUDE.md and docs | **done** | tests, docs |
 
 ## Log
 
+- 2026-10-23: items 4.1, 4.2 and 6.1 done. `EiaReportPanel.tsx` (code `ER`) on the Report prep desk; component test; smoke check (48 checks, one flaky when a browser tab is watching option contracts: the option-feed check treats those as a leak, wait for the watch to expire); e2e check `eia report panel renders real data`; CLAUDE.md. All items of this tracker are done; what is left is measured only at a real release: the watcher delay on Wed 28 Oct and Thu 29 Oct.
 - 2026-10-23: items 3.1 to 3.3 and 5.1 done. Shared `eiaAnalysis.ts`: `analyzeWpsr` (headline and surprise rule, crude stocks with SPR/Cushing/regions, drivers ranked by their effect on stocks, refining, products with days of supply against a year ago, consistency checks) and `analyzeWngsr` (build vs 5-year and year ago, regional movers, salt caverns). Every line cites its series ids; thresholds live in `RULES`; mutation-checked (side rule, threshold boundary, export sign, adjustment flag). `GET /eia-report` now returns the analysis, with the forecast typed in (`forecast=`) or the one recorded for the release.
 - 2026-10-23: items 1.1 to 2.2 done. Parser (`eiaReport.ts`, nine tables, 884 rows for the 16 Oct week, gas with 5-year average), fixture `eia-wpsr-tables`, migration 015, `PgEiaReportStore`, `EiaReportWatcher` (polls table 1 every 3 s from 90 s before the release, fetches the rest on a new week, never mixes weeks, stores once), routes `GET /eia-report` and `/eia-report/arrivals`. The 16 Oct week of both reports was backfilled from the files still on the server (marked backfilled: the delay is not a watcher measurement). First real delay figure comes at the 28 Oct release.
 - 2026-10-23: tracker created. Findings: the database holds only the gas release of 2026-10-16 (8 rows); no petroleum rows yet (the recorder started after the 21 Oct release).
