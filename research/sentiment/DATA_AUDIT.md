@@ -64,3 +64,18 @@ run. This is a statement about the data, not about FinBERT or CrudeBERT, and it 
 | | 5. Positive control data | not started |
 | | 6. CrudeBERT licence enquiry | not started |
 | | 7. Remaining pipeline | not started |
+
+## Re-run on 2026-10-23 (owner asked to use the news data for the study)
+
+Same queries against the live database, same gate. **Nothing changed in the verdict; the experiments were not run.**
+
+| Gate item | Found 2026-10-23 | Result |
+|---|---|---|
+| 1. at least 1,500 independent events | 3,900 headlines, 2,835 tagged crude or oil, 2,367 of those inside the MCX session; **175** distinct 15-minute buckets contain one (12% of 1,500) | **FAIL** |
+| 2. at least 60 trading days | headlines on 5 calendar days (19 to 23 Oct), about 4.5 trading days | **FAIL** |
+| 3. verified timestamps | `first_seen_at` is recorded for 1,112 of the in-session events, in **52** independent buckets; the rest are `unverified_time` and cannot carry a claim | **FAIL** (grows by about 25 verified buckets a day) |
+| 4. price bars | `bars_1m` for MCX crude holds 802 minutes on 22 Oct and 548 on 21 Oct (of 870 in a session), the 20 Oct day almost nothing: the stream-built minute bars are not complete enough, and the provider history is front-month only with no roll recorded | **FAIL** |
+| 5. look-ahead test | pipeline not built | **NOT RUN** |
+
+At about 41 independent in-session events a day the 1,500 gate is still about 33 trading days away on the first-seen clock, mid-December 2026 at the earliest, and the 60-trading-day gate about 12 weeks. A result meeting IC 0.05 needs about five months.
+
