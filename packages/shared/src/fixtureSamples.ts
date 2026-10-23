@@ -2,6 +2,7 @@
 // `bun run fixtures:refresh` records them; the contract test replays them. A failing check after a refresh means the provider changed.
 import { parseWngsr, parseWpsr, parseFredCsv } from "./actuals";
 import { parseWpsrReport } from "./eiaReport";
+import { financeCalendar, SOURCE_WINDOW, yahooCalendar } from "./calendarSources";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
 import { chokepointFetcher, cotFetcher, curveFetcher } from "./fetchers";
@@ -61,6 +62,18 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
     source: "eia-csv",
     run: async (io) => parseWpsr(await text(io, "https://ir.eia.gov/wpsr/table1.csv")),
     check: (w) => (w && num(w.weekEnding) && Object.keys(w.change).length > 5 ? undefined : "expected a week ending and 5+ rows of changes"),
+  },
+  {
+    id: "finance-calendar",
+    source: "finance-calendar",
+    run: (io) => financeCalendar.fetch(io, io.now() - SOURCE_WINDOW.back, io.now() + SOURCE_WINDOW.ahead),
+    check: (rows) => (rows.length >= 5 && rows.every((r: any) => r.code && Number.isFinite(r.at)) ? undefined : "expected 5+ US events with codes and release times"),
+  },
+  {
+    id: "yahoo-calendar",
+    source: "yahoo",
+    run: (io) => yahooCalendar().fetch(io, io.now() - SOURCE_WINDOW.back, io.now() + SOURCE_WINDOW.ahead),
+    check: (rows) => (rows.length >= 5 && rows.every((r: any) => r.title && Number.isFinite(r.at)) ? undefined : "expected 5+ US events with names and times"),
   },
   {
     id: "eia-wpsr-tables",

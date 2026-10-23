@@ -8,7 +8,7 @@ import { tzOffsetSec } from "./index";
 const NY = "America/New_York";
 const DAY = 86_400_000;
 
-export type ObservationKind = "forecast" | "previous" | "actual" | "revised";
+export type ObservationKind = "forecast" | "previous" | "actual" | "revised" | "release_time";
 
 export interface ObservationIn {
   kind: ObservationKind;
@@ -47,6 +47,13 @@ const CENTRAL_BANK = /\b(fomc|federal funds rate|monetary policy|rate (?:decisio
 
 /** The category a feed row falls in: an energy item (OPEC), a central bank item, or plain macro. */
 export const categoryOfFeedRow = (title: string, kind: CalEvent["kind"]): EventCategory => (kind === "energy" ? "energy" : CENTRAL_BANK.test(title) ? "central_bank" : "macro");
+
+/** The natural key of a release of a series at a time: the week-ending Friday for the weekly US reports, the New York date for the rig count, else the date. */
+export function naturalKey(series: EventSeriesDef, at: number): string {
+  if (series.code === "RIGS") return nyDay(at);
+  if (series.code === "API" || series.code === "WPSR" || series.code === "WNGSR") return weekEndingIso(at);
+  return iso(at);
+}
 
 /** The stored-calendar identity of one live calendar event: its series (defined by us, or born from a feed row) and its natural key. */
 export function planEvent(e: CalEvent): PlannedEvent | undefined {

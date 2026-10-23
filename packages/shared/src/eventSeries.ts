@@ -36,6 +36,8 @@ export interface EventSeriesDef {
   schedule: ScheduleRule;
   /** the Forex Factory row that carries this series' forecast and previous values (matched by country and title) */
   forecastFrom?: { country: string; title: RegExp };
+  /** how each secondary source names this event: source id (`financecalendar`, `yahoo`) to a pattern for that source's own code (see calendarSources.ts) */
+  aliases?: Partial<Record<string, RegExp>>;
 }
 
 const NY = "America/New_York";
@@ -43,8 +45,8 @@ const NY = "America/New_York";
 /** The series we define ourselves, with their schedules. Forex Factory rows become `FF:` series on first sight (see `autoSeries`). */
 export const SERIES: EventSeriesDef[] = [
   { code: "API", legacyKey: "api", title: "API crude inventories", category: "energy", country: "US", importance: "medium", frequency: "weekly", detail: "American Petroleum Institute, weekly", relevance: ["crude"], source: "American Petroleum Institute", schedule: { kind: "weekly", tz: NY, weekday: 2, hour: 16, minute: 30 } },
-  { code: "WPSR", legacyKey: "eia-oil", title: "EIA crude inventories", category: "energy", country: "US", importance: "high", frequency: "weekly", detail: "EIA Weekly Petroleum Status Report", relevance: ["crude"], source: "EIA", schedule: { kind: "weekly", tz: NY, weekday: 3, hour: 10, minute: 30 }, forecastFrom: { country: "USD", title: /^crude oil inventories$/i } },
-  { code: "WNGSR", legacyKey: "eia-gas", title: "EIA natural gas storage", category: "energy", country: "US", importance: "high", frequency: "weekly", detail: "EIA weekly storage report", relevance: ["gas"], source: "EIA", schedule: { kind: "weekly", tz: NY, weekday: 4, hour: 10, minute: 30 }, forecastFrom: { country: "USD", title: /^natural gas storage$/i } },
+  { code: "WPSR", legacyKey: "eia-oil", title: "EIA crude inventories", category: "energy", country: "US", importance: "high", frequency: "weekly", detail: "EIA Weekly Petroleum Status Report", relevance: ["crude"], source: "EIA", schedule: { kind: "weekly", tz: NY, weekday: 3, hour: 10, minute: 30 }, forecastFrom: { country: "USD", title: /^crude oil inventories$/i }, aliases: { financecalendar: /^us-eia-petroleum$/ } },
+  { code: "WNGSR", legacyKey: "eia-gas", title: "EIA natural gas storage", category: "energy", country: "US", importance: "high", frequency: "weekly", detail: "EIA weekly storage report", relevance: ["gas"], source: "EIA", schedule: { kind: "weekly", tz: NY, weekday: 4, hour: 10, minute: 30 }, forecastFrom: { country: "USD", title: /^natural gas storage$/i }, aliases: { financecalendar: /^us-eia-natural-gas$/, yahoo: /^EIA-Nat Gas Chg/ } },
   { code: "RIGS", legacyKey: "rigs", title: "Baker Hughes rig count", category: "energy", country: "US", importance: "medium", frequency: "weekly", detail: "US oil and gas rigs, weekly", relevance: ["crude", "gas"], source: "Baker Hughes", schedule: { kind: "weekly", tz: NY, weekday: 5, hour: 13, minute: 0 } },
   { code: "MCX_HOLIDAY", legacyKey: "mcx", title: "MCX closed", category: "holiday", country: "IN", importance: "medium", frequency: "irregular", detail: "Exchange holiday (Upstox)", relevance: ["mcx"], source: "Upstox", schedule: { kind: "feed", feed: "upstox-holidays" } },
 ];

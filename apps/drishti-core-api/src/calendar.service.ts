@@ -5,8 +5,10 @@ import {
   energyReleases,
   fredActual,
   fredSeriesFor,
+  CALENDAR_SOURCES,
   LruCache,
   mcxHolidays,
+  mergeSourceRows,
   mergeForexFactory,
   parseFredCsv,
   parseWngsr,
@@ -14,6 +16,11 @@ import {
   planEvents,
   recordPlanned,
   releasePending,
+  seriesByCode,
+  SOURCE_WINDOW,
+  type CalendarSource,
+  type PlannedEvent,
+  type SourceRow,
   withUserAgent,
   type CalEvent,
   type FFRow,
@@ -32,6 +39,8 @@ let ffCache: { at: number; rows: FFRow[] } | null = null;
 const cache = new LruCache<{ at: number; events: CalEvent[]; ttl: number }>(8); // by number of days: the panel (14) and the recorder (56) ask for different spans
 const RECORD_AHEAD_DAYS = 56;
 const RECORD_EVERY_MS = 5 * 60_000;
+const SOURCE_EVERY_MS = 15 * 60_000; // the extra sources are asked this often, and every minute while a release is pending
+const SOURCE_RETRY_MS = 5 * 60_000; // after a failure, leave a source alone this long
 const RECORD_PENDING_MS = 60_000; // while a release is due or just out, look every minute so the actual is stored when published
 
 /**
@@ -44,6 +53,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
   readonly store: PgEventStore;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private failing = false;
+  private readonly sources: { source: CalendarSource; rows: SourceRow[]; at: number; retryAt: number; failing: boolean }[] = CALENDAR_SOURCES().map((source) => ({ source, rows: [], at: 0, retryAt: 0, failing: false }));
 
   constructor(private readonly db: Db) {
     this.store = new PgEventStore(db.sql);
@@ -79,8 +89,42 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
   async record(now = Date.now()) {
     const events = await this.events(RECORD_AHEAD_DAYS);
     const from = now - 6 * 3600_000;
+    const pending = releasePending(events, now);
     const r = await recordPlanned(this.store, planEvents(events), from, now + RECORD_AHEAD_DAYS * 86_400_000, now);
-    return { ...r, pending: releasePending(events, now) };
+    const extra = await this.mergeSources(now, pending);
+    return { ...r, observations: r.observations + extra, pending };
+  }
+
+  /**
+   * Adds what the other free sources say about the same releases (their figures and release times, under their own names) to the STORED events, so a
+   * release from a few days ago still gets its actual from a second source. Each source is asked on its own schedule, one failing never stops the
+   * others or the recording, and the last good rows are used again until it answers. Returns the number of new figures stored.
+   */
+  private async mergeSources(now: number, pending: boolean): Promise<number> {
+    const io = { fetch: (input: string | URL, init?: RequestInit) => fetch(input, withUserAgent(input, init)), env: process.env, now: Date.now };
+    await Promise.all(
+      this.sources.map(async (s) => {
+        if (now < s.retryAt || now - s.at < (pending ? RECORD_PENDING_MS : SOURCE_EVERY_MS)) return;
+        try {
+          s.rows = await s.source.fetch(io, now - SOURCE_WINDOW.back, now + SOURCE_WINDOW.ahead);
+          s.at = now;
+          s.failing = false;
+        } catch (e) {
+          s.retryAt = now + SOURCE_RETRY_MS;
+          if (!s.failing) console.warn(`calendar source ${s.source.name}: ${(e as Error).message}`); // once per outage
+          s.failing = true;
+        }
+      }),
+    );
+    const refs = await this.store.stored(now - SOURCE_WINDOW.back - 86_400_000, now + SOURCE_WINDOW.ahead + 86_400_000);
+    const targets = refs.flatMap((ref) => {
+      const series = seriesByCode(ref.seriesCode);
+      return series ? [{ id: ref.id, planned: { series, key: ref.key, at: ref.scheduledAt, title: series.title, observations: [] } as PlannedEvent }] : [];
+    });
+    for (const s of this.sources) mergeSourceRows(targets.map((x) => x.planned), s.source.id, s.rows);
+    let fresh = 0;
+    for (const x of targets) if (x.planned.observations.length) fresh += await this.store.addObservations(x.id, x.planned.observations);
+    return fresh;
   }
 
   private async text(url: string) {
