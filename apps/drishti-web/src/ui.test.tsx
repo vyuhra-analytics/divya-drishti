@@ -377,3 +377,16 @@ import { GRID_COLS, SIZE } from "./workspace";
 test("no panel is wider than the grid: react-grid-layout crashes the tab on a panel wider than its columns", () => {
   for (const [type, { w }] of Object.entries(SIZE)) expect(w, `${type} is ${w} columns wide in a ${GRID_COLS}-column grid`).toBeLessThanOrEqual(GRID_COLS);
 });
+
+test("the sidebar starts collapsed, also for a copy of the settings saved before that was the default", async () => {
+  const { useSettings } = require("./settings") as typeof import("./settings");
+  localStorage.setItem("drishti-settings", JSON.stringify({ state: { sidebarCollapsed: false, clock: "24h" }, version: 2 }));
+  await useSettings.persist.rehydrate();
+  expect(useSettings.getState().sidebarCollapsed).toBe(true);
+  expect(useSettings.getState().clock).toBe("24h"); // the rest of the saved settings are kept
+  useSettings.getState().set({ sidebarCollapsed: false }); // a later choice to open it is kept
+  localStorage.setItem("drishti-settings", JSON.stringify({ state: { sidebarCollapsed: false }, version: 3 }));
+  await useSettings.persist.rehydrate();
+  expect(useSettings.getState().sidebarCollapsed).toBe(false);
+  localStorage.removeItem("drishti-settings");
+});

@@ -23,7 +23,29 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
 
   return (
     <nav className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} aria-label="Panels">
-      <div className="sb-head">{!collapsed && <span className="muted">Workspaces</span>}</div>
+      <div className="sb-head">
+        {!collapsed && <span className="muted">Workspaces</span>}
+        <button
+          className="collapse"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => set({ sidebarCollapsed: !collapsed })}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {collapsed ? (
+              <>
+                <polyline points="6 17 11 12 6 7" />
+                <polyline points="13 17 18 12 13 7" />
+              </>
+            ) : (
+              <>
+                <polyline points="11 17 6 12 11 7" />
+                <polyline points="18 17 13 12 18 7" />
+              </>
+            )}
+          </svg>
+        </button>
+      </div>
       <ul>
         {workspaces.map((w, i) => (
           <li key={w.key} className="ws-item">
@@ -77,14 +99,6 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
         >
           <span className="code">↺</span>
           {!collapsed && <span className="name">Reset layout</span>}
-        </button>
-        <button
-          className="collapse"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() => set({ sidebarCollapsed: !collapsed })}
-        >
-          <span className="code">{collapsed ? "»" : "«"}</span>
         </button>
       </div>
     </nav>

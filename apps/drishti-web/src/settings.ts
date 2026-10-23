@@ -52,7 +52,7 @@ export const DEFAULTS: Settings = {
   flash: true,
   lockLayout: false,
   confirmClose: false,
-  sidebarCollapsed: false,
+  sidebarCollapsed: true, // the desks fill the screen: the panel list opens from the sidebar button
   /** the welcome/help sheet has been shown once */
   helpSeen: false,
   alertSound: true,
@@ -80,9 +80,14 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: "drishti-settings",
-      version: 2,
+      version: 3,
       // v2: real instruments have their own precision (NG 3 dp, MCX crude 0 dp), so reset decimals to auto
-      migrate: (saved, version) => (version < 2 ? { ...(saved as object), decimals: -1 } : saved) as Settings,
+      migrate: (saved, version) => {
+        let s = saved as Record<string, unknown>;
+        if (version < 2) s = { ...s, decimals: -1 };
+        if (version < 3) s = { ...s, sidebarCollapsed: true }; // once: the sidebar now starts collapsed, for people who saved the old default too
+        return s as unknown as Settings;
+      },
       partialize: ({ open, set, setOpen, reset, ...rest }) => rest,
       // fill in settings added after the user's copy was saved
       merge: (saved, current) => ({ ...current, ...(saved as Partial<Settings>) }),
