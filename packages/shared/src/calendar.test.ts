@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { decorateEvents, energyReleases, mcxHolidays, mergeForexFactory, nyTime, weekEndingTag } from "./calendar";
+import { describe, expect, it, test } from "bun:test";
+import { decorateEvents, energyReleases, fillEiaPrevious, formatEiaChange, mcxHolidays, mergeForexFactory, nyTime, weekEndingTag, type CalEvent } from "./calendar";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -69,4 +69,33 @@ test("decorateEvents adds market codes and the period of the weekly reports", ()
   expect(by("Baker Hughes").period).toBeUndefined();
   expect(by("MCX closed")).toMatchObject({ country: "IN" });
   expect(by("ECB").country).toBe("EA");
+});
+
+
+describe("previous figures of the EIA reports from our own record", () => {
+  const wed = Date.UTC(2026, 9, 28, 14, 30);
+  const ev = (id: string, o: Partial<CalEvent> = {}): CalEvent => ({ id, title: "x", at: wed, kind: "energy", impact: "high", ...o });
+
+  it("formats like the feed: crude in million barrels with a decimal, gas in Bcf", () => {
+    expect(formatEiaChange("WPSR", -3.061)).toBe("-3.1M");
+    expect(formatEiaChange("WPSR", 3.74)).toBe("3.7M");
+    expect(formatEiaChange("WNGSR", 77.2)).toBe("77B");
+    expect(formatEiaChange("WNGSR", -5)).toBe("-5B");
+  });
+
+  it("fills only the two EIA reports that have no previous, asking for the week before that release, and says where it came from", async () => {
+    const asked: string[] = [];
+    const out = await fillEiaPrevious([ev("eia-oil-1"), ev("eia-gas-2"), ev("api-3"), ev("eia-oil-4", { previous: "2M" })], async (r, week) => {
+      asked.push(`${r} ${week}`);
+      return r === "WPSR" ? -3.061 : 77;
+    });
+    expect(asked).toEqual(["WPSR 2026-10-16", "WNGSR 2026-10-16"]); // the Wednesday 28 Oct release covers the week ending 23 Oct; its previous report covered 16 Oct
+    expect(out.map((e) => e.previous)).toEqual(["-3.1M", "77B", undefined, "2M"]);
+    expect(out[0].src?.previous).toBe("our stored EIA report");
+  });
+
+  it("keeps the event as it was when nothing is stored", async () => {
+    const e = ev("eia-oil-1", { src: { forecast: "Forex Factory" } });
+    expect(await fillEiaPrevious([e], async () => undefined)).toEqual([e]);
+  });
 });

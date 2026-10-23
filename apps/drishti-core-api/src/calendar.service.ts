@@ -3,6 +3,7 @@ import {
   applyEiaActuals,
   decorateEvents,
   energyReleases,
+  fillEiaPrevious,
   fredActual,
   fredSeriesFor,
   CALENDAR_SOURCES,
@@ -28,6 +29,7 @@ import {
 } from "@drishti/shared";
 import { Db } from "./db";
 import { PgEventStore } from "./calendar.store";
+import { PgEiaReportStore } from "./eia-report.store";
 
 const TTL_MS = 15 * 60_000;
 const TTL_PENDING_MS = 60_000; // while a release is due or just out, look again every minute so its number appears when published
@@ -51,12 +53,14 @@ const RECORD_PENDING_MS = 60_000; // while a release is due or just out, look ev
 @Injectable()
 export class CalendarService implements OnModuleInit, OnModuleDestroy {
   readonly store: PgEventStore;
+  private readonly reports: PgEiaReportStore;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private failing = false;
   private readonly sources: { source: CalendarSource; rows: SourceRow[]; at: number; retryAt: number; failing: boolean }[] = CALENDAR_SOURCES().map((source) => ({ source, rows: [], at: 0, retryAt: 0, failing: false }));
 
   constructor(private readonly db: Db) {
     this.store = new PgEventStore(db.sql);
+    this.reports = new PgEiaReportStore(db.sql);
   }
 
   onModuleInit() {
@@ -144,7 +148,8 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const to = Date.now() + days * 86_400_000;
     const [ff, holidays] = await Promise.all([this.forexFactory(), this.upstoxHolidays()]);
     const merged = [...mergeForexFactory(energyReleases(from, to), ff, from, to), ...mcxHolidays(holidays, from, to)].sort((a, b) => a.at - b.at);
-    const events = await this.withActuals(decorateEvents(merged));
+    const withPrevious = await fillEiaPrevious(decorateEvents(merged), (report, week) => this.reports.headlineChangeOf(report, week).catch(() => undefined)); // no database: no previous, not an error
+    const events = await this.withActuals(withPrevious);
     // no Forex Factory rows (throttled) → look again in a minute instead of showing a forecast-less list for 15
     cache.set(String(days), { at: Date.now(), events, ttl: releasePending(events, Date.now()) || ff.length === 0 ? TTL_PENDING_MS : TTL_MS });
     return events;

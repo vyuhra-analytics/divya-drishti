@@ -177,7 +177,7 @@ function LiveCalendar({ kind, bigOnly }: { kind: CalKind; bigOnly: boolean }) {
                       <span className={`cal-actual ${actualClass(e)}${fresh.has(e.id) ? " fresh" : ""}`} title={actualTitle(e, clock.time, now)}>
                         {e.actual ?? (e.at < now ? "…" : "")}
                       </span>
-                      <span className="cal-prev" title={e.src?.forecast ? `Previous release · source: ${e.src.forecast}` : "Previous release"}>{e.previous ?? ""}</span>
+                      <span className="cal-prev" title={e.src?.previous ?? e.src?.forecast ? `Previous release · source: ${e.src?.previous ?? e.src?.forecast}` : "Previous release"}>{e.previous ?? ""}</span>
                       <span className="cal-fc" title={e.src?.forecast ? `Consensus forecast · source: ${e.src.forecast}` : "Consensus forecast"}>{e.forecast ?? ""}</span>
                       <button
                         className={`cal-bell${watching(e) ? " on" : ""}`}

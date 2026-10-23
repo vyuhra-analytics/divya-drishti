@@ -136,6 +136,14 @@ export class PgEiaReportStore {
     };
   }
 
+  /** The headline change of the stored report of exactly the week ending `weekKey` (YYYY-MM-DD): what the calendar shows as the previous figure. */
+  async headlineChangeOf(report: EiaReportCode, weekKey: string): Promise<number | undefined> {
+    const r = (await this.sql`
+      SELECT v.change FROM eia_report_values v JOIN eia_series s ON s.id = v.series_id JOIN economic_events e ON e.id = v.event_id
+      WHERE e.series_code = ${report} AND e.key = ${weekKey} AND s.headline AND v.change IS NOT NULL LIMIT 1`) as { change: number }[];
+    return r[0] === undefined ? undefined : Number(r[0].change);
+  }
+
   /** The newest forecast figure recorded for a release (Forex Factory's, or one typed in), as a number. */
   async forecastFor(eventId: number): Promise<{ value: number; source: string } | undefined> {
     const r = (await this.sql`SELECT value_num, source FROM event_observations WHERE event_id = ${eventId} AND kind = 'forecast' AND value_num IS NOT NULL ORDER BY (source LIKE 'typed in%') DESC, observed_at DESC, id DESC LIMIT 1`) as { value_num: number; source: string }[];

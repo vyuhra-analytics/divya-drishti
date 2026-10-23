@@ -84,7 +84,7 @@ export function planEvent(e: CalEvent): PlannedEvent | undefined {
     observations.push({ kind, text, ...parseValue(text), source: source ?? "unknown" });
   };
   add("forecast", e.forecast, e.src?.forecast);
-  add("previous", e.previous, e.src?.forecast); // forecast and previous come from the same feed
+  add("previous", e.previous, e.src?.previous ?? e.src?.forecast); // from our own record when the feed had none, else the same feed as the forecast
   add("actual", e.actual, e.src?.actual);
   return { series, key, at: e.at, title: series.title, period, observations };
 }

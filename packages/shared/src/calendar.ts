@@ -2,6 +2,7 @@
 // Pure so the schedule rules (New York time, DST) are unit-tested.
 import { tzOffsetSec } from "./index";
 import { occurrences, SERIES, zonedTime } from "./eventSeries";
+import { weekEndingIso } from "./eventPlan";
 
 export type CalKind = "energy" | "macro" | "holiday";
 
@@ -17,7 +18,7 @@ export interface CalEvent {
   /** the released value, filled in once the official source publishes it */
   actual?: string;
   /** where each filled-in figure came from, shown on hover: provenance for the forecast/previous and the actual */
-  src?: { forecast?: string; actual?: string };
+  src?: { forecast?: string; previous?: string; actual?: string };
   /** two-letter market code for the list (US, IN, EA…) */
   country?: string;
   /** the period the figure covers, as a short tag: "OCT/16" for the week ending 16 Oct */
@@ -155,6 +156,26 @@ export function weekEndingTag(eventAt: number): string {
 }
 
 /** Market code and period tag for each event, derived from what the event is (id and source), so every list can show them. */
+/** An EIA change as the calendar writes it: crude in million barrels with one decimal ("-3.1M"), gas in Bcf ("77B"). */
+export const formatEiaChange = (report: "WPSR" | "WNGSR", change: number) => (report === "WPSR" ? `${(Math.round(change * 10) / 10).toFixed(1)}M` : `${Math.round(change)}B`);
+
+/**
+ * Fills the "previous" of the two EIA reports that have none (Forex Factory lists only the current week) from the report we stored for the week before
+ * that one, never an older one: a release two weeks out has no previous yet. `lookup` returns the headline change of the stored report of exactly that
+ * week, or nothing. A figure that is already there is kept.
+ */
+export async function fillEiaPrevious(events: CalEvent[], lookup: (report: "WPSR" | "WNGSR", weekKey: string) => Promise<number | undefined>): Promise<CalEvent[]> {
+  return Promise.all(
+    events.map(async (e) => {
+      const report = e.id.startsWith("eia-oil-") ? "WPSR" : e.id.startsWith("eia-gas-") ? "WNGSR" : undefined;
+      if (!report || e.previous !== undefined) return e;
+      const week = new Date(Date.parse(weekEndingIso(e.at)) - 7 * 86_400_000).toISOString().slice(0, 10); // the week the previous report covered
+      const change = await lookup(report, week);
+      return change === undefined ? e : { ...e, previous: formatEiaChange(report, change), src: { ...e.src, previous: "our stored EIA report" } };
+    }),
+  );
+}
+
 export function decorateEvents(events: CalEvent[]): CalEvent[] {
   return events.map((e) => {
     if (/^(api|eia-oil|eia-gas)-/.test(e.id)) return { ...e, country: "US", period: weekEndingTag(e.at) };
