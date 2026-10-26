@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, NotFoundException, Query, ServiceUnavailableException } from "@nestjs/common";
-import { coverage, recordedChain, type SnapshotContract } from "@drishti/shared";
+import { coverage, estimateFlow, recordedChain, type FlowRow, type SnapshotContract } from "@drishti/shared";
 import { Db } from "./db";
 
 const FUTURE_KEY = /^MCX:[A-Z]{3,20}$/;
@@ -9,6 +9,8 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_ROWS = 20_000;
 const MAX_SPAN_MS = 2 * 86_400_000;
 const IST = "+05:30";
+const FLOW_TF: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600 };
+const FLOW_ROWS = 400_000; // two busy days of one contract are far below this
 
 const instant = (v: string | undefined, name: string) => {
   const ms = v === undefined ? NaN : /^\d{10,13}$/.test(v) ? Number(v) * (v.length <= 10 ? 1000 : 1) : Date.parse(v);
@@ -135,6 +137,27 @@ export class FeedController {
       SELECT key, symbol, expiry::text AS expiry, strike, side, lot FROM option_contracts
       WHERE underlying = ${underlying} AND (${expiry || null}::date IS NULL OR expiry = ${expiry || null}::date) AND (${side || null}::text IS NULL OR side = ${side || null}::text)
       ORDER BY expiry DESC, strike, side LIMIT 3000`.catch(unavailable);
+  }
+
+  /**
+   * ESTIMATED order flow per candle for one recorded contract: buy and sell volume, delta, running delta, book imbalance and spread, built from our own
+   * recording of the feed (Upstox has no trade tape or aggressor side, so every figure here is an estimate; see shared orderFlow.ts). Candles are on the
+   * exchange grid, so they line up with `/option-candles` and `/bars`. GET /feed/flow?key=MCX:CRUDEOIL&from=...&to=...&tf=5m (a window of at most 2 days).
+   * Only contracts the stream records tick by tick have any: the four futures, the listed futures and the options near the money.
+   */
+  @Get("flow")
+  async flow(@Query("key") key?: string, @Query("from") fromParam?: string, @Query("to") toParam?: string, @Query("tf") tfParam?: string) {
+    if (!key || !(FUTURE_KEY.test(key) || UPSTOX_KEY.test(key))) throw new BadRequestException("key must look like MCX:CRUDEOIL or MCX_FO|582934");
+    const tfSeconds = FLOW_TF[tfParam ?? "5m"];
+    if (!tfSeconds) throw new BadRequestException(`tf must be one of ${Object.keys(FLOW_TF)}`);
+    const from = instant(fromParam, "from");
+    const to = instant(toParam, "to");
+    if (to <= from) throw new BadRequestException("to must be after from");
+    if (to - from > MAX_SPAN_MS) throw new BadRequestException("at most 2 days at a time");
+    const rows = (await this.db.sql`
+      SELECT extract(epoch FROM time)::float8 * 1000 AS time, price, volume, bid, ask, bid_qty AS "bidQty", ask_qty AS "askQty", depth
+      FROM feed_quotes WHERE key = ${key} AND time >= ${new Date(from).toISOString()} AND time < ${new Date(to).toISOString()} ORDER BY time LIMIT ${FLOW_ROWS}`.catch(unavailable)) as FlowRow[];
+    return { key, tf: tfParam ?? "5m", estimated: true, rows: rows.length, truncated: rows.length >= FLOW_ROWS, buckets: estimateFlow(rows, tfSeconds, 19_800) };
   }
 
   /** How much of one MCX day the recording covers: minutes with Upstox messages against the official session window, and the holes. GET /feed/coverage?day=2026-10-26 */

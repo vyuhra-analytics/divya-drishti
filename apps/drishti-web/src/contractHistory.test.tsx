@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { bucketStart } from "@drishti/shared";
 import { ContractHistoryWidget } from "./ContractHistoryPanel";
 import { useStore } from "./store";
 import type { Widget } from "./workspace";
@@ -83,4 +84,33 @@ test("says so when nothing is recorded, when the route fails and for an instrume
   cleanup();
   render(<ContractHistoryWidget widget={{ ...widget, symbol: "NYMEX:CL" }} />);
   expect(screen.getByText(/recorded for the MCX contracts only/)).toBeTruthy();
+});
+
+test("draws the estimated delta and book imbalance under the candles, labels them as estimates, and puts them in the readout", async () => {
+  const buckets = [...new Set(candles.map((c) => bucketStart(c.time, 300, 19_800)))].map((time, i) => ({ time, buy: 10, sell: 4, unclassified: 0, volume: 14, delta: i % 2 ? -6 : 6, cumDelta: 0, imbalance: i % 2 ? -0.25 : 0.4, spread: 1.5, msgs: 200 }));
+  const base = globalThis.fetch as unknown as (u: string) => Promise<unknown>;
+  globalThis.fetch = mock(async (url: string) => {
+    if (String(url).includes("/feed/flow")) {
+      urls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ estimated: true, buckets }) };
+    }
+    return base(url);
+  }) as never;
+  render(<ContractHistoryWidget widget={widget} />);
+  await screen.findByRole("img");
+  await waitFor(() => expect(document.querySelectorAll("rect.ch-dpos, rect.ch-dneg").length).toBeGreaterThan(0));
+  expect(document.querySelectorAll("rect.ch-dpos").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("rect.ch-dneg").length).toBeGreaterThan(0);
+  expect(document.querySelector("path.ch-imb")).toBeTruthy();
+  expect(urls.some((u) => u.includes("/feed/flow?key=MCX_FO%7C") && u.includes("&tf=5m"))).toBe(true);
+  expect(document.querySelector(".ch-read")!.textContent).toMatch(/Δ [+-]\d+ \(est\.\) · book [+-]0\.\d+ · spread 1\.50/);
+  expect(screen.getByText(/Delta and book are estimates/)).toBeTruthy();
+});
+
+test("says so when the contract has no tick-level recording, and the rest of the chart still draws", async () => {
+  render(<ContractHistoryWidget widget={widget} />); // the default mock answers 404 for /feed/flow
+  await screen.findByRole("img");
+  expect(await screen.findByText(/No order flow for this contract/)).toBeTruthy();
+  expect(document.querySelector("path.ch-price")).toBeTruthy();
+  expect(document.querySelectorAll("rect.ch-dpos, rect.ch-dneg")).toHaveLength(0);
 });

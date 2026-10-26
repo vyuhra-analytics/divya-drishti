@@ -27,6 +27,9 @@ describe("FeedController input", () => {
     await refused(c.chain("GOLD"));
     await refused(c.chain("CRUDEOIL", "17-11-2026"));
     await refused(c.coverage("today"));
+    await refused(c.flow("evil", "2026-10-26T10:00:00Z", "2026-10-26T11:00:00Z"));
+    await refused(c.flow("MCX:CRUDEOIL", "2026-10-26T10:00:00Z", "2026-10-26T11:00:00Z", "3m"));
+    await refused(c.flow("MCX:CRUDEOIL", "2026-10-20T10:00:00Z", "2026-10-26T11:00:00Z", "5m"));
     expect(queries).toEqual([]);
   });
 });
@@ -70,5 +73,23 @@ describe("FeedController coverage", () => {
 describe("FeedController chain", () => {
   it("returns no contracts when nothing was snapshotted by then", async () => {
     expect(await controller({ "max(time)": [{ t: null }] }).c.chain("CRUDEOIL", undefined, "2026-01-01T00:00:00Z")).toEqual({ at: null, contracts: [] });
+  });
+});
+
+describe("FeedController flow", () => {
+  it("turns the recorded rows of one contract into estimated candles on the exchange grid, and says they are estimates", async () => {
+    const t0 = Date.parse("2026-10-26T15:30:00Z");
+    const row = (s: number, price: number, volume: number) => ({ time: t0 + s * 1000, price, volume, bid: 99, ask: 101, bidQty: 5, askQty: 5, depth: null });
+    const { c } = controller({ "FROM feed_quotes": [row(0, 100, 10), row(1, 101, 14), row(2, 99, 16)] });
+    const r = await c.flow("MCX:CRUDEOIL", "2026-10-26T15:00:00Z", "2026-10-26T16:00:00Z", "1m");
+    expect(r).toMatchObject({ key: "MCX:CRUDEOIL", tf: "1m", estimated: true, rows: 3, truncated: false });
+    expect(r.buckets).toHaveLength(1);
+    expect(r.buckets[0]).toMatchObject({ buy: 4, sell: 2, delta: 2, volume: 6, msgs: 3 });
+    expect(r.buckets[0].time).toBe(Date.parse("2026-10-26T15:30:00Z") / 1000);
+  });
+
+  it("answers an empty list for a contract that is not recorded tick by tick", async () => {
+    const r = await controller().c.flow("MCX_FO|583802", "2026-10-26T10:00:00Z", "2026-10-26T11:00:00Z");
+    expect(r).toMatchObject({ rows: 0, buckets: [], tf: "5m" });
   });
 });

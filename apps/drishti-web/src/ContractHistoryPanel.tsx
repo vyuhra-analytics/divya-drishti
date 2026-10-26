@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { instrument, resampleBars, type Bar } from "@drishti/shared";
+import { instrument, resampleBars, type Bar, type FlowBucket } from "@drishti/shared";
 import { usePoll } from "./Feeds";
 import { apiUrl, makeFormat, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
@@ -26,8 +26,12 @@ const W = 600;
 const H_PRICE = 150;
 const H_OI = 50;
 const H_VOL = 50;
+const H_DELTA = 50;
+const H_IMB = 36;
 const GAP = 8;
-const H = H_PRICE + H_OI + H_VOL + 2 * GAP;
+const H = H_PRICE + H_OI + H_VOL + H_DELTA + H_IMB + 4 * GAP;
+/** order flow is estimated from the tick-level recording, which holds a window of at most this long per request (the route allows two days) */
+const FLOW_WINDOW_MS = 47 * 3600_000;
 
 const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join("");
 
@@ -50,6 +54,7 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
   const [bars, setBars] = useState<Bar[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [flow, setFlow] = useState<FlowBucket[] | null>(null);
 
   const all = contracts ?? [];
   const ofSide = useMemo(() => all.filter((c) => c.side === side), [all, side]);
@@ -103,6 +108,26 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
     );
   }, [bars, sessions, tf]);
 
+  // estimated order flow for the same candles, from our own recording of the feed (only the contracts the stream records tick by tick have any)
+  const flowKey = contract && shown.length ? `${contract.key}|${tf}|${shown[0].time}|${shown[shown.length - 1].time}` : "";
+  useEffect(() => {
+    setFlow(null);
+    if (!flowKey || !contract) return;
+    let alive = true;
+    const ctrl = new AbortController();
+    const to = (shown[shown.length - 1].time + TFS[tf]) * 1000;
+    const from = Math.max(shown[0].time * 1000, to - FLOW_WINDOW_MS);
+    fetch(`${apiUrl()}/feed/flow?key=${encodeURIComponent(contract.key)}&from=${from}&to=${to}&tf=${tf}`, { signal: ctrl.signal })
+      .then(async (res) => (res.ok ? ((await res.json()) as { buckets: FlowBucket[] }).buckets : []))
+      .then((b) => alive && setFlow(b))
+      .catch(() => alive && setFlow([]));
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [flowKey]);
+  const flowAt = useMemo(() => new Map((flow ?? []).map((f) => [f.time, f])), [flow]);
+
   const price = makeFormat(locale, 2).price;
   const int = (v: number | undefined) => (v === undefined ? "—" : new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(v));
 
@@ -118,8 +143,15 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
   const yOi = (v: number) => H_PRICE + GAP + H_OI - ((v - oiLo) / Math.max(1, oiHi - oiLo)) * (H_OI - 6) - 3;
   const maxVol = Math.max(1, ...shown.map((b) => b.volume));
   const volTop = H_PRICE + H_OI + 2 * GAP;
+  const deltaTop = volTop + H_VOL + GAP;
+  const imbTop = deltaTop + H_DELTA + GAP;
+  const maxDelta = Math.max(1, ...shown.map((b) => Math.abs(flowAt.get(b.time)?.delta ?? 0)));
+  const hasFlow = shown.some((b) => flowAt.has(b.time));
+  const yImb = (v: number) => imbTop + H_IMB / 2 - (v * (H_IMB - 6)) / 2;
   const dayStarts = shown.flatMap((b, i) => (i > 0 && istDay(b.time * 1000) !== istDay(shown[i - 1].time * 1000) ? [i] : []));
   const at = hover !== null ? shown[hover] : shown[n - 1];
+  const fat = at ? flowAt.get(at.time) : undefined;
+  const signed = (v: number) => `${v > 0 ? "+" : ""}${int(v)}`;
 
   return (
     <div className="ch">
@@ -178,6 +210,11 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
                 </span>
                 <span>Vol {int(at.volume)}</span>
                 <span>OI {int(at.oi)}</span>
+                {fat && (
+                  <span title="Estimated from our recording of the feed: not an exchange figure">
+                    Δ {signed(fat.delta)} (est.) · book {fat.imbalance === undefined ? "—" : `${fat.imbalance > 0 ? "+" : ""}${fat.imbalance.toFixed(2)}`} · spread {fat.spread === undefined ? "—" : price(fat.spread)}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -201,6 +238,22 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
             {shown.map((b, i) => (
               <rect key={b.time} className="ch-vol" x={x(i) - Math.max(0.4, W / n / 2.4)} width={Math.max(0.8, W / n / 1.2)} y={volTop + H_VOL - (b.volume / maxVol) * H_VOL} height={(b.volume / maxVol) * H_VOL} />
             ))}
+ {hasFlow && (
+              <>
+                <line className="ch-zero" x1={0} x2={W} y1={deltaTop + H_DELTA / 2} y2={deltaTop + H_DELTA / 2} />
+                {shown.map((b, i) => {
+                  const f = flowAt.get(b.time);
+                  if (!f || f.delta === 0) return null;
+                  const h = (Math.abs(f.delta) / maxDelta) * (H_DELTA / 2);
+                  return <rect key={b.time} className={f.delta > 0 ? "ch-dpos" : "ch-dneg"} x={x(i) - Math.max(0.4, W / n / 2.4)} width={Math.max(0.8, W / n / 1.2)} y={f.delta > 0 ? deltaTop + H_DELTA / 2 - h : deltaTop + H_DELTA / 2} height={h} />;
+                })}
+                <line className="ch-zero" x1={0} x2={W} y1={imbTop + H_IMB / 2} y2={imbTop + H_IMB / 2} />
+                <path
+                  className="ch-imb"
+                  d={line(shown.flatMap((b, i) => { const v = flowAt.get(b.time)?.imbalance; return v === undefined ? [] : [[x(i), yImb(v)] as [number, number]]; }))}
+                />
+              </>
+            )}
             {hover !== null && <line className="ch-cross" x1={x(hover)} x2={x(hover)} y1={0} y2={H} />}
           </svg>
           <div className="ch-legend muted">
@@ -213,7 +266,14 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
             <span>
               <i className="ch-key vol" /> Volume
             </span>
+            {hasFlow && (
+              <span>
+                <i className="ch-key delta" /> Delta (estimated buy minus sell volume) · <i className="ch-key imb" /> Book imbalance (bid minus ask size, -1 to +1)
+              </span>
+            )}
+            {flow !== null && !hasFlow && <span>No order flow for this contract: only the futures and the options near the money are recorded tick by tick, and only since 26 Oct.</span>}
             <span>Candles from our own recording; the x axis skips the time the market was closed.</span>
+            {hasFlow && <span>Delta and book are estimates from about one snapshot a second: right on average, least accurate when trading is fastest. Not an exchange figure.</span>}
           </div>
         </>
       )}

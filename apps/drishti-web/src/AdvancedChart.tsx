@@ -5,6 +5,7 @@ import type { Widget as OaWidget } from "openalgo-charts/widget";
 import type { ReplayController, ReplayState, TickMarkType } from "openalgo-charts";
 import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
 import { advStorage } from "./advStorage";
+import { registerFlowStudies } from "./advFlow";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -71,7 +72,15 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
     let cancelled = false;
     let created: OaWidget | null = null;
     Promise.all([import("openalgo-charts/widget"), import("openalgo-charts/indicators"), import("openalgo-charts/draw"), import("openalgo-charts/transform")])
-      .then(([{ createWidget }]) => {
+      .then(async ([{ createWidget }, indicators]) => {
+        if (cancelled || !host.current) return;
+        // estimated order flow studies (data from our own recording of the feed); registered once, a failure never touches the chart
+        try {
+          const lib = await import("openalgo-charts");
+          registerFlowStudies(lib.registerIndicator, indicators.createTier2Indicator, lib.hasIndicator);
+        } catch (e) {
+          console.warn("order flow studies unavailable:", (e as Error).message);
+        }
         if (cancelled || !host.current) return;
         created = createWidget(host.current, {
           feed: ourFeed(() => replay.current !== null),

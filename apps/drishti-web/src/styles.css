@@ -685,3 +685,10 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ch-key.vol { height: 6px; border: 0; background: var(--muted); opacity: 0.55; }
 .quote-depth-box { margin: 2px 0 4px; }
 .quote-depth-box > .tf { font-size: 11px; padding: 0 4px; }
+
+.ch-dpos { fill: var(--up); opacity: 0.8; }
+.ch-dneg { fill: var(--down); opacity: 0.8; }
+.ch-imb { fill: none; stroke: var(--g-blue); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.ch-zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ch-key.delta { height: 6px; border: 0; background: var(--up); }
+.ch-key.imb { border-top: 2px solid var(--g-blue); }
