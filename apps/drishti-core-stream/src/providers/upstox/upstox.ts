@@ -1,7 +1,7 @@
 import protobuf from "protobufjs";
 import { join } from "node:path";
 import type { RedisClient } from "bun";
-import { optionQuoteProblem, parseOptionFeed, type Instrument, type OptionQuote, type Quote } from "@drishti/shared";
+import { optionQuoteProblem, parseOptionFeed, type DepthLevel, type Instrument, type OptionQuote, type Quote } from "@drishti/shared";
 import { subscriptionDiff } from "../../optionWatch";
 import type { Emit, ProviderStats } from "../provider";
 
@@ -22,6 +22,15 @@ export interface UpstoxTarget {
 }
 
 const num = (v: unknown) => (v === undefined || v === null ? undefined : Number(v));
+
+/** The five levels of a decoded `bidAskQuote`, best first; a zero price or quantity ("no order") is left out; undefined when the book is empty. */
+function depthOf(levels: any[] | undefined): DepthLevel[] | undefined {
+  const out = (levels ?? [])
+    .slice(0, 5)
+    .map((l) => ({ bidP: num(l?.bidP) || undefined, bidQ: num(l?.bidQ) || undefined, askP: num(l?.askP) || undefined, askQ: num(l?.askQ) || undefined }))
+    .filter((l) => l.bidP !== undefined || l.askP !== undefined);
+  return out.length ? out : undefined;
+}
 
 /** Decoded FeedResponse (plain object) → quotes for the instruments we subscribed to. */
 export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quote[] {
@@ -51,6 +60,8 @@ export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quot
       atp: num(ff?.atp) || undefined,
       totalBuyQty: num(ff?.tbq) || undefined,
       totalSellQty: num(ff?.tsq) || undefined,
+      ltq: num(ltpc.ltq) || undefined,
+      depth: depthOf(ff?.marketLevel?.bidAskQuote),
       contract: t.contract,
       source: "upstox",
       delayedBy: 0,
@@ -65,6 +76,8 @@ export interface OptionFeed {
   /** register for changes of the wanted set */
   onChange: (fn: () => void) => void;
   emit: (q: OptionQuote) => void;
+  /** every parsed entry, including a contract nobody has traded yet (price 0, book only): the feed recorder wants those too */
+  record?: (q: OptionQuote) => void;
 }
 
 /**
@@ -137,8 +150,10 @@ export function startUpstox(redis: RedisClient, targets: () => Map<string, Upsto
           const recvAt = Date.now();
           for (const [key, feed] of Object.entries<any>(msg?.feeds ?? {})) {
             if (t.has(key) || !subscribedOptions.has(key)) continue;
-            const oq = parseOptionFeed(key, feed, recvAt);
-            if (oq && !optionQuoteProblem(oq)) options.emit(oq);
+            const oq = parseOptionFeed(key, feed, recvAt, true);
+            if (!oq || optionQuoteProblem(oq, true)) continue;
+            options.record?.(oq);
+            if (oq.price > 0) options.emit(oq);
           }
         }
       } catch (err) {

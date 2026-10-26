@@ -1,3 +1,5 @@
+import type { DepthLevel } from "./optionQuote";
+
 export type Source = "upstox" | "tradingview" | "yahoo" | "demo";
 
 export interface Instrument {
@@ -79,6 +81,10 @@ export interface Quote {
   /** total pending buy / sell quantity in the order book */
   totalBuyQty?: number;
   totalSellQty?: number;
+  /** quantity of the last trade (Upstox `ltq`): the real trade size, where volume differences only infer it */
+  ltq?: number;
+  /** up to five levels, best first (Upstox full mode); the feed recorder stores them, the screens use bid/ask above */
+  depth?: DepthLevel[];
   /** actual contract, e.g. "CRUDEOIL FUT 19 NOV 26" */
   contract?: string;
   source: Source;
@@ -343,6 +349,7 @@ export * from "./brokers";
 export * from "./upstoxCharges";
 export * from "./optionQuote";
 export * from "./optionCandles";
+export * from "./feedRecord";
 export * from "./upstoxAccount";
 export * from "./eventSeries";
 export * from "./eventPlan";
@@ -369,3 +376,4 @@ export * from "./notify";
 export * from "./serverAlerts";
 export * from "./userAgents";
 export * from "./paperServer";
+export * from "./upstoxSnapshot";

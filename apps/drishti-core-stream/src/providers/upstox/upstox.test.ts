@@ -52,6 +52,11 @@ test("feedToQuotes maps a full-mode market feed (round-tripped through the real 
       atp: 9345.5,
       totalBuyQty: 1200,
       totalSellQty: 900,
+      ltq: 2,
+      depth: [
+        { bidP: 9334, bidQ: 3, askP: 9336, askQ: 5 },
+        { bidP: 9333, bidQ: 9, askP: 9337, askQ: 1 },
+      ],
       contract: "CRUDEOIL FUT 19 NOV 26",
       source: "upstox",
       delayedBy: 0,

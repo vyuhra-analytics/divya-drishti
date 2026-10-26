@@ -47,6 +47,8 @@ import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
+import { startFeedRecorder } from "./feedRecorder";
+import { startUpstoxCapture } from "./upstoxCapture";
 import { archiveStats, currentNews, newsStats, startNews } from "./news";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
@@ -76,6 +78,14 @@ const PRIMARY_CHOICES: Source[] = ["upstox", "tradingview"];
 let mcxPrimary: Source | undefined = PRIMARY_CHOICES.find((s) => s === process.env.MCX_PRIMARY);
 redis.get("primary:mcx").then((v) => { const s = PRIMARY_CHOICES.find((c) => c === v); if (s) mcxPrimary = s; }).catch(() => {});
 const active = new Map<string, Source>();
+// copies the Upstox feed (futures quotes and the option contracts near the money) into Postgres: it is not available after the session
+const feedRecorder =
+  process.env.FEED === "demo" || process.env.FEED_RECORDER === "off"
+    ? undefined
+    : startFeedRecorder(new SQL(process.env.DATABASE_URL!, { connectionTimeout: 2 }), (underlying) => {
+        const inst = INSTRUMENTS.find((i) => i.upstox === underlying);
+        return inst ? latest.get(inst.symbol)?.price : undefined;
+      });
 
 /**
  * Heartbeat + freshness: when each symbol's active source was last heard from (any poll/feed message, even with
@@ -118,6 +128,7 @@ function accept(q: Quote) {
     rejected.last = { symbol: q.symbol, source: q.source, reason: bad, at: Date.now() };
     return;
   }
+  feedRecorder?.onQuote(q); // the Upstox feed is copied whether or not it is the source shown (FEED_RECORDER=off disables)
   const now = Date.now();
   // every source's latest price, active or not: the data-quality console compares them (shared `agreement`)
   const bySource = lastPrice.get(q.symbol) ?? {};
@@ -226,6 +237,7 @@ let mcxStatus: MarketStatus | undefined; // the exchange's own status from Upsto
 const refreshMcxStatus = () =>
   fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/status`, { signal: AbortSignal.timeout(5000) })
     .then(async (r) => void (mcxStatus = r.ok ? ((await r.json()) as { mcx: MarketStatus | null }).mcx ?? undefined : undefined))
+    .then(() => upstoxCapture?.logStatus("MCX", mcxStatus))
     .catch(() => void (mcxStatus = undefined));
 void refreshMcxStatus();
 setInterval(() => void refreshMcxStatus(), 30_000);
@@ -237,6 +249,14 @@ const symbolLive = (symbol: string) => {
   const src = active.get(symbol);
   return freshness(open, src ? lastSeen.get(symbol)?.[src] : undefined, now) === "live";
 };
+// the rest of what Upstox tells us about our contracts: chain snapshots, the daily contract list, session times, status changes (FEED_RECORDER=off disables)
+const upstoxCapture =
+  DEMO || process.env.FEED_RECORDER === "off"
+    ? undefined
+    : startUpstoxCapture(sql, {
+        token: async () => (await redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim() || null,
+        mcxOpen: () => withStatus(mcxSession(Date.now(), mcxDay), mcxStatus, Date.now()).open,
+      });
 const paperStore = new PgPaperStore(sql);
 const envInt = (name: string, d: number) => (Number(process.env[name]) > 0 ? Math.floor(Number(process.env[name])) : d);
 paperEngine = new PaperEngine({
@@ -353,6 +373,8 @@ const app = new Elysia()
       mcxPrimary: mcxPrimary ?? "auto",
       mcxStatus: mcxStatus ?? null,
       options: { watching: optionWatch.wanted().length, known: optionKeys.size, messages: optionStats.messages, lastAt: optionStats.lastAt, lagMedianMs: optionLag.pct(50) ?? null, lagP95Ms: optionLag.pct(95) ?? null, lagSamples: optionLag.count },
+      recorder: feedRecorder?.stats ?? { on: false },
+      capture: upstoxCapture?.stats ?? null,
       fronts: Object.fromEntries([...fronts].map(([k, r]) => [k, r.trading_symbol])),
       news: { items: currentNews().length, archive: archiveStats, feeds: newsStats },
     };
@@ -412,8 +434,12 @@ if (DEMO) {
   void refreshOptionKeys();
   setInterval(refreshOptionKeys, 60 * 60_000);
   startUpstox(redis, upstoxTargets, accept, stats.upstox!, {
-    keys: () => optionWatch.wanted(),
-    onChange: (fn) => optionWatch.onChange(fn),
+    keys: () => [...new Set([...optionWatch.wanted(), ...(feedRecorder?.keys() ?? [])])],
+    onChange: (fn) => {
+      optionWatch.onChange(fn);
+      feedRecorder?.onChange(fn);
+    },
+    record: (q) => feedRecorder?.onOption(q),
     emit: (q) => {
       optionStats.messages++;
       optionStats.lastAt = q.recvAt;

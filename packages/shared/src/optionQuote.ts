@@ -28,6 +28,11 @@ export interface OptionQuote {
   volume?: number;
   /** average traded price */
   atp?: number;
+  /** quantity of the last trade */
+  ltq?: number;
+  /** total pending buy / sell quantity in the order book */
+  totalBuyQty?: number;
+  totalSellQty?: number;
   /** implied volatility in percent (the feed sends a fraction) */
   iv?: number;
   delta?: number;
@@ -53,11 +58,12 @@ const pos = (v: unknown): number | undefined => {
  * One decoded feed entry (`feeds[key]` of a FeedResponse, protobuf already turned into a plain object) → a quote, or undefined when
  * it has no usable last price. Greeks and IV exist only for options; zero depth entries mean no order and are dropped.
  */
-export function parseOptionFeed(key: string, feed: any, recvAt: number): OptionQuote | undefined {
+export function parseOptionFeed(key: string, feed: any, recvAt: number, allowUntraded = false): OptionQuote | undefined {
   const ff = feed?.fullFeed?.marketFF;
   const first = feed?.firstLevelWithGreeks; // the `option_greeks` mode's shape, in case the mode is ever changed
   const ltpc = ff?.ltpc ?? feed?.ltpc ?? first?.ltpc;
-  const price = pos(ltpc?.ltp);
+  // a contract nobody has traded still has a book (bids, asks, circuit-bound quotes): the recorder keeps those with price 0, the screens do not
+  const price = pos(ltpc?.ltp) ?? (allowUntraded ? 0 : undefined);
   if (price === undefined) return undefined;
   const levels: DepthLevel[] = (ff?.marketLevel?.bidAskQuote ?? [])
     .map((l: any) => ({ bidP: pos(l?.bidP), bidQ: pos(l?.bidQ), askP: pos(l?.askP), askQ: pos(l?.askQ) }))
@@ -80,6 +86,9 @@ export function parseOptionFeed(key: string, feed: any, recvAt: number): OptionQ
     oi: num(ff?.oi ?? first?.oi),
     volume: num(ff?.vtt ?? first?.vtt),
     atp: pos(ff?.atp),
+    ltq: pos(ltpc?.ltq),
+    totalBuyQty: pos(ff?.tbq),
+    totalSellQty: pos(ff?.tsq),
     iv: iv === undefined ? undefined : Math.round(iv * 100 * 100) / 100,
     delta: num(g.delta),
     theta: num(g.theta),
@@ -91,8 +100,8 @@ export function parseOptionFeed(key: string, feed: any, recvAt: number): OptionQ
 }
 
 /** What is wrong with a quote that should not be published, or undefined. A momentarily crossed book is allowed, as for futures. */
-export function optionQuoteProblem(q: OptionQuote): string | undefined {
-  if (!(q.price > 0)) return "non-positive price";
+export function optionQuoteProblem(q: OptionQuote, allowUntraded = false): string | undefined {
+  if (!(q.price > 0) && !(allowUntraded && q.price === 0)) return "non-positive price";
   if (q.volume !== undefined && q.volume < 0) return "negative volume";
   if (q.oi !== undefined && q.oi < 0) return "negative open interest";
   if (q.delta !== undefined && Math.abs(q.delta) > 1.0001) return "delta outside -1 to 1";

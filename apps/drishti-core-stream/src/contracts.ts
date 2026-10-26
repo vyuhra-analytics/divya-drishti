@@ -72,6 +72,12 @@ export async function loadFronts(now = Date.now()): Promise<Fronts> {
   return fronts;
 }
 
+/** Every unexpired contract (futures and options) of our Upstox underlyings, as the public master lists them: the recorder's raw material. */
+export async function loadOurContractRows(now = Date.now()): Promise<any[]> {
+  const ours = new Set(INSTRUMENTS.flatMap((i) => (i.upstox ? [i.upstox] : [])));
+  return (await fetchMaster()).filter((r: any) => ours.has(r.underlying_symbol) && typeof r.expiry === "number" && r.expiry >= now - 86_400_000);
+}
+
 /** Instrument keys of every unexpired option (CE/PE) on our MCX underlyings, from the public master: the contracts a client may ask to watch. */
 export async function loadOptionKeys(now = Date.now()): Promise<Set<string>> {
   const rows = await fetchMaster();
