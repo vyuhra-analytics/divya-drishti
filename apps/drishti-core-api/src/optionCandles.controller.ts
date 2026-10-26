@@ -1,13 +1,13 @@
 import { BadRequestException, Controller, Get, Query, ServiceUnavailableException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { shouldRecord, type Bar } from "@drishti/shared";
 import { Db } from "./db";
-import { loadContracts } from "./options.controller";
+import { loadAllContracts, loadContracts } from "./options.controller";
 import { recordOptionCandles, type RecordSummary } from "./optionCandles.run";
 import { OptionCandleStore, type OptionCandleStatus } from "./optionCandles.store";
 
 const CHECK_EVERY_MS = 5 * 60_000;
 const RETRY_AFTER_FAILURE_MS = 30 * 60_000;
-const KEY = /^MCX_FO\|\d{3,8}$/;
+const KEY = /^MCX_FO\|\d{3,8}$/; // futures and options alike
 const DAY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 40;
 const MAX_ROWS = 25_000;
@@ -58,14 +58,26 @@ export class OptionCandlesController implements OnModuleInit, OnModuleDestroy {
     const token = (await this.db.redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim();
     if (!token) throw new Error("no Upstox token");
     const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
+    // every future and the whole option chain of our four underlyings by default (about 2,900 contracts, minutes of requests after the close);
+    // OPTION_CANDLES_SCOPE=near goes back to the 88 contracts near the money
+    const all = process.env.OPTION_CANDLES_SCOPE?.trim().toLowerCase() !== "near";
     const summary = await recordOptionCandles({
       now,
       lastRunAt,
-      contracts: loadContracts,
+      all,
+      concurrency: 3,
+      contracts: all ? loadAllContracts : loadContracts,
       get: async (url) => {
-        const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
-        if (!res.ok) throw new Error(`Upstox ${res.status}`);
-        return res.json();
+        // a rate-limit answer (429) is waited out, up to three times: the whole chain is thousands of requests
+        for (let attempt = 0; ; attempt++) {
+          const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+          if (res.status === 429 && attempt < 3) {
+            await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            continue;
+          }
+          if (!res.ok) throw new Error(`Upstox ${res.status}`);
+          return res.json();
+        }
       },
       store: this.store,
     });

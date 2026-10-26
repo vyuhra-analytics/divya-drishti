@@ -164,3 +164,23 @@ export function startUpstoxCapture(sql: SQL, deps: { token: () => Promise<string
     },
   };
 }
+
+/**
+ * One `feed_minutes` row per minute the stream ran: Upstox messages heard and rows stored in it. `counters` are running totals; the row holds the
+ * difference since the last one. A minute the stream was off has no row, and a minute it ran without hearing Upstox has `upstox_msgs = 0`:
+ * either way it shows up as a hole in `GET /feed/coverage`.
+ */
+export function startMinuteLog(sql: SQL, counters: () => { msgs: number; rows: number; failed: number }) {
+  let minute = Math.floor(Date.now() / 60_000);
+  let prev = counters();
+  return setInterval(() => {
+    const now = Math.floor(Date.now() / 60_000);
+    if (now === minute) return;
+    const c = counters();
+    const row = { at: new Date(minute * 60_000).toISOString(), msgs: Math.max(0, c.msgs - prev.msgs), rows: Math.max(0, c.rows - prev.rows), failed: Math.max(0, c.failed - prev.failed) };
+    minute = now;
+    prev = c;
+    // ponytail: a failed write loses that minute's row (it then reads as a gap); add a retry only if it ever matters
+    void sql`INSERT INTO feed_minutes (minute, upstox_msgs, rows_recorded, failed_inserts) VALUES (${row.at}, ${row.msgs}, ${row.rows}, ${row.failed}) ON CONFLICT (minute) DO UPDATE SET upstox_msgs = EXCLUDED.upstox_msgs, rows_recorded = EXCLUDED.rows_recorded, failed_inserts = EXCLUDED.failed_inserts`.catch(() => undefined);
+  }, 5_000);
+}

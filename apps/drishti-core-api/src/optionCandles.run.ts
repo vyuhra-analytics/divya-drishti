@@ -16,6 +16,8 @@ export interface RecordDeps {
   };
   /** Upstox requests in flight at once */
   concurrency?: number;
+  /** record every contract given (futures and the whole option chain) instead of the near-the-money selection */
+  all?: boolean;
 }
 
 export interface RecordSummary {
@@ -42,10 +44,16 @@ const lastPriceByToken = (json: any): Record<string, number | undefined> =>
 export async function recordOptionCandles(d: RecordDeps): Promise<RecordSummary> {
   const window = recordingWindow(d.lastRunAt, d.now);
   const contracts = await d.contracts();
-  const futureKeys = [...new Set(selectRecordingContracts(contracts, {}, d.now).map((c) => c.underlying_key))];
-  if (!futureKeys.length) throw new Error("no option contracts to record in the instrument master");
-  const quotes = await d.get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodeURIComponent(futureKeys.join(","))}`).catch(() => null);
-  const selected = selectRecordingContracts(contracts, lastPriceByToken(quotes), d.now);
+  let selected: OptionContract[];
+  if (d.all) {
+    selected = contracts;
+    if (!selected.length) throw new Error("no contracts to record in the instrument master");
+  } else {
+    const futureKeys = [...new Set(selectRecordingContracts(contracts, {}, d.now).map((c) => c.underlying_key))];
+    if (!futureKeys.length) throw new Error("no option contracts to record in the instrument master");
+    const quotes = await d.get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodeURIComponent(futureKeys.join(","))}`).catch(() => null);
+    selected = selectRecordingContracts(contracts, lastPriceByToken(quotes), d.now);
+  }
   await d.store.upsertContracts(selected);
 
   const summary: RecordSummary = { window, contracts: selected.length, fetched: 0, failed: 0, candles: 0, inserted: 0, dropped: 0 };

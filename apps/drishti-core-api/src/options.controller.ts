@@ -64,6 +64,16 @@ export async function loadContracts(): Promise<OptionContract[]> {
   return contracts;
 }
 
+/** Every unexpired future and option of our four underlyings (futures carry strike 0 and type FUT): what the candle recorder copies in full. */
+export async function loadAllContracts(now = Date.now()): Promise<OptionContract[]> {
+  const res = await fetch(MASTER_URL, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`instrument master ${res.status}`);
+  const rows: any[] = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await res.arrayBuffer()))));
+  return rows
+    .filter((r) => ["CE", "PE", "FUT"].includes(r.instrument_type) && UNDERLYINGS.includes(r.underlying_symbol) && typeof r.expiry === "number" && r.expiry >= now - 86_400_000)
+    .map((r) => ({ ...r, strike_price: r.strike_price ?? 0 })) as OptionContract[];
+}
+
 /** Upstox keyed responses use "EXCHANGE:SYMBOL" keys; every entry also carries instrument_token ("MCX_FO|123"). */
 const byToken = <T>(data: Record<string, any> | undefined) => new Map(Object.values(data ?? {}).map((v: any) => [v.instrument_token as string, v as T]));
 

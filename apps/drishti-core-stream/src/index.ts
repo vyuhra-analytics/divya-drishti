@@ -48,7 +48,7 @@ import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
 import { startFeedRecorder } from "./feedRecorder";
-import { startUpstoxCapture } from "./upstoxCapture";
+import { startMinuteLog, startUpstoxCapture } from "./upstoxCapture";
 import { archiveStats, currentNews, newsStats, startNews } from "./news";
 
 const PORT = Number(process.env.STREAM_PORT ?? 3002);
@@ -257,6 +257,8 @@ const upstoxCapture =
         token: async () => (await redis.get("upstox:token").catch(() => null)) || process.env.UPSTOX_ACCESS_TOKEN?.trim() || null,
         mcxOpen: () => withStatus(mcxSession(Date.now(), mcxDay), mcxStatus, Date.now()).open,
       });
+if (!DEMO && process.env.FEED_RECORDER !== "off")
+  startMinuteLog(sql, () => ({ msgs: stats.upstox?.ok ?? 0, rows: (feedRecorder?.stats.rows ?? 0), failed: feedRecorder?.stats.failedInserts ?? 0 }));
 const paperStore = new PgPaperStore(sql);
 const envInt = (name: string, d: number) => (Number(process.env[name]) > 0 ? Math.floor(Number(process.env[name])) : d);
 paperEngine = new PaperEngine({

@@ -7,6 +7,7 @@ import { SessionsController } from "./sessions.controller";
 import { OptionsController } from "./options.controller";
 import { CostsController } from "./costs.controller";
 import { OptionCandlesController } from "./optionCandles.controller";
+import { FeedController } from "./feed.controller";
 import { CalendarController } from "./calendar.controller";
 import { CalendarService } from "./calendar.service";
 import { EiaReportController } from "./eia-report.controller";
@@ -24,5 +25,5 @@ import { PositionsController } from "./positions.controller";
 import { InstrumentSync } from "./instruments.sync";
 import { AnalysisController } from "./analysis.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, CalendarController, EiaReportController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, FeedController, CalendarController, EiaReportController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService] })
 export class AppModule {}
