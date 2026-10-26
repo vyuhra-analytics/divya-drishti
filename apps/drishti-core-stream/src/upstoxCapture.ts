@@ -31,9 +31,16 @@ export function startUpstoxCapture(sql: SQL, deps: { token: () => Promise<string
   let lastStatus: string | undefined;
 
   const get = async (token: string, path: string) => {
-    const res = await fetch(`${API}${path}`, { headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) throw new Error(`${path.split("?")[0]} ${res.status}`);
-    return ((await res.json()) as any)?.data ?? {};
+    // a rate-limit answer (429) is waited out, up to three times: Upstox allows 2,000 requests in 30 minutes for everything the app does
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`${API}${path}`, { headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
+      if (res.status === 429 && attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) throw new Error(`${path.split("?")[0]} ${res.status}`);
+      return ((await res.json()) as any)?.data ?? {};
+    }
   };
 
   async function snapshot(now: number) {

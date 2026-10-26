@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { limiter, mapLimit } from "./concurrency";
+import { limiter, mapLimit, pacer } from "./concurrency";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -43,4 +43,18 @@ test("limiter shares one gate across callers and a failure reaches only its own 
 test("a limit below 1 still makes progress, and an empty list is fine", async () => {
   expect(await mapLimit([1, 2], 0, async (n) => n)).toEqual([1, 2]);
   expect(await mapLimit([], 3, async (n) => n)).toEqual([]);
+});
+
+test("pacer starts callers at least gapMs apart, the first at once, and never lets two share a slot", async () => {
+  {
+    let clock = 1000;
+    const slept: number[] = [];
+    const wait = pacer(250, () => clock, async (ms) => void slept.push(ms));
+    await Promise.all([wait(), wait(), wait()]);
+    expect(slept).toEqual([250, 500]); // the second waits one gap, the third two
+    clock += 10_000; // a long quiet spell: the next caller is not delayed
+    slept.length = 0;
+    await wait();
+    expect(slept).toEqual([]);
+  }
 });

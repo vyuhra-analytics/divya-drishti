@@ -142,6 +142,8 @@ export function startUpstox(redis: RedisClient, targets: () => Map<string, Upsto
         const msg = FeedResponse.toObject(FeedResponse.decode(new Uint8Array(e.data as ArrayBuffer)), { longs: Number });
         stats.ok++;
         stats.lastOkAt = Date.now();
+        // a closed socket that has reconnected is no longer an error: left in place it reads as "cannot connect" next to a feed that is flowing
+        if (stats.lastError?.startsWith("socket closed")) stats.lastError = null;
         for (const q of feedToQuotes(msg, t)) {
           latest.set(q.symbol, q);
           emit(q);

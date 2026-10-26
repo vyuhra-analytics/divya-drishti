@@ -25,3 +25,17 @@ export function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T,
   const run = limiter(limit);
   return Promise.all(items.map((item, i) => run(() => fn(item, i))));
 }
+
+/**
+ * A pacer for a rate-limited service: `wait()` resolves so that successive callers start at least `gapMs` apart (the first at once), however many
+ * ask together. Upstox allows 50 requests a second but only 2,000 in 30 minutes, shared by everything the app does, so long jobs must not burst.
+ */
+export function pacer(gapMs: number, now: () => number = Date.now, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  let next = 0;
+  return async function wait(): Promise<void> {
+    const t = now();
+    const start = Math.max(t, next);
+    next = start + gapMs; // reserved before the first await, so concurrent callers queue behind each other
+    if (start > t) await sleep(start - t);
+  };
+}

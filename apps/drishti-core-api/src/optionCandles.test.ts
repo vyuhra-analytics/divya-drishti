@@ -205,3 +205,31 @@ test("tick records once per closed session, never two at once, and waits half an
     console.warn = warn;
   }
 });
+
+test("a whole-chain run after one from the last session asks only for the contracts that traded, futures included, and only for today", async () => {
+  const f = fakes();
+  const future = { ...contracts[0], instrument_key: "MCX_FO|573422", instrument_type: "FUT", strike_price: 0 } as unknown as OptionContract;
+  const traded = new Set([contracts[0].instrument_key, contracts[7].instrument_key]);
+  f.deps.contracts = async () => [future, ...contracts];
+  f.deps.all = true;
+  f.deps.traded = async () => traded;
+  const s = await recordOptionCandles(f.deps);
+  expect(s.contracts).toBe(3); // the future and the two that traded
+  const urls = f.urls.filter((u) => u.includes("historical-candle"));
+  expect(urls).toHaveLength(3); // one intraday call each, no dated call
+  expect(urls.every((u) => u.includes("/intraday/"))).toBe(true);
+  expect(f.urls.some((u) => u.includes("market-quote/quotes"))).toBe(false); // no spot lookup in whole-chain mode
+  expect(f.upserted[0].map((c) => c.instrument_key).sort()).toEqual(["MCX_FO|573422", contracts[0].instrument_key, contracts[7].instrument_key].sort());
+});
+
+test("a whole-chain run with no list of traded contracts, or a failing one, records everything; with no earlier run it also asks for the earlier days", async () => {
+  const f = fakes();
+  f.deps.all = true;
+  f.deps.traded = async () => {
+    throw new Error("database down");
+  };
+  f.deps.lastRunAt = undefined;
+  const s = await recordOptionCandles(f.deps);
+  expect(s.contracts).toBe(contracts.length);
+  expect(f.urls.filter((u) => u.includes("historical-candle") && !u.includes("/intraday/")).length).toBe(contracts.length); // dated calls too
+});

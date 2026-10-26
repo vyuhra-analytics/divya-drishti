@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Query, ServiceUnavailableException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { shouldRecord, type Bar } from "@drishti/shared";
+import { pacer, shouldRecord, type Bar } from "@drishti/shared";
 import { Db } from "./db";
 import { loadAllContracts, loadContracts } from "./options.controller";
 import { recordOptionCandles, type RecordSummary } from "./optionCandles.run";
@@ -7,6 +7,8 @@ import { OptionCandleStore, type OptionCandleStatus } from "./optionCandles.stor
 
 const CHECK_EVERY_MS = 5 * 60_000;
 const RETRY_AFTER_FAILURE_MS = 30 * 60_000;
+/** Upstox allows 2,000 requests in 30 minutes, shared with the chain panel, the chart and the chain snapshots: a long recording is paced to 4 a second */
+const REQUEST_GAP_MS = 250;
 const KEY = /^MCX_FO\|\d{3,8}$/; // futures and options alike
 const DAY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 40;
@@ -61,15 +63,22 @@ export class OptionCandlesController implements OnModuleInit, OnModuleDestroy {
     // every future and the whole option chain of our four underlyings by default (about 2,900 contracts, minutes of requests after the close);
     // OPTION_CANDLES_SCOPE=near goes back to the 88 contracts near the money
     const all = process.env.OPTION_CANDLES_SCOPE?.trim().toLowerCase() !== "near";
+    const wait = pacer(REQUEST_GAP_MS);
     const summary = await recordOptionCandles({
       now,
       lastRunAt,
       all,
       concurrency: 3,
       contracts: all ? loadAllContracts : loadContracts,
+      // the contracts that traded or hold open interest in the last chain snapshot: the only ones with candles worth asking for
+      traded: async () => {
+        const rows = (await this.db.sql`SELECT key FROM quote_snapshots WHERE time = (SELECT max(time) FROM quote_snapshots) AND (volume > 0 OR oi > 0)`) as { key: string }[];
+        return new Set(rows.map((r) => r.key));
+      },
       get: async (url) => {
         // a rate-limit answer (429) is waited out, up to three times: the whole chain is thousands of requests
         for (let attempt = 0; ; attempt++) {
+          await wait();
           const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
           if (res.status === 429 && attempt < 3) {
             await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
