@@ -657,3 +657,31 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .lb-extra { display: flex; gap: 8px; margin-bottom: 10px; }
 .lb-rule { font-size: 10px; line-height: 1.5; }
 .labeller kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin-right: 4px; font-size: 11px; text-align: center; border: 1px solid var(--line); border-radius: 3px; }
+.ocx-history { display: inline-flex; align-items: center; gap: 4px; }
+.ocx-history input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; color-scheme: dark light; }
+.badge.src-recorded { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+
+.quote-depth { width: 100%; border-collapse: collapse; margin: 2px 0 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.quote-depth th { font-weight: 400; text-align: right; padding: 0 4px; }
+.quote-depth td { padding: 0 4px; text-align: right; }
+.quote-depth td.qty { position: relative; }
+.quote-depth td.qty .bar { position: absolute; top: 1px; bottom: 1px; width: var(--w); opacity: 0.22; }
+.quote-depth td.qty .bar.bid { right: 0; background: var(--up); }
+.quote-depth td.qty .bar.ask { left: 0; background: var(--down); }
+
+.ch { padding: 6px 10px; display: flex; flex-direction: column; gap: 6px; height: 100%; }
+.ch-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ch-bar select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; }
+.ch-read { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.ch-svg { width: 100%; flex: 1; min-height: 120px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+.ch-price { fill: none; stroke: var(--text); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.ch-oi { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.ch-vol { fill: var(--muted); opacity: 0.55; }
+.ch-day, .ch-cross { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ch-cross { stroke: var(--muted); }
+.ch-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 10px; }
+.ch-key { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--text); vertical-align: middle; margin-right: 4px; }
+.ch-key.oi { border-top: 2px dashed var(--accent); }
+.ch-key.vol { height: 6px; border: 0; background: var(--muted); opacity: 0.55; }
+.quote-depth-box { margin: 2px 0 4px; }
+.quote-depth-box > .tf { font-size: 11px; padding: 0 4px; }

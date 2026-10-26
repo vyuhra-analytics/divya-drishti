@@ -45,6 +45,20 @@ describe("FeedController coverage", () => {
     expect(r.gaps).toEqual([{ from: start + 3 * 60_000, to: start + 6 * 60_000, minutes: 3 }, { from: start + 8 * 60_000, to: start + 10 * 60_000, minutes: 2 }]);
   });
 
+  it("judges a session that is still running only up to now", async () => {
+    const now = Date.now();
+    const start = Math.floor(now / 60_000) * 60_000 - 10 * 60_000;
+    const day = new Date(now + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const { c } = controller({
+      "FROM market_days": [{ start_at: new Date(start), end_at: new Date(start + 3 * 3600_000) }],
+      "FROM feed_minutes": [{ t: start }, { t: start + 60_000 }],
+    });
+    const r = await c.coverage(day);
+    expect(r.expectedMinutes).toBe(10); // not 180
+    expect(r.coveredMinutes).toBe(2);
+    expect(r.gaps).toEqual([{ from: start + 2 * 60_000, to: start + 10 * 60_000, minutes: 8 }]);
+  });
+
   it("falls back to the 09:00 to 23:30 IST weekday window when the day has no official times, and says so", async () => {
     const r = await controller().c.coverage("2026-10-20");
     expect(r.window.official).toBe(false);

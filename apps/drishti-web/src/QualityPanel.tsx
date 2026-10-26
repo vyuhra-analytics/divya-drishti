@@ -9,7 +9,23 @@ interface Health {
   active: Record<string, string>;
   prices?: Record<string, SourcePrices>;
   rejected?: { count: number; last?: { symbol: string; source: string; reason: string; at: number } };
+  recorder?: { on: boolean; rows?: number; failedInserts?: number; dropped?: number; contracts?: number; lastRowAt?: number | null; lastError?: string };
+  capture?: { snapshots: number; lastSnapshotAt: number | null; lastSnapshotRows: number; contractsKnown: number; lastError?: string } | null;
 }
+interface FeedStatus {
+  feedQuotes?: { rows: string; keys: number; first: string | null; last: string | null };
+  quoteSnapshots?: { rows: string; keys: number; snapshots: number; last: string | null };
+  size?: { feed_quotes: string; quote_snapshots: string };
+}
+interface Coverage {
+  window: { from: number; to: number; official: boolean };
+  expectedMinutes: number;
+  coveredMinutes: number;
+  ratio: number;
+  gaps: { from: number; to: number; minutes: number }[];
+}
+/** today's date in India, the day an MCX session belongs to */
+const istDay = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10);
 type Canary = CanaryResult & { recent: { at: number; status: CanaryStatus }[] };
 
 const DOT: Record<CanaryStatus, string> = { ok: "dq-ok", unreachable: "dq-bad", format: "dq-bad", skipped: "dq-skip" };
@@ -23,6 +39,9 @@ export function QualityWidget(_: { widget: Widget }) {
   const canaries = usePoll<{ canaries: Canary[] }>(`${apiUrl()}/canaries`, 30_000);
   const now = useNow(5_000);
   const clock = useClock();
+  const recording = health?.recorder?.on ? health : null;
+  const feedStatus = usePoll<FeedStatus>(`${apiUrl()}/feed/status`, 30_000);
+  const cover = usePoll<Coverage>(`${apiUrl()}/feed/coverage?day=${istDay(now)}`, 60_000);
   const feeds = health ? Object.entries(health.providers) : [];
   const fresh = (t: number | null) => (t === null ? "never" : age(Math.max(0, now - t)));
   const live = (t: number | null) => t !== null && now - t < 60_000;
@@ -66,6 +85,63 @@ export function QualityWidget(_: { widget: Widget }) {
           <p className="down dq-note">
             {health.rejected.count} impossible quote(s) rejected; last: {health.rejected.last?.source} {health.rejected.last?.symbol}, {health.rejected.last?.reason}.
           </p>
+        )}
+
+        {recording && (
+          <>
+            <h2>Recording (what we keep from Upstox)</h2>
+            <table>
+              <tbody>
+                <tr>
+                  <td>Live feed rows</td>
+                  <td className={recording.recorder?.failedInserts || recording.recorder?.dropped ? "down" : "up"}>
+                    {recording.recorder?.rows?.toLocaleString() ?? 0} stored
+                    {recording.recorder?.failedInserts ? `, ${recording.recorder.failedInserts} failed insert(s)` : ""}
+                    {recording.recorder?.dropped ? `, ${recording.recorder.dropped} dropped` : ""}
+                  </td>
+                  <td className="muted">
+                    {recording.recorder?.contracts ?? 0} contracts watched · last row {recording.recorder?.lastRowAt ? `${age(Math.max(0, now - recording.recorder.lastRowAt))} ago` : "never"}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Chain snapshots</td>
+                  <td>{recording.capture ? `${recording.capture.snapshots} since start` : "off"}</td>
+                  <td className="muted">
+                    {recording.capture?.lastSnapshotAt ? `last ${age(Math.max(0, now - recording.capture.lastSnapshotAt))} ago, ${recording.capture.lastSnapshotRows.toLocaleString()} contracts` : "none yet"}
+                  </td>
+                </tr>
+                {feedStatus?.feedQuotes && (
+                  <tr>
+                    <td>In the database</td>
+                    <td>
+                      {Number(feedStatus.feedQuotes.rows).toLocaleString()} feed rows ({feedStatus.size?.feed_quotes ?? "?"}) · {Number(feedStatus.quoteSnapshots?.rows ?? 0).toLocaleString()} snapshot rows ({feedStatus.size?.quote_snapshots ?? "?"})
+                    </td>
+                    <td className="muted">{feedStatus.quoteSnapshots?.snapshots ?? 0} snapshots in all</td>
+                  </tr>
+                )}
+                {cover && (
+                  <tr>
+                    <td>Coverage today</td>
+                    <td className={cover.ratio >= 0.98 ? "up" : "down"} title={cover.window.official ? "MCX's official session window" : "The 09:00 to 23:30 weekday window: no official times stored for this day"}>
+                      {(cover.ratio * 100).toFixed(1)}% · {cover.coveredMinutes} of {cover.expectedMinutes} session minutes
+                    </td>
+                    <td className="muted">{cover.gaps.length === 0 ? "no gaps" : `${cover.gaps.length} gap${cover.gaps.length === 1 ? "" : "s"}`}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {(recording.recorder?.lastError || recording.capture?.lastError) && <p className="down dq-note">{recording.recorder?.lastError ?? recording.capture?.lastError}</p>}
+            {cover && cover.gaps.length > 0 && (
+              <p className="muted dq-note">
+                Holes in today's recording (stream off, token expired or feed silent):{" "}
+                {cover.gaps
+                  .slice(-6)
+                  .map((g) => `${clock.time(g.from)}–${clock.time(g.to)} (${g.minutes} min)`)
+                  .join(", ")}
+                {cover.gaps.length > 6 ? `, and ${cover.gaps.length - 6} earlier` : ""}
+              </p>
+            )}
+          </>
         )}
 
         <h2>Price agreement between feeds</h2>

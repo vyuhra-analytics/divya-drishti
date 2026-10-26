@@ -390,3 +390,35 @@ test("the sidebar starts collapsed, also for a copy of the settings saved before
   expect(useSettings.getState().sidebarCollapsed).toBe(false);
   localStorage.removeItem("drishti-settings");
 });
+
+test("the Quote panel draws the order book from the depth levels and shows the last trade size", () => {
+  const { WIDGETS } = require("./widgets") as typeof import("./widgets");
+  const QuoteWidget = WIDGETS.quote.component;
+  const depth = [
+    { bidP: 9122, bidQ: 5, askP: 9124, askQ: 7 },
+    { bidP: 9121, bidQ: 12, askP: 9125, askQ: 3 },
+    { bidP: 9120, bidQ: 8, askP: 9126, askQ: 9 },
+  ];
+  useStore.setState({
+    quotes: { CRUDEOIL: { symbol: "CRUDEOIL", price: 9123, prevClose: 9000, time: Date.now(), delayedBy: 0, source: "upstox", bid: 9122, ask: 9124, bidQty: 5, askQty: 7, ltq: 200, depth } as never },
+  });
+  localStorage.removeItem("drishti-quote-depth");
+  render(<QuoteWidget widget={widget("quote")} />);
+  expect(screen.queryByRole("table", { name: "Order book depth" })).toBeNull(); // closed by default: the panel is small on the evening desk
+  fireEvent.click(screen.getByRole("button", { name: /Depth \(3 levels\)/ }));
+  const book = screen.getByRole("table", { name: "Order book depth" });
+  const rows = within(book).getAllByRole("row");
+  expect(rows).toHaveLength(4); // header and three levels
+  expect(rows[2].textContent).toContain("9,121");
+  expect(rows[2].textContent).toContain("12");
+  expect(screen.getByText("Last qty").nextElementSibling?.textContent).toBe("200");
+  cleanup();
+  render(<QuoteWidget widget={widget("quote")} />); // the choice is remembered
+  expect(screen.getByRole("table", { name: "Order book depth" })).toBeTruthy();
+  cleanup();
+  localStorage.removeItem("drishti-quote-depth");
+  // a quote with a single level (or none) keeps the compact bid/ask line and draws no ladder
+  useStore.setState({ quotes: { CRUDEOIL: { symbol: "CRUDEOIL", price: 9123, prevClose: 9000, time: Date.now(), delayedBy: 0, source: "upstox", bid: 9122, ask: 9124 } as never } });
+  render(<QuoteWidget widget={widget("quote")} />);
+  expect(screen.queryByRole("table", { name: "Order book depth" })).toBeNull();
+});

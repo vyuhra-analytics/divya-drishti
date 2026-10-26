@@ -378,3 +378,5 @@ export * from "./userAgents";
 export * from "./paperServer";
 export * from "./upstoxSnapshot";
 export * from "./feedCoverage";
+export * from "./recordedChain";
+export * from "./resample";

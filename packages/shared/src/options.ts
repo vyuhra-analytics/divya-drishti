@@ -32,6 +32,11 @@ export interface OptionLeg {
   gamma?: number;
   /** model (theoretical) price, when the feed supplies one */
   theo?: number;
+  /** a recorded chain only: what the best bid/ask asked for in lots, the exchange's price band for the day */
+  bidQty?: number;
+  askQty?: number;
+  lowerCircuit?: number;
+  upperCircuit?: number;
   /** open interest at the baseline (see `Chain.oiBasis`) and the change since then, filled from our own stored snapshots: Upstox gives no previous OI for MCX options */
   prevOi?: number;
   oiChange?: number;
@@ -60,6 +65,10 @@ export interface Chain {
   delayedBy?: number;
   /** what `prevOi` / `oiChange` are measured against: the last snapshot of the previous session, or (until we have one) this session's first reading */
   oiBasis?: OiBasis;
+  /** a chain read back from our own snapshots: the moment it shows (epoch ms) and the neighbouring snapshots, to step through them */
+  asOf?: number;
+  prevAt?: number | null;
+  nextAt?: number | null;
 }
 
 export type OiBasis = "previous-close" | "session-open";

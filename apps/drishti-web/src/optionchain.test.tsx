@@ -140,3 +140,48 @@ test("an API error is shown instead of a blank panel", async () => {
   render(<OptionChainWidget widget={widget} />);
   expect(await screen.findByText(/Upstox not connected/)).toBeTruthy();
 });
+
+test("picking a time shows the chain as we recorded it (no live polling, a RECORDED badge, bid and ask sizes), steps between snapshots and goes back to live", async () => {
+  const recorded = (asOf: number, prevAt: number | null, nextAt: number | null) =>
+    chain({ source: "upstox", oiBasis: "session-open", asOf, prevAt, nextAt, rows: [{ strike: 9300, ce: leg("c", { bidQty: 4, askQty: 6, oi: 777 }), pe: leg("d") }] });
+  const T1 = Date.parse("2026-10-26T21:00");
+  globalThis.fetch = mock(async (url: string) => {
+    urls.push(String(url));
+    if (String(url).includes("/feed/chain-view")) {
+      const at = Number(new URL(String(url), "http://x").searchParams.get("at"));
+      return { ok: true, status: 200, json: async () => (at === T1 ? recorded(T1, T1 - 900_000, null) : recorded(at, null, T1)) };
+    }
+    return { ok: true, status: 200, json: async () => chain() };
+  }) as never;
+  render(<OptionChainWidget widget={widget} />);
+  await screen.findByText("9,250");
+  fireEvent.change(screen.getByLabelText("Show the chain as recorded at"), { target: { value: "2026-10-26T21:00" } });
+  await screen.findByText(/RECORDED/);
+  expect(urls.some((u) => u.includes(`/feed/chain-view?underlying=CRUDEOIL&at=${T1}`))).toBe(true);
+  expect(screen.getByText("×4")).toBeTruthy(); // best bid size
+  expect(screen.getByText("×6")).toBeTruthy();
+  expect(screen.getByText("recorded snapshot")).toBeTruthy();
+  expect(screen.queryByLabelText("Options feed")).toBeNull(); // no live feed choice while looking at a recording
+  expect((screen.getByLabelText("Next snapshot") as HTMLButtonElement).disabled).toBe(true); // nothing recorded after the last one
+
+  fireEvent.click(screen.getByLabelText("Previous snapshot"));
+  await waitFor(() => expect(urls.some((u) => u.includes(`at=${T1 - 900_000}`))).toBe(true));
+  await waitFor(() => expect((screen.getByLabelText("Next snapshot") as HTMLButtonElement).disabled).toBe(false));
+
+  const before = urls.filter((u) => u.includes("/options?")).length;
+  fireEvent.click(screen.getByText("Live"));
+  await waitFor(() => expect(urls.filter((u) => u.includes("/options?")).length).toBeGreaterThan(before));
+  expect(screen.queryByText(/RECORDED/)).toBeNull();
+});
+
+test("when nothing was recorded at the chosen time the panel says so and offers the way back to live", async () => {
+  globalThis.fetch = mock(async (url: string) =>
+    String(url).includes("/feed/chain-view") ? { ok: false, status: 404, json: async () => ({ message: "no snapshot was recorded by then" }) } : { ok: true, status: 200, json: async () => chain() },
+  ) as never;
+  render(<OptionChainWidget widget={widget} />);
+  await screen.findByText("9,250");
+  fireEvent.change(screen.getByLabelText("Show the chain as recorded at"), { target: { value: "2020-01-01T10:00" } });
+  expect(await screen.findByText("no snapshot was recorded by then")).toBeTruthy();
+  fireEvent.click(screen.getByText("Back to live"));
+  expect(await screen.findByText("9,250")).toBeTruthy();
+});

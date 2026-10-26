@@ -5,7 +5,7 @@ import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain";
+export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain" | "optionhistory";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -69,6 +69,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   paper: { w: 7, h: 26 },
   quality: { w: 7, h: 26 },
   optionchain: { w: 12, h: 26 }, // the full grid width: the detailed chain needs it
+  optionhistory: { w: 6, h: 16 },
 };
 
 /** First run, "Reset layout" and a damaged saved layout all start from the Evening desk (the first built-in desk). */

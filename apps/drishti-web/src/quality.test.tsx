@@ -18,7 +18,16 @@ beforeEach(() => {
       "MCX:NATURALGAS": { upstox: { price: 272, at: now - 500 }, tradingview: { price: 250, at: now - 800 } }, // far apart
     },
     rejected: { count: 2, last: { symbol: "MCX:CRUDEOIL", source: "tradingview", reason: "price is not a positive number", at: now } },
+    recorder: { on: true, rows: 12345, failedInserts: 2, dropped: 0, contracts: 304, lastRowAt: now - 3000 },
+    capture: { snapshots: 7, lastSnapshotAt: now - 4 * 60_000, lastSnapshotRows: 2908, contractsKnown: 2908 },
   };
+  const feedStatus = {
+    feedQuotes: { rows: "78502", keys: 308, first: null, last: null },
+    quoteSnapshots: { rows: "20356", keys: 2908, snapshots: 7, last: null },
+    size: { feed_quotes: "52 MB", quote_snapshots: "3 MB" },
+  };
+  const day = Date.parse("2026-10-26T09:00:00+05:30");
+  const coverage = { window: { from: day, to: day + 600_000, official: true }, expectedMinutes: 870, coveredMinutes: 700, ratio: 700 / 870, gaps: [{ from: day, to: day + 120_000, minutes: 2 }] };
   const canaries = {
     canaries: [
       { id: "cftc-cot", status: "ok", at: now - 60_000, ms: 900, recent: [{ at: now - 60_000, status: "ok" }] },
@@ -28,7 +37,8 @@ beforeEach(() => {
     sources: [],
   };
   globalThis.fetch = mock(async (url: string) => {
-    const body = String(url).includes("/canaries") ? canaries : String(url).includes("/health") ? health : null;
+    const u = String(url);
+    const body = u.includes("/canaries") ? canaries : u.includes("/feed/status") ? feedStatus : u.includes("/feed/coverage") ? coverage : u.includes("/health") ? health : null;
     return body ? { ok: true, status: 200, json: async () => body } : { ok: false, status: 404, json: async () => ({}) };
   }) as never;
 });
@@ -60,4 +70,30 @@ test("says so when the stream is unreachable", async () => {
   globalThis.fetch = mock(async () => ({ ok: false, status: 500, json: async () => ({}) })) as never;
   render(<QualityWidget widget={widget} />);
   expect(await screen.findByText(/Stream service unreachable/)).toBeTruthy();
+});
+
+test("shows what is being recorded: rows, failed inserts, snapshots, database size and today's coverage with its holes", async () => {
+  render(<QualityWidget widget={widget} />);
+  expect(await screen.findByText("Recording (what we keep from Upstox)")).toBeTruthy();
+  expect(screen.getByText(/12,345 stored, 2 failed insert\(s\)/)).toBeTruthy();
+  expect(screen.getByText(/304 contracts watched/)).toBeTruthy();
+  expect(screen.getByText(/7 since start/)).toBeTruthy();
+  expect(screen.getByText(/2,908 contracts/)).toBeTruthy();
+  await waitFor(() => expect(screen.getByText(/78,502 feed rows \(52 MB\)/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/80\.5% · 700 of 870 session minutes/)).toBeTruthy());
+  expect(screen.getByText("1 gap")).toBeTruthy();
+  expect(screen.getByText(/Holes in today's recording/)).toBeTruthy();
+});
+
+test("a stream with the recorder off draws no recording section", async () => {
+  const base = globalThis.fetch as unknown as (u: string) => Promise<{ ok: boolean; status: number; json: () => Promise<any> }>;
+  globalThis.fetch = mock(async (u: string) => {
+    const r = await base(u);
+    if (!String(u).includes("/health")) return r;
+    const j = await r.json();
+    return { ...r, json: async () => ({ ...j, recorder: { on: false }, capture: null }) };
+  }) as never;
+  render(<QualityWidget widget={widget} />);
+  await screen.findByText("upstox");
+  expect(screen.queryByText("Recording (what we keep from Upstox)")).toBeNull();
 });

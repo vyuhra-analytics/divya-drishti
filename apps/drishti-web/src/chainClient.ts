@@ -11,7 +11,7 @@ const POLL_TV_MS = 1000; // TradingView streams the chain in real time, and the 
  * One option chain from the API, kept current while the tab is visible: every second on the TradingView-based feeds, every 3 s on
  * Upstox alone. A different underlying forgets the expiry; `reload` forces a read now.
  */
-export function useChain(underlying: string, expiry: string, feed: ChainFeed, strikes: number) {
+export function useChain(underlying: string, expiry: string, feed: ChainFeed, strikes: number, enabled = true) {
   const [chain, setChain] = useState<Chain | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tv = chain?.source === "tradingview" || chain?.source === "combined";
@@ -25,7 +25,7 @@ export function useChain(underlying: string, expiry: string, feed: ChainFeed, st
     let alive = true;
     const ctrl = new AbortController();
     const load = async () => {
-      if (document.hidden) return; // don't poll Upstox for a hidden tab
+      if (!enabled || document.hidden) return; // a recorded chain is being shown, or don't poll Upstox for a hidden tab
       try {
         const res = await fetch(`${apiUrl()}/options?underlying=${underlying}&source=${feed}&strikes=${strikes}${expiry ? `&expiry=${expiry}` : ""}`, { signal: ctrl.signal });
         const json = await res.json();
@@ -45,7 +45,44 @@ export function useChain(underlying: string, expiry: string, feed: ChainFeed, st
       ctrl.abort();
       clearInterval(id);
     };
-  }, [underlying, expiry, feed, strikes, tv]);
+  }, [underlying, expiry, feed, strikes, tv, enabled]);
 
   return { chain, error, reload: useCallback(() => reloadRef.current(), []) };
+}
+
+/**
+ * The chain as we recorded it at (or just before) `asOf` (epoch ms), from the stored snapshots: no polling, one read per change. `asOf` null means
+ * live and nothing is fetched. The answer carries `prevAt` / `nextAt`, the neighbouring snapshots, so the panel can step through the day.
+ */
+export function useRecordedChain(underlying: string, expiry: string, asOf: number | null, strikes: number) {
+  const [chain, setChain] = useState<Chain | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (asOf === null) {
+      setChain(null);
+      setError(null);
+      return;
+    }
+    let alive = true;
+    const ctrl = new AbortController();
+    fetch(`${apiUrl()}/feed/chain-view?underlying=${underlying}&at=${asOf}&strikes=${strikes}${expiry ? `&expiry=${expiry}` : ""}`, { signal: ctrl.signal })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!alive) return;
+        if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+        setChain(json);
+        setError(null);
+      })
+      .catch((e: Error) => {
+        if (alive && e.name !== "AbortError") {
+          setChain(null);
+          setError(e.message);
+        }
+      });
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [underlying, expiry, asOf, strikes]);
+  return { chain, error };
 }

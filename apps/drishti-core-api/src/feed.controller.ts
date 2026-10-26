@@ -1,5 +1,5 @@
-import { BadRequestException, Controller, Get, Query, ServiceUnavailableException } from "@nestjs/common";
-import { coverage } from "@drishti/shared";
+import { BadRequestException, Controller, Get, NotFoundException, Query, ServiceUnavailableException } from "@nestjs/common";
+import { coverage, recordedChain, type SnapshotContract } from "@drishti/shared";
 import { Db } from "./db";
 
 const FUTURE_KEY = /^MCX:[A-Z]{3,20}$/;
@@ -83,6 +83,60 @@ export class FeedController {
     return { at: new Date(t).getTime(), contracts: rows };
   }
 
+  /**
+   * The same chain the live panel draws, read back from the snapshots: GET /feed/chain-view?underlying=CRUDEOIL&expiry=2026-11-17&at=2026-10-26T21:00:00+05:30&strikes=10
+   * (the latest snapshot at or before `at`; `prevAt` / `nextAt` are the neighbouring snapshots, to step through them; OI change is against the first
+   * snapshot of the same IST day). 404 when nothing was recorded by then.
+   */
+  @Get("chain-view")
+  async chainView(@Query("underlying") underlying?: string, @Query("expiry") expiry?: string, @Query("at") atParam?: string, @Query("strikes") strikesParam?: string) {
+    if (!underlying || !UNDERLYINGS.includes(underlying)) throw new BadRequestException(`underlying must be one of ${UNDERLYINGS}`);
+    if (expiry !== undefined && expiry !== "" && !DAY.test(expiry)) throw new BadRequestException("expiry must be YYYY-MM-DD");
+    const each = strikesParam === undefined ? 10 : Number(strikesParam);
+    if (!Number.isInteger(each) || each < 4 || each > 40) throw new BadRequestException("strikes must be 4 to 40");
+    const at = atParam === undefined || atParam === "" ? Date.now() : instant(atParam, "at");
+    const sql = this.db.sql;
+    const [snap] = (await sql`SELECT max(time) AS t FROM quote_snapshots WHERE time <= ${new Date(at).toISOString()}`.catch(unavailable)) as { t: Date | null }[];
+    if (!snap?.t) throw new NotFoundException("no snapshot was recorded by then");
+    const t = new Date(snap.t);
+    const istMidnight = new Date(Math.floor((t.getTime() + 5.5 * 3600_000) / 86_400_000) * 86_400_000 - 5.5 * 3600_000);
+    const [[prev], [next], [first]] = (await Promise.all([
+      sql`SELECT max(time) AS t FROM quote_snapshots WHERE time < ${t.toISOString()}`,
+      sql`SELECT min(time) AS t FROM quote_snapshots WHERE time > ${t.toISOString()}`,
+      sql`SELECT min(time) AS t FROM quote_snapshots WHERE time >= ${istMidnight.toISOString()}`,
+    ]).catch(unavailable)) as { t: Date | null }[][];
+    const load = (when: Date) => sql`
+      SELECT c.key, c.kind AS side, c.expiry::text AS expiry, c.strike, c.lot, c.raw->>'underlying_key' AS "underlyingKey",
+             s.last_price AS "lastPrice", s.net_change AS "netChange", s.oi, s.volume, s.iv, s.delta, s.theta, s.gamma, s.vega,
+             s.lower_circuit AS "lowerCircuit", s.upper_circuit AS "upperCircuit", s.depth
+      FROM quote_snapshots s JOIN contract_master c ON c.key = s.key
+      WHERE s.time = ${when.toISOString()} AND c.underlying = ${underlying}`;
+    const rows = (await load(t).catch(unavailable)) as SnapshotContract[];
+    const firstAt = first?.t ? new Date(first.t) : undefined;
+    const baseline =
+      firstAt && firstAt.getTime() < t.getTime()
+        ? new Map(((await load(firstAt).catch(unavailable)) as SnapshotContract[]).flatMap((r) => (r.oi === null || r.oi === undefined ? [] : [[r.key, Number(r.oi)] as [string, number]])))
+        : undefined;
+    const chain = recordedChain({ underlying, expiry: expiry || undefined, asOf: t.getTime(), rows, baseline, strikesEachSide: each, prevAt: prev?.t ? new Date(prev.t).getTime() : null, nextAt: next?.t ? new Date(next.t).getTime() : null });
+    if (!chain) throw new NotFoundException("that snapshot holds no options for this underlying");
+    return chain;
+  }
+
+  /**
+   * Contracts we hold candles for, expired ones included: GET /feed/contracts?underlying=CRUDEOIL[&expiry=2026-11-17][&side=CE]. Newest expiry first, at most 3,000.
+   * This is the only list of an expired MCX contract anywhere: Upstox's expired-contract API has none.
+   */
+  @Get("contracts")
+  async contracts(@Query("underlying") underlying?: string, @Query("expiry") expiry?: string, @Query("side") side?: string) {
+    if (!underlying || !UNDERLYINGS.includes(underlying)) throw new BadRequestException(`underlying must be one of ${UNDERLYINGS}`);
+    if (expiry !== undefined && expiry !== "" && !DAY.test(expiry)) throw new BadRequestException("expiry must be YYYY-MM-DD");
+    if (side !== undefined && side !== "" && !["CE", "PE", "FUT"].includes(side)) throw new BadRequestException("side must be CE, PE or FUT");
+    return this.db.sql`
+      SELECT key, symbol, expiry::text AS expiry, strike, side, lot FROM option_contracts
+      WHERE underlying = ${underlying} AND (${expiry || null}::date IS NULL OR expiry = ${expiry || null}::date) AND (${side || null}::text IS NULL OR side = ${side || null}::text)
+      ORDER BY expiry DESC, strike, side LIMIT 3000`.catch(unavailable);
+  }
+
   /** How much of one MCX day the recording covers: minutes with Upstox messages against the official session window, and the holes. GET /feed/coverage?day=2026-10-26 */
   @Get("coverage")
   async coverage(@Query("day") day?: string) {
@@ -94,7 +148,8 @@ export class FeedController {
     const end = win ? new Date(win.end_at).getTime() : Date.parse(`${day}T23:30:00${IST}`);
     const present = (await sql`
       SELECT extract(epoch FROM minute)::float8 * 1000 AS t FROM feed_minutes WHERE minute >= ${new Date(start).toISOString()} AND minute < ${new Date(end).toISOString()} AND upstox_msgs > 0`.catch(unavailable)) as { t: number }[];
-    const c = coverage(present.map((r) => r.t), start, end);
+    // a session still running is judged only up to now: the minutes that have not happened yet are not holes
+    const c = coverage(present.map((r) => r.t), start, Math.min(end, Date.now()));
     return { day, window: { from: start, to: end, official: Boolean(win) }, ...c };
   }
 }

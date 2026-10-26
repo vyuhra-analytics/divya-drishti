@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { instrument, rowPcr, type ChainRow, type OptionLeg } from "@drishti/shared";
-import { useChain, type ChainFeed } from "./chainClient";
+import { useChain, useRecordedChain, type ChainFeed } from "./chainClient";
 import { useLiveChain } from "./optionFeed";
-import { makeFormat, useSettings } from "./settings";
+import { makeFormat, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const COLUMN_KEY = "drishti-ocx-columns";
@@ -57,8 +57,19 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
   const [strikes, setStrikes] = useState(START_STRIKES);
   const [metric, setMetric] = useState<"oi" | "volume">("oi");
   const [cols, setCols] = useState<ColId[]>(savedColumns);
-  const { chain: polled, error, reload } = useChain(underlying, expiry, feed, strikes);
-  const { chain, live } = useLiveChain(polled);
+  // null = live; a number = the chain as our snapshots recorded it at that moment (epoch ms)
+  const [asOf, setAsOf] = useState<number | null>(null);
+  const clock = useClock();
+  const { chain: polled, error: liveError, reload } = useChain(underlying, expiry, feed, strikes, asOf === null);
+  const { chain: liveChain, live } = useLiveChain(polled);
+  const recorded = useRecordedChain(underlying, expiry, asOf, strikes);
+  const chain = asOf === null ? liveChain : recorded.chain;
+  const error = asOf === null ? liveError : recorded.error;
+  /** value for a datetime-local input: the viewer's own clock, to the minute */
+  const inputValue = (ms: number) => {
+    const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60_000);
+    return d.toISOString().slice(0, 16);
+  };
 
   const nf = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
   const price = makeFormat(locale, 2).price;
@@ -117,14 +128,28 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
         );
       }
       case "bid":
-        return <td key={id} className={cls}>{l?.bid === undefined ? "—" : price(l.bid)}</td>;
+        return (
+          <td key={id} className={cls}>
+            {l?.bid === undefined ? "—" : price(l.bid)}
+            {l?.bidQty !== undefined && <small>{`×${l.bidQty}`}</small>}
+          </td>
+        );
       case "ask":
-        return <td key={id} className={cls}>{l?.ask === undefined ? "—" : price(l.ask)}</td>;
+        return (
+          <td key={id} className={cls}>
+            {l?.ask === undefined ? "—" : price(l.ask)}
+            {l?.askQty !== undefined && <small>{`×${l.askQty}`}</small>}
+          </td>
+        );
       case "ltp": {
         const base = l?.ltp !== undefined && l.change !== undefined ? l.ltp - l.change : undefined;
         const pct = base ? ((l!.change ?? 0) / base) * 100 : undefined;
         return (
-          <td key={id} className={`${cls}ltp ${l?.change === undefined ? "" : l.change >= 0 ? "up" : "down"}`} title={l?.theo !== undefined ? `Theoretical ${price(l.theo)}` : undefined}>
+          <td
+            key={id}
+            className={`${cls}ltp ${l?.change === undefined ? "" : l.change >= 0 ? "up" : "down"}`}
+            title={l?.theo !== undefined ? `Theoretical ${price(l.theo)}` : l?.lowerCircuit !== undefined ? `Price band for the day: ${price(l.lowerCircuit)} to ${price(l.upperCircuit)}` : undefined}
+          >
             {l?.ltp === undefined ? "—" : price(l.ltp)}
             {pct !== undefined && <small>{`${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %`}</small>}
           </td>
@@ -165,6 +190,15 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
   }
   if (!spotDrawn && rows.length) body.push(spotRow);
 
+  if (!chain && asOf !== null)
+    return (
+      <div className="empty muted">
+        <p>{error ?? "Reading the recorded chain…"}</p>
+        <button className="tf no-drag" onClick={() => setAsOf(null)}>
+          Back to live
+        </button>
+      </div>
+    );
   if (!chain) return <p className="empty muted">{error ?? "Loading option chain…"}</p>;
   const span = shown.length * 2 + 1;
   return (
@@ -192,12 +226,43 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
             Spot <b>{spot === undefined ? "—" : price(spot)}</b>
           </span>
         </span>
-        <select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as ChainFeed)} title="Where the chain comes from">
-          <option value="auto">Feed: TradingView + Upstox</option>
-          <option value="upstox">Upstox</option>
-          <option value="tradingview">TradingView</option>
-        </select>
-        {chain.source && (
+        {asOf === null && (
+          <select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as ChainFeed)} title="Where the chain comes from">
+            <option value="auto">Feed: TradingView + Upstox</option>
+            <option value="upstox">Upstox</option>
+            <option value="tradingview">TradingView</option>
+          </select>
+        )}
+        <span className="ocx-history" title="Look at the chain as we recorded it: a snapshot of every contract is kept every 15 minutes while MCX is open">
+          <input
+            type="datetime-local"
+            aria-label="Show the chain as recorded at"
+            value={asOf === null ? "" : inputValue(asOf)}
+            onChange={(e) => {
+              const ms = Date.parse(e.target.value);
+              if (Number.isFinite(ms)) setAsOf(ms);
+            }}
+          />
+          {asOf !== null && (
+            <>
+              <button className="tf" aria-label="Previous snapshot" disabled={!chain.prevAt} onClick={() => chain.prevAt && setAsOf(chain.prevAt)}>
+                ◀
+              </button>
+              <button className="tf" aria-label="Next snapshot" disabled={!chain.nextAt} onClick={() => chain.nextAt && setAsOf(chain.nextAt)}>
+                ▶
+              </button>
+              <button className="tf" onClick={() => setAsOf(null)}>
+                Live
+              </button>
+            </>
+          )}
+        </span>
+        {asOf !== null && chain.asOf && (
+          <span className="badge src-recorded" title="Read back from our stored snapshots, not a live feed">
+            RECORDED {clock.stamp(chain.asOf)}
+          </span>
+        )}
+        {asOf === null && chain.source && (
           <span className={`badge src-${chain.source}`} title={FEED_NOTE[chain.source]}>
             {chain.source === "combined" ? "TV + UPSTOX" : chain.source === "tradingview" ? "TV" : "UPSTOX"}
             {chain.delayedBy ? ` ${Math.round(chain.delayedBy / 60)}m delay` : ""}
@@ -263,7 +328,7 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
                   style={{ marginLeft: 12 }}
                   title="Prices for the strikes around the money come over the live Upstox feed (about once a second); the rest, and any strike whose feed goes quiet, are polled every 1 to 3 seconds."
                 >
-                  {live.fresh ? `● live feed ${live.fresh}/${live.watched} contracts` : "polled"}
+                  {asOf !== null ? "recorded snapshot" : live.fresh ? `● live feed ${live.fresh}/${live.watched} contracts` : "polled"}
                 </span>
               </td>
             </tr>

@@ -1,5 +1,5 @@
 import { daysToExpiry, describeProvenance, instrument, quoteProvenance, SYMBOLS, type Quote } from "@drishti/shared";
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { TvWidget } from "./TvWidget";
 import { CalendarWidget } from "./CalendarPanel";
 import { AlertsWidget } from "./AlertsPanel";
@@ -18,6 +18,7 @@ import { BacktestWidget } from "./BacktestPanel";
 import { PaperWidget } from "./PaperPanel";
 import { QualityWidget } from "./QualityPanel";
 import { OptionChainWidget } from "./OptionChainPanel";
+import { ContractHistoryWidget } from "./ContractHistoryPanel";
 import { useFreshness } from "./market";
 import { SourceBadge } from "./SourceBadge";
 export { SourceBadge };
@@ -70,6 +71,68 @@ function DayRange({ low, high, last, open }: { low?: number; high?: number; last
   );
 }
 
+/** The order book as Upstox sends it, up to five levels: quantity bars grow from the middle so the heavier side is obvious at a glance. */
+function DepthLadder({ depth, price }: { depth: NonNullable<Quote["depth"]>; price: (v: number | undefined) => string }) {
+  const max = Math.max(1, ...depth.flatMap((l) => [l.bidQ ?? 0, l.askQ ?? 0]));
+  return (
+    <table className="quote-depth" aria-label="Order book depth">
+      <thead>
+        <tr>
+          <th className="muted">Qty</th>
+          <th className="muted">Bid</th>
+          <th className="muted">Ask</th>
+          <th className="muted">Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        {depth.map((l, i) => (
+          <tr key={i}>
+            <td className="qty" style={{ ["--w" as string]: `${((l.bidQ ?? 0) / max) * 100}%` }}>
+              <span className="bar bid" />
+              {l.bidQ ?? ""}
+            </td>
+            <td className="up">{price(l.bidP)}</td>
+            <td className="down">{price(l.askP)}</td>
+            <td className="qty" style={{ ["--w" as string]: `${((l.askQ ?? 0) / max) * 100}%` }}>
+              <span className="bar ask" />
+              {l.askQ ?? ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const DEPTH_KEY = "drishti-quote-depth";
+
+/** The ladder behind a toggle, closed by default (the quote panel is small on the evening desk) and remembered. */
+function DepthBox({ depth, price }: { depth: NonNullable<Quote["depth"]>; price: (v: number | undefined) => string }) {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(DEPTH_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(DEPTH_KEY, open ? "0" : "1");
+    } catch {
+      /* not remembered */
+    }
+  };
+  return (
+    <div className="quote-depth-box">
+      <button className="tf" aria-expanded={open} onClick={toggle}>
+        {open ? "▾" : "▸"} Depth ({depth.length} levels)
+      </button>
+      {open && <DepthLadder depth={depth} price={price} />}
+    </div>
+  );
+}
+
 function QuoteWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const q = useStore((s) => s.quotes[symbol]);
@@ -117,6 +180,7 @@ function QuoteWidget({ widget }: { widget: Widget }) {
           </span>
         </div>
       )}
+      {q?.depth && q.depth.length > 1 && <DepthBox depth={q.depth} price={fmt.price} />}
       <DayRange low={q?.low} high={q?.high} last={q?.price} open={q?.open} />
       <dl className="quote-grid">
         {cell("Open", fmt.price(q?.open))}
@@ -126,6 +190,7 @@ function QuoteWidget({ widget }: { widget: Widget }) {
         {cell("Volume", fmt.volume(q?.volume))}
         {cell("OI", fmt.volume(q?.oi), "Open interest: contracts outstanding")}
         {cell("ATP", fmt.price(q?.atp), "Average traded price today (VWAP)")}
+        {cell("Last qty", fmt.volume(q?.ltq), "Size of the last trade, in lots, as the exchange reported it")}
         {cell("Lot", inst?.lot ?? "—")}
       </dl>
       {buyPct !== undefined && (
@@ -210,4 +275,5 @@ export const WIDGETS: Record<
   paper: { title: "Paper trading", component: PaperWidget, linked: true, showSymbol: true },
   quality: { title: "Data quality", component: QualityWidget, linked: false, showSymbol: false },
   optionchain: { title: "Option chain", component: OptionChainWidget, linked: true, showSymbol: true },
+  optionhistory: { title: "Contract history", component: ContractHistoryWidget, linked: true, showSymbol: true },
 };
