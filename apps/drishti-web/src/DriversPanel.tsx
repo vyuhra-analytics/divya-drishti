@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { computeDrivers, DRIVER_PAIRS, FX_SYMBOL, premiumSeries, premiumStats, type Bar, type DriverLeg } from "@drishti/shared";
+import { useShallow } from "zustand/react/shallow";
+import { computeDrivers, DRIVER_PAIRS, FX_SYMBOL, premiumSeries, premiumStats, type Bar, type DriverLeg, type Quote } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import { useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
@@ -39,7 +40,7 @@ function Leg({ name, l, dp, unit }: { name: string; l?: DriverLeg; dp: number; u
 export function DriversWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const globalSymbol = DRIVER_PAIRS[symbol];
-  const quotes = useStore((s) => s.quotes);
+  const quotes: Record<string, Quote | undefined> = useStore(useShallow((s) => ({ [symbol]: s.quotes[symbol], ...(globalSymbol ? { [globalSymbol]: s.quotes[globalSymbol] } : {}), [FX_SYMBOL]: s.quotes[FX_SYMBOL] })));
   const [history, setHistory] = useState<ReturnType<typeof premiumSeries>>([]);
   const [error, setError] = useState<string | null>(null);
 

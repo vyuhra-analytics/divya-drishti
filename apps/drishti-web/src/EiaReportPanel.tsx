@@ -3,7 +3,6 @@ import { inReleaseWindow, type AnalysisLine, type EiaReportCode, type EiaReportR
 import { apiUrl, useClock } from "./settings";
 import { EiaArticleView } from "./EiaArticleView";
 import { EiaForecastsView } from "./EiaForecastsView";
-import { useNow } from "./market";
 import type { Widget } from "./workspace";
 
 interface Loaded {
@@ -105,7 +104,12 @@ function Tables({ rows, report }: { rows: EiaReportRow[]; report: EiaReportCode 
 
 /** The official EIA report as it comes out: the headline against the forecast, what moved it, every table, and how soon after the release we had it. */
 export function EiaReportWidget(_: { widget: Widget }) {
-  const now = useNow(1000);
+  // a boolean state flips at the window edges only: a ticking clock here redrew all nine report tables every second (long tasks on the Report prep desk)
+  const [windowOpen, setWindowOpen] = useState(() => inReleaseWindow(Date.now()));
+  useEffect(() => {
+    const id = setInterval(() => setWindowOpen(inReleaseWindow(Date.now())), 1000);
+    return () => clearInterval(id);
+  }, []);
   const clock = useClock();
   const [report, setReport] = useState<EiaReportCode>(() => defaultReport(Date.now()));
   const [typed, setTyped] = useState("");
@@ -117,7 +121,6 @@ export function EiaReportWidget(_: { widget: Widget }) {
   const [week, setWeek] = useState("");
   const [weeks, setWeeks] = useState<StoredWeek[]>([]);
   const seenWeek = useRef<string | undefined>(undefined);
-  const windowOpen = inReleaseWindow(now);
 
   const forecastParam = typed.trim() !== "" && Number.isFinite(Number(typed)) ? Number(typed) : undefined;
   const live = week === ""; // only the newest report is watched closely: an older one does not change

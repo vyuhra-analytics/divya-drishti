@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { Chain, OptionLeg, OptionQuote } from "@drishti/shared";
 import { sendWatch, useStore } from "./store";
 import { useNow } from "./market";
@@ -61,10 +62,11 @@ export function overlayLive(chain: Chain, quotes: Record<string, OptionQuote>, n
  * fresh live quotes laid over it. With no live quote the polled chain comes back untouched.
  */
 export function useLiveChain(polled: Chain | null): { chain: Chain | null; live: LiveSummary } {
-  const quotes = useStore((s) => s.options);
   const epoch = useStore((s) => s.epoch); // +1 on every (re)connect: the new socket has no watch list yet
   const now = useNow(1000);
   const keys = useMemo(() => watchKeys(polled).join(","), [polled]);
+  // only the watched contracts: the store holds every option the stream sends (hundreds), and the other ones must not redraw the chain
+  const quotes = useStore(useShallow((s) => Object.fromEntries(keys.split(",").filter(Boolean).map((k) => [k, s.options[k]]))));
   useEffect(() => {
     if (!keys) return;
     const list = keys.split(",");

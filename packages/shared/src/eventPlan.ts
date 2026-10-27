@@ -113,8 +113,6 @@ export function matchStored(stored: StoredEventRef[], p: Pick<PlannedEvent, "ser
   return near[0];
 }
 
-export const knownSeries = (code: string) => seriesByCode(code);
-
 /** What the recorder needs from the database; the API implements it over Postgres, tests over a fake. */
 export interface EventStore {
   upsertSeries(def: EventSeriesDef): Promise<void>;
