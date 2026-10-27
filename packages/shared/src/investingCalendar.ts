@@ -4,7 +4,7 @@
 // most, stopped for good measure when the site answers anything but a page, labelled as Investing.com wherever a forecast from it is shown, and
 // ranked below a figure typed in by the owner or recorded from Forex Factory. Pure, so the parsing is tested.
 
-export type InvestingSeries = "eia_crude" | "eia_gasoline" | "eia_distillates" | "api_crude";
+export type InvestingSeries = "eia_crude" | "eia_gasoline" | "eia_distillates" | "api_crude" | "eia_gas";
 
 export interface InvestingPage {
   series: InvestingSeries;
@@ -18,6 +18,7 @@ export const INVESTING_PAGES: readonly InvestingPage[] = [
   { series: "eia_gasoline", label: "EIA gasoline inventories", url: "https://www.investing.com/economic-calendar/gasoline-inventories-485" },
   { series: "eia_distillates", label: "EIA distillate stocks", url: "https://www.investing.com/economic-calendar/eia-weekly-distillates-stocks-917" },
   { series: "api_crude", label: "API weekly crude stock", url: "https://www.investing.com/economic-calendar/api-weekly-crude-stock-656" },
+  { series: "eia_gas", label: "EIA natural gas storage", url: "https://www.investing.com/economic-calendar/natural-gas-storage-386" }, // Bcf, not million barrels
 ];
 
 export interface InvestingOccurrence {

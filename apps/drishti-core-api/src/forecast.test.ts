@@ -35,13 +35,13 @@ function setup(opts: { respond?: (url: string) => { status: number; text: string
 }
 
 describe("ForecastService.tick", () => {
-  it("reads all four pages when none was ever read, four seconds apart, and stores what they hold", async () => {
+  it("reads all five pages when none was ever read, four seconds apart, and stores what they hold", async () => {
     const { svc, requests, sleeps, queries } = setup();
     const read = await svc.tick();
-    expect(read).toEqual(["eia_crude", "eia_gasoline", "eia_distillates", "api_crude"]);
-    expect(requests).toHaveLength(4);
+    expect(read).toEqual(["eia_crude", "eia_gasoline", "eia_distillates", "api_crude", "eia_gas"]);
+    expect(requests).toHaveLength(5);
     expect(requests[0]).toContain("eia-crude-oil-inventories-75");
-    expect(sleeps).toEqual([4000, 4000, 4000]); // a pause between pages, none before the first
+    expect(sleeps).toEqual([4000, 4000, 4000, 4000]); // a pause between pages, none before the first
     const insert = queries.find((q) => q.text.includes("INSERT INTO release_forecasts"))!;
     const payload = JSON.parse(String(insert.values.find((v) => typeof v === "string" && String(v).startsWith("["))));
     expect(payload).toEqual([
@@ -56,8 +56,8 @@ describe("ForecastService.tick", () => {
     advance(2 * 3600_000);
     expect(await svc.tick()).toEqual([]);
     advance(5 * 3600_000);
-    expect((await svc.tick()).length).toBe(4);
-    expect(requests).toHaveLength(8);
+    expect((await svc.tick()).length).toBe(5);
+    expect(requests).toHaveLength(10);
   });
 
   it("carries on from the database after a restart: a page read an hour ago is left alone", async () => {
@@ -68,8 +68,8 @@ describe("ForecastService.tick", () => {
 
   it("looks more often in the ninety minutes before a release", async () => {
     const { svc, requests } = setup({ lastFetched: new Date("2026-10-27T08:15:00Z"), next: new Date("2026-10-27T10:00:00Z") }); // read 45 min ago, release in an hour
-    expect((await svc.tick()).length).toBe(4);
-    expect(requests).toHaveLength(4);
+    expect((await svc.tick()).length).toBe(5);
+    expect(requests).toHaveLength(5);
   });
 
   it("stops everything on the first block, says so, and leaves the site alone for twelve hours", async () => {

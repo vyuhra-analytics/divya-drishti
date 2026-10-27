@@ -7,7 +7,7 @@
 export type EiaKey = "crude" | "gasoline" | "distillates";
 
 export interface ForecastRowIn {
-  series: "eia_crude" | "eia_gasoline" | "eia_distillates" | "api_crude";
+  series: "eia_crude" | "eia_gasoline" | "eia_distillates" | "api_crude" | "eia_gas";
   /** the scheduled release, epoch ms */
   releaseAt: number;
   forecast?: number;

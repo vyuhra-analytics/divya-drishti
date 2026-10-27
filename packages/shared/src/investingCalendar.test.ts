@@ -30,9 +30,9 @@ describe("parseInvestingEvent", () => {
 });
 
 describe("the pages and the politeness rules", () => {
-  it("names the four pages the owner gave, one series each", () => {
-    expect(INVESTING_PAGES.map((p) => p.series)).toEqual(["eia_crude", "eia_gasoline", "eia_distillates", "api_crude"]);
-    expect(new Set(INVESTING_PAGES.map((p) => p.url)).size).toBe(4);
+  it("names the five pages the owner gave, one series each", () => {
+    expect(INVESTING_PAGES.map((p) => p.series)).toEqual(["eia_crude", "eia_gasoline", "eia_distillates", "api_crude", "eia_gas"]);
+    expect(new Set(INVESTING_PAGES.map((p) => p.url)).size).toBe(5);
     expect(INVESTING_PAGES.every((p) => p.url.startsWith("https://www.investing.com/economic-calendar/"))).toBe(true);
   });
 
