@@ -142,3 +142,36 @@ export function summarizeReplay(results: readonly (ReportTrade | ReportSkip)[]):
     skipped,
   };
 }
+
+/** One release in a replay: the surprise, the contract used and what happened. */
+export interface ReplayRow {
+  /** the release, epoch ms */
+  at: number;
+  surprise?: number;
+  contract?: string;
+  result: ReportTrade | ReportSkip;
+}
+
+export interface ReplayParams {
+  report: "WPSR" | "WNGSR";
+  underlying: "CRUDEOIL" | "CRUDEOILM" | "NATURALGAS" | "NATGASMINI";
+  rPct: number;
+  delayMin: number;
+  holdMin: number;
+  slip: number;
+  threshold: number;
+  /** YYYY-MM-DD: releases from this day on */
+  since: string;
+}
+
+export interface ReplayReport {
+  params: ReplayParams;
+  units: number;
+  rows: ReplayRow[];
+  summary: ReplaySummary;
+  /** the same replay at other values of R, for reading how much the answer depends on it (never for picking the best) */
+  sensitivity?: { rPct: number; summary: ReplaySummary }[];
+}
+
+export const REPLAY_UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"] as const;
+export const SENSITIVITY_R = [0.15, 0.3, 0.5, 0.75, 1] as const;

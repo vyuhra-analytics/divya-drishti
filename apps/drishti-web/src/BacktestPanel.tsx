@@ -21,6 +21,7 @@ import {
 } from "@drishti/shared";
 import { apiUrl, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
+import { EiaReplayView } from "./EiaReplayView";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const TFS = ["5m", "15m", "1h", "1d"] as const;
@@ -38,8 +39,26 @@ interface Outcome {
   verdict: Verdict;
 }
 
-/** Strategy tester on the stored provider history with Upstox costs, validated against luck and overfitting. Research only: no orders. */
+/** The strategy tester: price strategies on the provider history, or the EIA report-day strategy replayed over the one-minute candles we hold. */
 export function BacktestWidget({ widget }: { widget: Widget }) {
+  const [mode, setMode] = useState<"price" | "eia">("price");
+  return (
+    <div className="bt-modes">
+      <div className="toolbar no-drag" role="group" aria-label="Test type">
+        <button className={mode === "price" ? "tf active" : "tf"} onClick={() => setMode("price")}>
+          Price strategies
+        </button>
+        <button className={mode === "eia" ? "tf active" : "tf"} onClick={() => setMode("eia")}>
+          EIA report day
+        </button>
+      </div>
+      {mode === "eia" ? <EiaReplayView /> : <PriceTester widget={widget} />}
+    </div>
+  );
+}
+
+/** Strategy tester on the stored provider history with Upstox costs, validated against luck and overfitting. Research only: no orders. */
+function PriceTester({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const inst = instrument(symbol);
   const units = lotUnits(symbol);
