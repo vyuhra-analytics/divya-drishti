@@ -7,6 +7,7 @@ import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
 import { advStorage } from "./advStorage";
 import { registerFlowStudies } from "./advFlow";
 import { registerKillzones } from "./advKillzones";
+import { registerSessionBreaks } from "./advSessionBreaks";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -80,6 +81,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           const lib = await import("openalgo-charts");
           registerFlowStudies(lib.registerIndicator, indicators.createTier2Indicator, lib.hasIndicator);
           registerKillzones(lib.registerIndicator, lib.hasIndicator);
+          registerSessionBreaks(lib.registerIndicator, lib.hasIndicator);
         } catch (e) {
           console.warn("order flow studies unavailable:", (e as Error).message);
         }

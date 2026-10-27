@@ -395,3 +395,5 @@ export * from "./sessionZones";
 export * from "./po3";
 
 export * from "./zoneStats";
+
+export * from "./sessionBreaks";
