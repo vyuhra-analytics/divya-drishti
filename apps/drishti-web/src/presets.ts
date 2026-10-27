@@ -34,7 +34,7 @@ export interface Preset {
 }
 
 /**
- * Ready-made desks, F1…F6; saved workspaces follow them (F7…F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
+ * Ready-made desks, F1…F7; saved workspaces follow them (F8…F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
  * comfortable), so 28 rows fit a 1080p monitor without scrolling in compact, and every desk's first screen is built to that height (the Report prep desk scrolls for its last row).
  * `docs/redesign/RESEARCH_DESK.md` says what question each desk answers. The Evening desk here is an interim of today's panels for the
  * evening session; the purpose-built evening screen (`EIA_SCREENS.md`) replaces it when it is built.
@@ -113,6 +113,16 @@ export const PRESETS: Preset[] = [
         ["curve-1", "curve", "amber", "MCX:CRUDEOIL", "5m", 6, 0, 6, 14],
         ["tv-1", "tv", null, "MCX:CRUDEOIL", "5m", 0, 14, 6, 14],
         ["news-1", "news", "amber", "MCX:CRUDEOIL", "5m", 6, 14, 6, 14],
+      ]),
+  },
+  {
+    key: "reportday",
+    name: "Report day",
+    hint: "The EIA print: the chart on the left; on the right the forecast and the surprise, the range of the last hour, each 5-minute candle after the print, the entry levels and the option to buy",
+    build: () =>
+      snapshot("reportday", [
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 28],
+        ["reportday-1", "reportday", null, "MCX:CRUDEOIL", "5m", 8, 0, 4, 28],
       ]),
   },
 ];

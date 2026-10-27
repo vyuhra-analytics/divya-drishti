@@ -1,0 +1,341 @@
+import { useEffect, useMemo, useState } from "react";
+import { DAY_RULES, dayStage, preReleaseRange, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
+import { apiUrl, useClock } from "./settings";
+import { useChain } from "./chainClient";
+import { useNow } from "./market";
+import type { Widget } from "./workspace";
+
+// The EIA report-day screen, stages prep, range, print and window (docs/redesign/EIA_SCREENS.md and EIA_STRATEGY.md). One column that changes with the
+// time: the forecast and threshold before the print, the live range of the last hour, the number and its surprise the second it is stored, then each
+// 5-minute candle after it (inside / closed above / closed below) with the entry, R and levels when a close gives one, and the option strike to buy.
+// Nothing here places an order: the trade is entered and managed by hand.
+
+interface StoredEvent {
+  id: string;
+  series_code: ReportCode;
+  scheduled_at: string;
+  status: string;
+  observations: { kind: string; num: number | null; source: string; observedAt: string }[];
+}
+
+interface Release {
+  report: ReportCode;
+  at: number;
+  /** the newest forecast recorded for this release and where it came from */
+  forecast?: { value: number; source: string };
+}
+
+const STAGE_NAME: Record<DayStage, string> = { prep: "Prep", range: "Range", print: "Print", window: "Window", after: "Entry window closed" };
+const num = (v: number | undefined, dp = 1) => (v === undefined ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
+const signed = (v: number | undefined, dp = 1) => (v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "-" : ""}${num(Math.abs(v), dp)}`);
+const rs = (v: number) => `₹${Math.round(v).toLocaleString("en-IN")}`;
+
+function countdown(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** The release to show: the one that came out in the last 3 hours, else the next one. */
+function pickRelease(events: StoredEvent[], now: number, force?: ReportCode): Release | undefined {
+  const list = events
+    .filter((e) => !force || e.series_code === force)
+    .map((e) => ({ e, at: Date.parse(e.scheduled_at) }))
+    .filter((x) => Number.isFinite(x.at));
+  const recent = list.filter((x) => x.at <= now && now - x.at < 3 * 3600_000).sort((a, b) => b.at - a.at)[0];
+  const next = list.filter((x) => x.at > now).sort((a, b) => a.at - b.at)[0];
+  const x = recent ?? next;
+  if (!x) return undefined;
+  const f = x.e.observations.filter((o) => o.kind === "forecast" && o.num !== null).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
+  return { report: x.e.series_code, at: x.at, forecast: f ? { value: Number(f.num), source: f.source } : undefined };
+}
+
+export function ReportDayWidget(_: { widget: Widget }) {
+  const now = useNow(1000);
+  const clock = useClock();
+  const [force, setForce] = useState<ReportCode | undefined>(undefined);
+  const [events, setEvents] = useState<StoredEvent[]>([]);
+  const [typed, setTyped] = useState("");
+  const [consensus, setConsensus] = useState<{ value: number; source: string } | undefined>(undefined);
+  const [print, setPrint] = useState<{ change: number; unit: string; officialAt?: number } | undefined>(undefined);
+  const [bars, setBars] = useState<DayBar[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // the stored releases of both reports around today, once a minute
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const load = async () => {
+      const day = 86_400_000;
+      const q = `from=${new Date(Date.now() - day).toISOString().slice(0, 10)}&to=${new Date(Date.now() + 9 * day).toISOString().slice(0, 10)}`;
+      try {
+        const all = await Promise.all((["WPSR", "WNGSR"] as const).map((s) => fetch(`${apiUrl()}/calendar/stored?${q}&series=${s}`, { signal: ctrl.signal }).then((r) => (r.ok ? r.json() : []))));
+        setEvents(all.flat() as StoredEvent[]);
+        setError(null);
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      }
+    };
+    void load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      ctrl.abort();
+      clearInterval(id);
+    };
+  }, []);
+
+  const release = useMemo(() => pickRelease(events, now, force), [events, Math.floor(now / 60_000), force]);
+  const report = release?.report ?? force ?? "WPSR";
+  const cfg = REPORT_DAY[report];
+  const stage: DayStage | undefined = release ? dayStage(now, release.at) : undefined;
+  const releaseSec = release ? Math.round(release.at / 1000) : 0;
+  const nowSec = Math.floor(now / 1000);
+
+  // Investing.com's consensus for the next release, when no feed recorded a forecast
+  useEffect(() => {
+    if (!release) return;
+    const ctrl = new AbortController();
+    fetch(`${apiUrl()}/eia-report/forecasts?weeks=1${report === "WNGSR" ? "&report=WNGSR" : ""}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((t) => {
+        const row = (t?.releases ?? []).find((x: { releaseAt: number }) => Math.abs(x.releaseAt - release.at) < 20 * 3600_000);
+        const v = report === "WNGSR" ? row?.storage?.forecast : row?.crude?.forecast;
+        setConsensus(typeof v === "number" ? { value: v, source: "Investing.com consensus" } : undefined);
+      })
+      .catch(() => undefined);
+    return () => ctrl.abort();
+  }, [release?.at, report]);
+
+  const typedValue = typed.trim() !== "" && Number.isFinite(Number(typed)) ? Number(typed) : undefined;
+  const forecast = typedValue !== undefined ? { value: typedValue, source: "typed in" } : (release?.forecast ?? consensus);
+
+  // the number: the stored report of THIS release, looked at every 3 s from the print and once a minute otherwise
+  const fast = stage === "print" || stage === "window";
+  useEffect(() => {
+    if (!release) return;
+    const ctrl = new AbortController();
+    setPrint(undefined);
+    const load = async () => {
+      try {
+        const res = await fetch(`${apiUrl()}/eia-report?report=${report}${forecast ? `&forecast=${forecast.value}` : ""}`, { signal: ctrl.signal });
+        if (!res.ok) return;
+        const j = await res.json();
+        const at: number | undefined = j.officialReleaseAt ?? j.scheduledAt;
+        // it is this release's report only when it was published around the scheduled time, not last week's
+        if (at !== undefined && Math.abs(at - release.at) < 40 * 60_000 && j.analysis?.headline) setPrint({ change: j.analysis.headline.change, unit: j.analysis.headline.unit, officialAt: j.officialReleaseAt });
+      } catch {
+        /* the next poll tries again */
+      }
+    };
+    void load();
+    const id = setInterval(load, fast ? 3000 : 60_000);
+    return () => {
+      ctrl.abort();
+      clearInterval(id);
+    };
+  }, [release?.at, report, fast, forecast?.value]);
+
+  // the future's 5-minute candles
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const load = async () => {
+      try {
+        const res = await fetch(`${apiUrl()}/bars?symbol=${encodeURIComponent(cfg.symbol)}&tf=5m`, { signal: ctrl.signal });
+        if (res.ok) setBars((await res.json()) as DayBar[]);
+      } catch {
+        /* the next poll tries again */
+      }
+    };
+    void load();
+    const id = setInterval(load, stage === "range" || stage === "print" || stage === "window" ? 10_000 : 60_000);
+    return () => {
+      ctrl.abort();
+      clearInterval(id);
+    };
+  }, [cfg.symbol, stage === "range" || stage === "print" || stage === "window"]);
+
+  const { chain } = useChain(cfg.underlying, "", "auto", 6, stage !== undefined && stage !== "after");
+
+  const surprise = print && forecast ? print.change - forecast.value : undefined;
+  const side = reportSignal(surprise, cfg.threshold);
+  const range = useMemo(() => (release ? preReleaseRange(bars, releaseSec, nowSec) : undefined), [bars, releaseSec, Math.floor(now / 5000)]);
+  const watch = useMemo(() => (release && range && nowSec >= releaseSec ? watchWindow(bars, releaseSec, range, side, nowSec) : undefined), [bars, range, side, releaseSec, Math.floor(now / 5000)]);
+  const signal = watch?.signal;
+  const strike = useMemo(() => suggestStrike(chain, signal?.side ?? side, signal?.rPoints), [chain, signal?.side, signal?.rPoints, side]);
+
+  if (!release || !stage) return <p className="empty muted">{error ?? "No EIA release is scheduled in the next days."}</p>;
+
+  const untilPrint = release.at - now;
+  const untilCutoff = release.at + DAY_RULES.cutoffMin * 60_000 - now;
+  const strip =
+    stage === "prep" ? `Print in ${countdown(untilPrint)}` : stage === "range" ? `Range hour: print in ${countdown(untilPrint)}` : stage === "print" ? "The number is out" : stage === "window" ? `New entries until ${clock.time(release.at + DAY_RULES.cutoffMin * 60_000)} (${countdown(untilCutoff)})` : "No new entries";
+
+  return (
+    <div className="rd" role="region" aria-label="EIA report day">
+      <div className={`rd-strip rd-${stage}`}>
+        <b>{STAGE_NAME[stage]}</b>
+        <span>{strip}</span>
+        <small className="muted">
+          {report === "WPSR" ? "Petroleum" : "Natural gas"} report · {clock.stamp(release.at)}
+        </small>
+      </div>
+
+      <div className="toolbar no-drag" role="group" aria-label="Report">
+        {(["WPSR", "WNGSR"] as const).map((r) => (
+          <button key={r} className={r === report ? "tf active" : "tf"} onClick={() => setForce(r)}>
+            {r === "WPSR" ? "Crude (WPSR)" : "Gas (WNGSR)"}
+          </button>
+        ))}
+        <span className="muted rd-note">trades {cfg.underlying} options</span>
+      </div>
+
+      <section>
+        <h2>The number</h2>
+        <div className="rd-grid">
+          <div>
+            <div className="muted">Forecast ({cfg.unit})</div>
+            <input className="rd-input" inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={forecast ? `${signed(forecast.value, 2)} ${forecast.source !== "typed in" ? `(${forecast.source})` : ""}` : "type the number"} aria-label="Forecast of the change" />
+          </div>
+          <div>
+            <div className="muted">Actual</div>
+            <div className="rd-big">{print ? signed(print.change, report === "WPSR" ? 3 : 0) : "—"}</div>
+          </div>
+          <div>
+            <div className="muted">Surprise (threshold {cfg.threshold.toFixed(1)})</div>
+            <div className={`rd-big ${side === "long" ? "up" : side === "short" ? "down" : ""}`}>{signed(surprise, 2)}</div>
+          </div>
+        </div>
+        <p className={`rd-side ${side === "long" ? "up" : side === "short" ? "down" : "muted"}`}>
+          {surprise === undefined
+            ? print
+              ? "Type or wait for a forecast to get the surprise."
+              : stage === "prep" || stage === "range"
+                ? "The number comes at the print."
+                : "Waiting for the stored report…"
+            : side === "long"
+              ? "The surprise allows a LONG (a draw below forecast)."
+              : side === "short"
+                ? "The surprise allows a SHORT (above forecast)."
+                : "Under the threshold: no side from the number; a range break alone is enough."}
+        </p>
+      </section>
+
+      <section>
+        <h2>Range: the hour before the print</h2>
+        {range ? (
+          <p className="rd-rangebox">
+            <b>{num(range.high, 1)}</b> high · <b>{num(range.low, 1)}</b> low · width <b>{num(range.width, 1)}</b> <small className="muted">({range.candles} candles{range.complete ? "" : ", still building"})</small>
+          </p>
+        ) : (
+          <p className="muted">The range starts at {clock.time(release.at - DAY_RULES.rangeMin * 60_000)}.</p>
+        )}
+      </section>
+
+      {watch && range && (
+        <section>
+          <h2>Window: each 5-minute candle after the print</h2>
+          {watch.candles.length === 0 ? (
+            <p className="muted">The first candle closes at {clock.time(release.at + DAY_RULES.candleSec * 1000)}.</p>
+          ) : (
+            <table className="bt-num rd-table">
+              <thead>
+                <tr>
+                  <th>Candle</th>
+                  <th>Close</th>
+                  <th>Against the range</th>
+                </tr>
+              </thead>
+              <tbody>
+                {watch.candles.map((c) => (
+                  <tr key={c.time} className={!c.complete ? "muted" : ""}>
+                    <td>{clock.time(c.time * 1000)}</td>
+                    <td>{num(c.close, 1)}</td>
+                    <td className={c.state === "above" ? "up" : c.state === "below" ? "down" : ""}>
+                      {c.state === "inside" ? "inside" : c.state === "above" ? "closed above" : "closed below"}
+                      {!c.complete && " (forming)"}
+                      {c.against && " · skipped: against the surprise"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {signal ? (
+            <div className={`rd-signal ${signal.side === "long" ? "up" : "down"}`}>
+              <b>SIGNAL: {signal.side.toUpperCase()}</b> after the {clock.time(signal.candleTime * 1000)} candle closed {signal.side === "long" ? "above" : "below"} the range.
+              {signal.entry === undefined ? (
+                <div>Entry reference: the next candle's open (not open yet).</div>
+              ) : (
+                <div>
+                  Entry reference <b>{num(signal.entry, 1)}</b> · R <b>{num(signal.rPoints, 1)}</b> points (1.5 × ATR {num(signal.atr, 1)}) · stop <b>{num(signal.stop, 1)}</b> · TP1 <b>{num(signal.tp1, 1)}</b> (then the stop to entry) · TP2 <b>{num(signal.tp2, 1)}</b>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="muted">{watch.cutoffReached ? "No entry: the window closed with no close beyond the range on an allowed side." : "No close beyond the range yet."}</p>
+          )}
+        </section>
+      )}
+
+      <section>
+        <h2>Option to buy {signal?.side ?? side ? `(${signal?.side ?? side})` : ""}</h2>
+        {strike.rows.length === 0 ? (
+          <p className="muted">{strike.note}</p>
+        ) : (
+          <>
+            <table className="bt-num rd-table">
+              <thead>
+                <tr>
+                  <th>Strike</th>
+                  <th>Premium</th>
+                  <th>Delta</th>
+                  <th>Theta</th>
+                  <th>IV</th>
+                  <th>OI</th>
+                  <th>Vol</th>
+                </tr>
+              </thead>
+              <tbody>
+                {strike.rows.map((r) => {
+                  const l = r.leg;
+                  const p = l?.ask && l.ask > 0 ? l.ask : l?.ltp;
+                  return (
+                    <tr key={r.strike} className={strike.pick?.strike === r.strike ? "next" : ""}>
+                      <td>
+                        {r.strike} {r.atm && <small className="muted">ATM</small>}
+                      </td>
+                      <td>{num(p, 1)}</td>
+                      <td>{num(l?.delta, 2)}</td>
+                      <td>{num(l?.theta, 1)}</td>
+                      <td>{num(l?.iv, 1)}</td>
+                      <td>{l?.oi?.toLocaleString("en-IN") ?? "—"}</td>
+                      <td>{l?.volume?.toLocaleString("en-IN") ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className={strike.pick ? "" : "down"}>
+              {strike.pick ? (
+                <>
+                  <b>
+                    {strike.pick.strike} {strike.pick.side === "long" ? "CE" : "PE"}
+                  </b>{" "}
+                  at {num(strike.pick.premium, 1)} = {rs(strike.pick.cost)} for one lot (capital {rs(DAY_RULES.capital)})
+                  {strike.pick.rupeeR !== undefined && <> · 1R ≈ {rs(strike.pick.rupeeR)} (cap {rs(DAY_RULES.lossCap)})</>}
+                </>
+              ) : (
+                strike.note
+              )}
+            </p>
+            {strike.pick && <p className="muted">{strike.note}</p>}
+          </>
+        )}
+      </section>
+
+      <p className="muted rd-foot">
+        Rules: surprise {cfg.threshold.toFixed(1)} {cfg.unit}; range = the last hour before the print; entry on a 5-minute close beyond it, within {DAY_RULES.cutoffMin} minutes of the print, at the next open; R = 1.5 × ATR(14); stop 1R, TP1 +1R then the stop to entry, TP2 +2R. A break against the surprise is skipped. No order is placed here: you enter and manage the trade by hand.
+      </p>
+    </div>
+  );
+}

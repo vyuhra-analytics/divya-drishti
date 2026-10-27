@@ -129,14 +129,14 @@ test("panels added in the same millisecond get different ids, so changing one ne
   expect(new Set(ids).size).toBe(ids.length);
 });
 
-// ---- the redesigned desks (docs/redesign/RESEARCH_DESK.md): six built-in desks, F1 to F6
+// ---- the redesigned desks (docs/redesign/RESEARCH_DESK.md): six research desks, F1 to F6, and the Report day desk, F7
 const types = (key: string) => PRESETS.find((p) => p.key === key)!.build().widgets.map((w) => w.type);
 
-test("the built-in desks are the Evening desk and the five research workspaces, in F-key order", () => {
-  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro"]);
-  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV"]);
-  // six built-in desks leave F7 to F9 for three saved ones
-  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, true]);
+test("the built-in desks are the Evening desk, the five research workspaces and the Report day desk, in F-key order", () => {
+  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday"]);
+  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day"]);
+  // seven built-in desks leave F8 and F9 for two saved ones
+  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, true]);
 });
 
 test("each desk holds what its question needs", () => {
@@ -146,6 +146,7 @@ test("each desk holds what its question needs", () => {
   expect(types("review")).toEqual(expect.arrayContaining(["paper", "advchart", "costs", "quality"]));
   expect(types("study")).toEqual(expect.arrayContaining(["backtest", "advchart", "costs", "cot"]));
   expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));
+  expect(types("reportday")).toEqual(expect.arrayContaining(["advchart", "reportday"]));
 });
 
 test("the first screen of every desk fits one monitor: 28 grid rows (34 px each in the default compact density, a 1080p monitor), the Report prep desk scrolling only for its last row", () => {

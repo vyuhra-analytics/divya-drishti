@@ -397,3 +397,5 @@ export * from "./po3";
 export * from "./zoneStats";
 
 export * from "./sessionBreaks";
+
+export * from "./reportDay";

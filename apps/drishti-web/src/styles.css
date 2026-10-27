@@ -717,3 +717,23 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ef-table tr.reached td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .ef-table tr.next td { font-style: italic; }
 .ef-foot { font-size: 10px; margin-top: 8px; }
+
+/* EIA report day screen (ReportDayPanel.tsx): one column that changes with the stage */
+.rd { padding: 6px 10px 10px; overflow: auto; height: 100%; }
+.rd h2 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.rd-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: 6px 8px; border-radius: 4px; border-left: 4px solid var(--accent); background: var(--panel-2, rgba(255,255,255,0.04)); }
+.rd-strip b { font-size: 15px; }
+.rd-strip.rd-print { border-left-color: var(--up); }
+.rd-strip.rd-window { border-left-color: var(--accent); }
+.rd-strip.rd-after { border-left-color: var(--muted); }
+.rd-note { margin-left: 8px; }
+.rd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rd-big { font-size: 20px; font-variant-numeric: tabular-nums; }
+.rd-input { width: 100%; box-sizing: border-box; }
+.rd-side { margin: 4px 0; font-weight: 600; }
+.rd-rangebox b, .rd-signal b { font-variant-numeric: tabular-nums; }
+.rd-table { width: 100%; font-size: 12px; }
+.rd-table th, .rd-table td { text-align: right; padding: 2px 4px; }
+.rd-table th:first-child, .rd-table td:first-child { text-align: left; }
+.rd-signal { margin: 6px 0; padding: 6px 8px; border-radius: 4px; border: 1px solid currentColor; line-height: 1.5; }
+.rd-foot { margin-top: 12px; font-size: 11px; line-height: 1.5; }

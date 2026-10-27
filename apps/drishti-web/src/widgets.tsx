@@ -12,6 +12,7 @@ import { EiaWidget } from "./EiaPanel";
 import { DriversWidget } from "./DriversPanel";
 import { LabelWidget } from "./LabelPanel";
 import { EiaReportWidget } from "./EiaReportPanel";
+import { ReportDayWidget } from "./ReportDayPanel";
 import { RecapWidget } from "./RecapPanel";
 import { CostsWidget } from "./CostsPanel";
 import { BacktestWidget } from "./BacktestPanel";
@@ -267,6 +268,7 @@ export const WIDGETS: Record<
   curve: { title: "Futures curve", component: CurveWidget, linked: true, showSymbol: false },
   eia: { title: "EIA petroleum data", component: EiaWidget, linked: false, showSymbol: false },
   eiareport: { title: "EIA Report", component: EiaReportWidget, linked: false, showSymbol: false },
+  reportday: { title: "Report day", component: ReportDayWidget, linked: false, showSymbol: false },
   drivers: { title: "Drivers", component: DriversWidget, linked: true, showSymbol: true },
   labels: { title: "Label headlines", component: LabelWidget, linked: false, showSymbol: false },
   recap: { title: "Energy recap", component: RecapWidget, linked: true, showSymbol: true },
