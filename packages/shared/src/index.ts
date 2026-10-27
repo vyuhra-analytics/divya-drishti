@@ -384,3 +384,4 @@ export * from "./orderFlow";
 export * from "./eiaHistory";
 export * from "./releaseReaction";
 export * from "./eiaArticle";
+export * from "./eiaArchive";

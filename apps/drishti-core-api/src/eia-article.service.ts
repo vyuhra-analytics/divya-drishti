@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { analyzeReport, buildArticle, buildFacts, checkArticle, instrument, LruCache, REACTION_INSTRUMENTS, releaseMicrostructure, releaseReaction, type Article, type ArticleCheck, type Bar, type EiaReportCode, type FlowRow, type ReleaseFacts, type SeriesContext } from "@drishti/shared";
+import { analyzeReport, buildArticle, buildFacts, checkArticle, instrument, LruCache, REACTION_INSTRUMENTS, releaseMicrostructure, releaseReaction, type Article, type ArticleCheck, type Bar, type EiaReportCode, type EiaReportRow, type FlowRow, type ReleaseFacts, type SeriesContext } from "@drishti/shared";
 import { Db } from "./db";
 import { EiaHistoryService } from "./eia-history.service";
 import { EiaReportService } from "./eia-report.service";
@@ -17,7 +17,7 @@ export interface ArticleSources {
   /** recorded feed rows of one contract in a window, oldest first */
   feed(key: string, from: number, to: number): Promise<FlowRow[]>;
   /** the context of the series a report cites, as of its week */
-  contexts(report: EiaReportCode, weekEnding: string): Promise<Record<string, SeriesContext>>;
+  contexts(report: EiaReportCode, weekEnding: string, rows: readonly EiaReportRow[]): Promise<Record<string, SeriesContext>>;
 }
 
 export interface WrittenArticle {
@@ -65,7 +65,7 @@ export class EiaArticleService {
         (await this.db.sql`
           SELECT extract(epoch FROM time)::float8 * 1000 AS time, price, volume, bid, ask, bid_qty AS "bidQty", ask_qty AS "askQty", depth
           FROM feed_quotes WHERE key = ${key} AND time >= ${new Date(from).toISOString()} AND time < ${new Date(to).toISOString()} ORDER BY time LIMIT 100000`.catch(() => [])) as FlowRow[],
-      contexts: (report, weekEnding) => this.history.contexts(report, weekEnding).catch(() => ({})),
+      contexts: (report, weekEnding, rows) => this.history.contexts(report, weekEnding, rows).catch(() => ({})),
     };
   }
 
@@ -87,6 +87,11 @@ export class EiaArticleService {
     if (releaseAt < Date.now()) {
       await Promise.all(
         REACTION_INSTRUMENTS[report].map(async (i) => {
+          const saved = await this.savedReaction(report, stored.weekEnding, i.key);
+          if (saved) {
+            reactions[i.key] = { label: i.label, decimals: i.decimals, ...saved }; // a complete hour was saved at the time: the candles may be gone by now
+            return;
+          }
           const bars = await this.sources.bars(i.symbol).catch(() => [] as Bar[]);
           const reaction = releaseReaction(i.symbol, bars, releaseAt);
           if (!reaction) {
@@ -96,6 +101,7 @@ export class EiaArticleService {
           // the recorded feed exists for the MCX contracts only (the NYMEX feeds are delayed and not recorded)
           const micro = i.symbol.startsWith("MCX:") ? releaseMicrostructure(await this.sources.feed(i.symbol, releaseAt - FEED_BEFORE_MS, releaseAt + FEED_AFTER_MS).catch(() => []), releaseAt) : undefined;
           reactions[i.key] = { label: i.label, decimals: i.decimals, reaction, micro };
+          if (reaction.minutesCovered >= 60) await this.saveReaction(report, stored.weekEnding, i.key, i.label, i.decimals, reaction, micro);
         }),
       );
     }
@@ -103,7 +109,7 @@ export class EiaArticleService {
     const built = buildFacts({
       report: { report, periodEnd: Date.parse(stored.weekEnding), rows: stored.rows },
       analysis,
-      context: await this.sources.contexts(report, stored.weekEnding),
+      context: await this.sources.contexts(report, stored.weekEnding, stored.rows),
       forecast,
       releasedAt: stored.officialReleaseAt,
       storedAt: stored.firstStoredAt,
@@ -112,6 +118,20 @@ export class EiaArticleService {
     });
     this.cache.set(cacheKey, { at: Date.now(), facts: built });
     return { stored, facts: built };
+  }
+
+  /** The reaction saved when its first hour was complete, or undefined. */
+  private async savedReaction(report: EiaReportCode, weekEnding: string, key: string): Promise<{ reaction: NonNullable<ReturnType<typeof releaseReaction>>; micro?: ReturnType<typeof releaseMicrostructure> } | undefined> {
+    const rows = (await this.db.sql`SELECT reaction, micro FROM eia_release_reactions WHERE report = ${report} AND week_ending = ${weekEnding}::date AND key = ${key}`.catch(() => [])) as { reaction: any; micro: any }[];
+    return rows[0] ? { reaction: rows[0].reaction, micro: rows[0].micro ?? undefined } : undefined;
+  }
+
+  /** Keeps a complete reaction for good: the first copy wins, because a later rebuild would rest on thinner data. */
+  private async saveReaction(report: EiaReportCode, weekEnding: string, key: string, label: string, decimals: number, reaction: unknown, micro: unknown) {
+    await this.db.sql`
+      INSERT INTO eia_release_reactions (report, week_ending, key, label, decimals, reaction, micro)
+      VALUES (${report}, ${weekEnding}::date, ${key}, ${label}, ${decimals}, ${JSON.stringify(reaction)}::text::jsonb, ${micro === undefined ? null : JSON.stringify(micro)}::text::jsonb)
+      ON CONFLICT (report, week_ending, key) DO NOTHING`.catch(() => undefined);
   }
 
   /** Facts, our own article with its check, and the newest article Claude wrote. */

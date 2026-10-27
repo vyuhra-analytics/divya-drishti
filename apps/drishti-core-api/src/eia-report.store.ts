@@ -26,6 +26,12 @@ export class PgEiaReportStore {
     this.events = new PgEventStore(sql);
   }
 
+  /** Is this week of this report already stored with its rows? (the archive backfill skips such a week) */
+  async hasWeek(report: EiaReportCode, week: string): Promise<boolean> {
+    const r = (await this.sql`SELECT 1 FROM economic_events e WHERE e.series_code = ${report} AND e.key = ${week} AND EXISTS (SELECT 1 FROM eia_report_values v WHERE v.event_id = e.id)`) as unknown[];
+    return r.length > 0;
+  }
+
   /** The earliest release of a report, from three days ago on, that has no rows stored yet. */
   async nextUnstored(report: EiaReportCode, now: number): Promise<{ id: number; key: string; at: number } | undefined> {
     const rows = (await this.sql`

@@ -23,8 +23,9 @@ const stored = (over: Partial<StoredReport> = {}): StoredReport => ({
 const bar = (minute: number, price: number): Bar => ({ time: RELEASE / 1000 + minute * 60, open: price, high: price + 0.2, low: price - 0.2, close: price, volume: 10 });
 const quietBars = (): Bar[] => [...Array.from({ length: 40 }, (_, i) => bar(i - 40, 100)), ...Array.from({ length: 20 }, (_, i) => bar(i, 100 + i / 10))];
 
-function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => Bar[]; feed?: FlowRow[]; forecast?: { value: number; source: string }; writtenRow?: unknown } = {}) {
+function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => Bar[]; feed?: FlowRow[]; forecast?: { value: number; source: string }; writtenRow?: unknown; savedReaction?: unknown } = {}) {
   const inserts: unknown[][] = [];
+  const savedReactions: unknown[][] = [];
   const sql = Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
@@ -33,6 +34,11 @@ function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => 
         return Promise.resolve([]);
       }
       if (text.includes("FROM eia_articles")) return Promise.resolve(opts.writtenRow ? [opts.writtenRow] : []);
+      if (text.includes("INSERT INTO eia_release_reactions")) {
+        savedReactions.push(values);
+        return Promise.resolve([]);
+      }
+      if (text.includes("FROM eia_release_reactions")) return Promise.resolve(opts.savedReaction ? [opts.savedReaction] : []);
       return Promise.resolve([]);
     },
     {},
@@ -44,7 +50,7 @@ function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => 
   const sources: ArticleSources = { bars: async (s) => (opts.bars ? opts.bars(s) : quietBars()), feed: async () => opts.feed ?? [], contexts: async () => ({}) };
   service.sources = sources;
   const controller = new EiaArticleController(service, history, db);
-  return { service, controller, inserts };
+  return { service, controller, inserts, savedReactions };
 }
 
 describe("EiaArticleService.facts", () => {
@@ -81,6 +87,25 @@ describe("EiaArticleService.facts", () => {
     const got = (await service.facts("WPSR"))!;
     expect(asked).toBe(0);
     expect(got.facts.reaction).toBeUndefined();
+  });
+
+  it("saves a reaction once its first hour is complete, and not before", async () => {
+    const complete = setup(); // quietBars() carries twenty minutes after the release: not complete
+    await complete.service.facts("WPSR");
+    expect(complete.savedReactions).toHaveLength(0);
+    const hour = setup({ bars: () => [...Array.from({ length: 40 }, (_, i) => bar(i - 40, 100)), ...Array.from({ length: 60 }, (_, i) => bar(i, 100 + i / 10))] });
+    await hour.service.facts("WPSR");
+    expect(hour.savedReactions).toHaveLength(2); // both instruments
+    expect(hour.savedReactions[0].slice(0, 3)).toEqual(["WPSR", "2026-10-16", "cl"]);
+  });
+
+  it("uses the reaction saved at the time when the candles are no longer available", async () => {
+    const saved = { reaction: { symbol: "NYMEX:CL", releaseAt: RELEASE, basePrice: 58.4, moves: [{ minutes: 5, price: 58.8, change: 0.4, pct: 0.68 }], maxUp15: 0.6, maxDown15: 0.1, firstSwing15: "up", high60: 0.8, low60: -0.1, volumeFirst5: 900, volumeBefore5: 300, volumeRatio: 3, minutesCovered: 60 }, micro: null };
+    const { service } = setup({ bars: () => [], savedReaction: saved });
+    const got = (await service.facts("WPSR"))!;
+    expect(got.facts.reaction!.cl.basePrice).toBe(58.4);
+    expect(got.facts.reaction!.cl.moves.m5.pct).toBe(0.68);
+    expect(got.facts.notes.join(" ")).not.toContain("No market reaction for NYMEX WTI");
   });
 
   it("is undefined when no report is stored", async () => {

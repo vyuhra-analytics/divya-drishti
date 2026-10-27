@@ -187,6 +187,15 @@ describe("buildFacts", () => {
     expect(f.notes.join(" ")).toContain("had not caught up");
     expect(f.notes.join(" ")).toContain("stored after the fact");
   });
+
+  it("leaves out the context of a series whose history ends before the report's week, instead of describing an earlier week next to this one's figures", () => {
+    const f = buildFacts({ report, analysis, context: { crude: ctx({ level: 400, period: "2026-10-09", streak: { direction: "draw", weeks: 9 } }), cushing: ctx({ level: 27.6, period: "2026-10-16" }) } });
+    expect(f.context.crude).toBeUndefined();
+    expect(f.context.cushing).toBeDefined();
+    expect(f.notes.join(" ")).toContain("had not caught up with this report for 1 series (crude), so their context is left out");
+    const a = buildArticle({ ...wpsrFacts(), context: f.context });
+    expect(a.sections.flatMap((s) => s.paragraphs.map((p) => p.text)).join(" ")).not.toContain("weekly draw in a row");
+  });
 });
 
 describe("submission and markdown", () => {

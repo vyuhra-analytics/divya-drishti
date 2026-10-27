@@ -117,7 +117,13 @@ export function buildFacts(input: FactsInput): ReleaseFacts {
   const h = analysis.headline;
   const hu = unitOf(h.unit);
   const context: Record<string, SeriesContext> = {};
+  const lagging: string[] = [];
   for (const [k, c] of Object.entries(input.context)) {
+    // history that ends before the report's week would describe an earlier week next to this week's figures: leave it out and say so
+    if (c.period < analysis.weekEnding) {
+      lagging.push(k);
+      continue;
+    }
     const unit = series[k]?.unit ?? "";
     const rc = (v: number | undefined) => (v === undefined ? undefined : round(v, unit, true));
     const own = report.rows.find((r) => r.seriesId === HISTORY_SERIES.find((h) => h.key === k)?.seriesId);
@@ -169,8 +175,7 @@ export function buildFacts(input: FactsInput): ReleaseFacts {
 
   if (!input.forecast) notes.push("No forecast was on record for this release, so no surprise is calculated.");
   else notes.push(`The forecast is ${input.forecast.source}: a single figure, not an official consensus.`);
-  const stale = Object.entries(context).filter(([, c]) => c.period < analysis.weekEnding);
-  if (stale.length) notes.push(`EIA's history had not caught up with this report for ${stale.length} series (${stale.map(([k]) => k).slice(0, 4).join(", ")}): their context is as of an earlier week.`);
+  if (lagging.length) notes.push(`EIA's weekly history had not caught up with this report for ${lagging.length} series (${lagging.slice(0, 4).join(", ")}), so their context is left out.`);
   if (report.report === "WPSR" && Object.values(context).some((c) => c.fiveYear)) notes.push("Five-year figures for crude and products are our own calculation from EIA's weekly history (the same week in each of the five previous years); EIA's published five-year averages can differ slightly.");
   if (input.backfilled) notes.push("This report was stored after the fact, so the market reaction and our timing are measured from the official release time.");
   if (Object.values(reaction).some((x) => x.micro)) notes.push("Delta and book figures are estimates from our own recording of the Upstox feed (Upstox has no trade tape); spreads and counts are as recorded.");

@@ -24,7 +24,8 @@ const checkWeek = (week?: string) => {
  *   GET  /eia-report/context?report&week            for an agent: the facts, `citable` (every figure by path), the rules and a context id
  *   POST /eia-report/article/submit                 the agent's article: its cited figures are checked against that context, it is stored, and the
  *                                                   verdict per paragraph is returned so the agent can correct itself
- *   GET  /eia-report/history/status                 how much weekly history is loaded
+ *   GET  /eia-report/history/status                 how much weekly history is loaded, and how many weeks are stored as published
+ *   GET  /eia-report/crosscheck?report&weeks        published against EIA's API for the newest stored weeks: the revisions
  */
 @Controller("eia-report")
 export class EiaArticleController {
@@ -85,5 +86,13 @@ export class EiaArticleController {
   @Get("history/status")
   historyStatus() {
     return this.history.status();
+  }
+
+  /** Published against EIA's API for the newest stored weeks: where they differ, the report was later revised. GET /eia-report/crosscheck?report=WPSR&weeks=26 */
+  @Get("crosscheck")
+  async crosscheck(@Query("report") report?: string, @Query("weeks") weeksParam?: string) {
+    const weeks = weeksParam === undefined ? 26 : Number(weeksParam);
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 520) throw new BadRequestException("weeks must be 1 to 520");
+    return this.history.crosscheck(checkReport(report), weeks);
   }
 }
