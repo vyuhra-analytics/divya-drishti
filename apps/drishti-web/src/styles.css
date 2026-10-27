@@ -737,3 +737,18 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .rd-table th:first-child, .rd-table td:first-child { text-align: left; }
 .rd-signal { margin: 6px 0; padding: 6px 8px; border-radius: 4px; border: 1px solid currentColor; line-height: 1.5; }
 .rd-foot { margin-top: 12px; font-size: 11px; line-height: 1.5; }
+.rd-ready { list-style: none; margin: 0; padding: 0; }
+.rd-ready li { padding: 2px 0; }
+.rd-live { margin: 2px 0 6px; }
+.rd-trade { margin: 8px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; }
+.rd-live.rd-trade, .rd-trade.rd-live { border-color: var(--accent); }
+.rd-pnl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rd-flash { margin: 4px 0; padding: 4px 6px; border: 1px solid currentColor; border-radius: 4px; font-weight: 600; animation: cal-fresh 1.2s ease-out 6; }
+.rd-gauge { position: relative; height: 26px; margin: 10px 4px 18px; border-bottom: 2px solid var(--line); }
+.rd-gauge .rd-tick { position: absolute; top: 14px; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.rd-gauge .rd-mark { position: absolute; bottom: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translateX(-50%); }
+.rd-form { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 6px 0; }
+.rd-form label { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); }
+.rd-form-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+.rd-note-box { display: flex; flex-direction: column; margin: 6px 0; }
+.rd-note-box textarea { width: 100%; box-sizing: border-box; }

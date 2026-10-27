@@ -38,7 +38,10 @@ function serve(opts: { bars?: object[]; report?: object | null; consensus?: numb
   return urls;
 }
 
-beforeEach(() => setSystemTime(new Date(REL - 5 * 3600_000)));
+beforeEach(() => {
+  localStorage.clear();
+  setSystemTime(new Date(REL - 5 * 3600_000));
+});
 afterEach(() => {
   cleanup();
   setSystemTime();
@@ -65,7 +68,7 @@ test("a forecast recorded for the release wins over the consensus, and a typed o
   await waitFor(() => expect(input.placeholder).toContain("Forex Factory"));
   expect(input.placeholder).toContain("-1.20");
   fireEvent.change(input, { target: { value: "-2.5" } });
-  expect(screen.queryByText(/typed in/)).toBeNull(); // the typed number is the value, not shown as a placeholder
+  await waitFor(() => expect(document.querySelector(".rd-ready")?.textContent).toContain("typed in")); // the checklist now names the typed number as the forecast source
 });
 
 test("range: the live high, low and width of the hour before the print", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { dayStage, preReleaseRange, suggestStrike, watchWindow, type DayBar } from "./reportDay";
+import { dayStage, preReleaseRange, readiness, suggestStrike, watchWindow, type DayBar } from "./reportDay";
 import type { Chain, OptionLeg } from "./options";
 
 const REL = 1_793_000_000 - (1_793_000_000 % 300); // a 5-minute boundary, epoch seconds
@@ -145,5 +145,29 @@ describe("suggestStrike", () => {
     expect(suggestStrike(base, undefined).note).toContain("No side yet");
     const dear = chain([[9600, 0.52, 900]]);
     expect(suggestStrike(dear, "long").note).toContain("fits");
+  });
+});
+
+describe("readiness", () => {
+  const good = { now: RELMS - 3600_000, releaseAt: RELMS, forecast: { source: "Forex Factory" }, lastCandle: REL - 3600 - 120, chainAgeMs: 2000, chainPriced: 9, reportReachable: true };
+
+  it("everything ready: five ticks, each with its plain answer", () => {
+    const r = readiness(good);
+    expect(r.map((x) => x.id)).toEqual(["release", "forecast", "candles", "chain", "number"]);
+    expect(r.every((x) => x.ok)).toBe(true);
+    expect(r[1].detail).toBe("Forex Factory");
+  });
+
+  it("says what is wrong: no forecast, old candles, a chain without greeks or stale, a silent source", () => {
+    expect(readiness({ ...good, forecast: undefined })[1]).toMatchObject({ ok: false });
+    expect(readiness({ ...good, forecast: undefined })[1].detail).toContain("type the number");
+    const old = readiness({ ...good, lastCandle: REL - 3600 - 3600 })[2];
+    expect(old.ok).toBe(false);
+    expect(old.detail).toContain("is MCX open");
+    expect(readiness({ ...good, chainPriced: 1 })[3]).toMatchObject({ ok: false, detail: "too few strikes with a price and a delta" });
+    expect(readiness({ ...good, chainAgeMs: 60_000 })[3].ok).toBe(false);
+    expect(readiness({ ...good, reportReachable: false })[4].ok).toBe(false);
+    expect(readiness({ ...good, reportReachable: undefined })[4].detail).toBe("checking");
+    expect(readiness({ ...good, releaseAt: undefined })[0].ok).toBe(false);
   });
 });

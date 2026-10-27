@@ -25,7 +25,7 @@ function beep() {
   }
 }
 
-function notify(message: string) {
+export function notify(message: string) {
   const { alertSound } = useSettings.getState();
   if (alertSound) beep();
   try {

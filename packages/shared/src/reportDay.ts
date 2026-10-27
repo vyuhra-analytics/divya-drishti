@@ -140,6 +140,8 @@ export function watchWindow(bars: readonly DayBar[], releaseSec: number, range: 
 
 export interface StrikePick {
   strike: number;
+  /** the Upstox instrument key of the option, to follow its live quote */
+  key?: string;
   side: DaySide;
   /** what buying it costs per unit (the ask, else the last price) and for one lot */
   premium: number;
@@ -192,7 +194,7 @@ export function suggestStrike(chain: Chain | null | undefined, side: DaySide | u
   const firm = cands.filter((c) => c.delta >= 0.5);
   const preferred = atmCand && atmCand.delta >= 0.5 ? atmCand : firm.length ? [...firm].sort((a, b) => Math.abs(a.delta - 0.6) - Math.abs(b.delta - 0.6))[0] : [...cands].sort((a, b) => b.delta - a.delta)[0];
 
-  const toPick = (c: (typeof cands)[number]): StrikePick => ({ strike: c.r.strike, side, premium: c.premium, cost: c.cost, delta: c.delta, theta: c.leg.theta, iv: c.leg.iv, oi: c.leg.oi, volume: c.leg.volume, rupeeR: rPoints === undefined ? undefined : rPoints * c.delta * lot });
+  const toPick = (c: (typeof cands)[number]): StrikePick => ({ strike: c.r.strike, key: c.leg.ukey, side, premium: c.premium, cost: c.cost, delta: c.delta, theta: c.leg.theta, iv: c.leg.iv, oi: c.leg.oi, volume: c.leg.volume, rupeeR: rPoints === undefined ? undefined : rPoints * c.delta * lot });
   const first = toPick(preferred);
   if (first.rupeeR === undefined || first.rupeeR <= lossCap) return { pick: first, rows, note: first.rupeeR === undefined ? "R is not known yet: the loss cap is checked once the entry candle closes." : "Fits the capital and the loss cap." };
 
@@ -202,4 +204,41 @@ export function suggestStrike(chain: Chain | null | undefined, side: DaySide | u
     if (p.rupeeR! <= lossCap) return { pick: p, rows, note: `1R on the nearer strike would be ₹${Math.round(first.rupeeR).toLocaleString("en-IN")}, over the ₹${lossCap.toLocaleString("en-IN")} cap: a lower-delta strike.` };
   }
   return { pick: undefined, rows, note: `No trade: 1R is over the ₹${lossCap.toLocaleString("en-IN")} cap even on the lowest-delta strike that fits.` };
+}
+
+export interface ReadinessItem {
+  id: "release" | "forecast" | "candles" | "chain" | "number";
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface ReadinessInput {
+  now: number;
+  /** the scheduled release is known (epoch ms) */
+  releaseAt?: number;
+  /** a forecast is available (typed in, recorded or consensus) and where it came from */
+  forecast?: { source: string };
+  /** the open time of the newest 5-minute candle of the future (epoch seconds) */
+  lastCandle?: number;
+  /** the chain was read this long ago (ms), and how many strikes have a price and a delta */
+  chainAgeMs?: number;
+  chainPriced?: number;
+  /** the API could be asked for the report at all */
+  reportReachable?: boolean;
+}
+
+/**
+ * The things that must be true before the print, each with a plain answer: the release time, a forecast, fresh candles, a live chain with greeks, and
+ * the report source answering. Shown in the prep and range stages so a dead feed is seen an hour early, not at 20:00.
+ */
+export function readiness(i: ReadinessInput): ReadinessItem[] {
+  const candleAge = i.lastCandle === undefined ? undefined : i.now - i.lastCandle * 1000;
+  return [
+    { id: "release", label: "Release time", ok: i.releaseAt !== undefined && i.releaseAt > i.now - 3 * 3600_000, detail: i.releaseAt === undefined ? "no release is stored" : "stored" },
+    { id: "forecast", label: "Forecast", ok: i.forecast !== undefined, detail: i.forecast ? i.forecast.source : "none yet: type the number you read on Trading Economics or Investing.com" },
+    { id: "candles", label: "5-minute candles", ok: candleAge !== undefined && candleAge < 12 * 60_000, detail: candleAge === undefined ? "none loaded" : candleAge < 12 * 60_000 ? "current" : `the newest opened ${Math.round(candleAge / 60_000)} minutes ago (is MCX open?)` },
+    { id: "chain", label: "Option chain", ok: i.chainAgeMs !== undefined && i.chainAgeMs < 20_000 && (i.chainPriced ?? 0) >= 3, detail: i.chainAgeMs === undefined ? "not loaded" : (i.chainPriced ?? 0) < 3 ? "too few strikes with a price and a delta" : i.chainAgeMs < 20_000 ? `${i.chainPriced} strikes with prices and greeks` : `last read ${Math.round(i.chainAgeMs / 1000)} s ago` },
+    { id: "number", label: "Report source", ok: i.reportReachable === true, detail: i.reportReachable === undefined ? "checking" : i.reportReachable ? "answering" : "not answering: the number will not appear by itself" },
+  ];
 }

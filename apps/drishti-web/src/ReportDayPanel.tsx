@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { DAY_RULES, dayStage, preReleaseRange, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DAY_RULES, dayStage, preReleaseRange, readiness, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
+import { useAlerts } from "./alertsStore";
+import { notify } from "./alertEngine";
+import { ReportDayTrade } from "./ReportDayTrade";
+import { loadRecord, saveRecord } from "./reportDayStore";
+import { useStore } from "./store";
 import { useNow } from "./market";
 import type { Widget } from "./workspace";
 
@@ -61,6 +66,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const [print, setPrint] = useState<{ change: number; unit: string; officialAt?: number } | undefined>(undefined);
   const [bars, setBars] = useState<DayBar[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [reachable, setReachable] = useState<boolean | undefined>(undefined);
+  const [recordTick, setRecordTick] = useState(0);
 
   // the stored releases of both reports around today, once a minute
   useEffect(() => {
@@ -106,6 +113,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
     return () => ctrl.abort();
   }, [release?.at, report]);
 
+  // the forecast typed for a release is remembered for it
+  useEffect(() => setTyped(release ? (loadRecord(release.at).forecast ?? "") : ""), [release?.at]);
   const typedValue = typed.trim() !== "" && Number.isFinite(Number(typed)) ? Number(typed) : undefined;
   const forecast = typedValue !== undefined ? { value: typedValue, source: "typed in" } : (release?.forecast ?? consensus);
 
@@ -118,13 +127,14 @@ export function ReportDayWidget(_: { widget: Widget }) {
     const load = async () => {
       try {
         const res = await fetch(`${apiUrl()}/eia-report?report=${report}${forecast ? `&forecast=${forecast.value}` : ""}`, { signal: ctrl.signal });
+        setReachable(true);
         if (!res.ok) return;
         const j = await res.json();
         const at: number | undefined = j.officialReleaseAt ?? j.scheduledAt;
         // it is this release's report only when it was published around the scheduled time, not last week's
         if (at !== undefined && Math.abs(at - release.at) < 40 * 60_000 && j.analysis?.headline) setPrint({ change: j.analysis.headline.change, unit: j.analysis.headline.unit, officialAt: j.officialReleaseAt });
-      } catch {
-        /* the next poll tries again */
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") setReachable(false);
       }
     };
     void load();
@@ -163,20 +173,49 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const signal = watch?.signal;
   const strike = useMemo(() => suggestStrike(chain, signal?.side ?? side, signal?.rPoints), [chain, signal?.side, signal?.rPoints, side]);
 
+  // announcements: a toast, a beep and a desktop notice, once each per release, and only while it is live (never for a print that came out hours ago)
+  const announced = useRef<Set<string>>(new Set());
+  const say = (key: string, message: string) => {
+    const k = `${release?.at}:${key}`;
+    if (announced.current.has(k)) return;
+    announced.current.add(k);
+    useAlerts.getState().push("report-day", message);
+    notify(message);
+  };
+  const live = stage === "print" || stage === "window";
+  const minsToCutoff = release ? Math.ceil((release.at + DAY_RULES.cutoffMin * 60_000 - now) / 60_000) : undefined;
+  useEffect(() => {
+    if (live && print && surprise !== undefined) say("print", `Report day: the number is out, ${signed(print.change, report === "WPSR" ? 3 : 0)} ${cfg.unit}, surprise ${signed(surprise, 2)}: ${side === "long" ? "allows a LONG" : side === "short" ? "allows a SHORT" : "no side from the number"}`);
+  }, [live, print?.change, surprise]);
+  useEffect(() => {
+    if (live && signal) say("signal", `Report day: SIGNAL ${signal.side.toUpperCase()} after the ${clock.time(signal.candleTime * 1000)} candle closed ${signal.side === "long" ? "above" : "below"} the range`);
+  }, [live, signal?.side, signal?.candleTime]);
+  useEffect(() => {
+    if (stage === "window" && !signal && minsToCutoff === 5) say("cutoff", "Report day: 5 minutes left for a new entry");
+  }, [stage, signal?.side, minsToCutoff]);
+  const lastCandle = bars.length ? Math.max(...bars.map((b) => b.time)) : undefined;
+  const pricedStrikes = chain ? chain.rows.filter((r) => ((r.ce?.ask && r.ce.ask > 0) || (r.ce?.ltp && r.ce.ltp > 0)) && r.ce?.delta !== undefined).length : 0;
+  const ready = readiness({ now, releaseAt: release?.at, forecast: forecast ? { source: forecast.source } : undefined, lastCandle, chainAgeMs: chain ? now - chain.updatedAt : undefined, chainPriced: pricedStrikes, reportReachable: reachable });
+  const livePrice = useStore((s) => s.quotes[cfg.symbol]?.price);
+
   if (!release || !stage) return <p className="empty muted">{error ?? "No EIA release is scheduled in the next days."}</p>;
 
   const untilPrint = release.at - now;
   const untilCutoff = release.at + DAY_RULES.cutoffMin * 60_000 - now;
+  // the trader's own stages follow the clock's: once they say they entered, the strip says "In trade", and "Done" after the exit
+  const rec = loadRecord(release.at);
+  const phase = rec.closed ? "Done" : rec.trade ? "In trade" : STAGE_NAME[stage];
   const strip =
+    rec.closed ? "Review below; no new entries today" : rec.trade ? `Following your ${rec.trade.side} · time stop from ${clock.time(release.at + 90 * 60_000)}` :
     stage === "prep" ? `Print in ${countdown(untilPrint)}` : stage === "range" ? `Range hour: print in ${countdown(untilPrint)}` : stage === "print" ? "The number is out" : stage === "window" ? `New entries until ${clock.time(release.at + DAY_RULES.cutoffMin * 60_000)} (${countdown(untilCutoff)})` : "No new entries";
 
   return (
     <div className="rd" role="region" aria-label="EIA report day">
       <div className={`rd-strip rd-${stage}`}>
-        <b>{STAGE_NAME[stage]}</b>
+        <b>{phase}</b>
         <span>{strip}</span>
         <small className="muted">
-          {report === "WPSR" ? "Petroleum" : "Natural gas"} report · {clock.stamp(release.at)}
+          {report === "WPSR" ? "Petroleum" : "Natural gas"} report · {clock.stamp(release.at)} · {new Date(release.at).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} New York
         </small>
       </div>
 
@@ -189,12 +228,40 @@ export function ReportDayWidget(_: { widget: Widget }) {
         <span className="muted rd-note">trades {cfg.underlying} options</span>
       </div>
 
+      <ReportDayTrade
+        releaseAt={release.at}
+        symbol={cfg.symbol}
+        signal={signal}
+        pick={strike.pick}
+        units={chain?.lot ?? 1}
+        bars={bars}
+        now={now}
+        chainBid={(k, sd) => chain?.rows.find((r) => r.strike === k)?.[sd === "long" ? "ce" : "pe"]?.bid}
+        onEvent={(m) => say(`trade:${m}`, m)}
+      />
+
+      {(stage === "prep" || stage === "range") && (
+        <section aria-label="Ready for the print">
+          <h2>Ready for the print?</h2>
+          <ul className="rd-ready">
+            {ready.map((x) => (
+              <li key={x.id} className={x.ok ? "up" : "down"}>
+                <b>{x.ok ? "✓" : "✗"}</b> {x.label} <span className="muted">· {x.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section>
         <h2>The number</h2>
         <div className="rd-grid">
           <div>
             <div className="muted">Forecast ({cfg.unit})</div>
-            <input className="rd-input" inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={forecast ? `${signed(forecast.value, 2)} ${forecast.source !== "typed in" ? `(${forecast.source})` : ""}` : "type the number"} aria-label="Forecast of the change" />
+            <input className="rd-input" inputMode="decimal" value={typed} onChange={(e) => {
+                setTyped(e.target.value);
+                if (release) saveRecord(release.at, { forecast: e.target.value });
+              }} placeholder={forecast ? `${signed(forecast.value, 2)} ${forecast.source !== "typed in" ? `(${forecast.source})` : ""}` : "type the number"} aria-label="Forecast of the change" />
           </div>
           <div>
             <div className="muted">Actual</div>
@@ -223,9 +290,18 @@ export function ReportDayWidget(_: { widget: Widget }) {
       <section>
         <h2>Range: the hour before the print</h2>
         {range ? (
+          <>
           <p className="rd-rangebox">
             <b>{num(range.high, 1)}</b> high · <b>{num(range.low, 1)}</b> low · width <b>{num(range.width, 1)}</b> <small className="muted">({range.candles} candles{range.complete ? "" : ", still building"})</small>
           </p>
+          {livePrice !== undefined && (
+            <p className="muted rd-live">
+              Price {num(livePrice, 1)}:{" "}
+              {livePrice > range.high ? `${num(livePrice - range.high, 1)} above the range` : livePrice < range.low ? `${num(range.low - livePrice, 1)} below the range` : `inside, ${num(range.high - livePrice, 1)} under the high and ${num(livePrice - range.low, 1)} over the low`}
+              {stage === "window" && ` · the candle closes in ${countdown((Math.floor(nowSec / DAY_RULES.candleSec) + 1) * DAY_RULES.candleSec * 1000 - now)}`}
+            </p>
+          )}
+          </>
         ) : (
           <p className="muted">The range starts at {clock.time(release.at - DAY_RULES.rangeMin * 60_000)}.</p>
         )}

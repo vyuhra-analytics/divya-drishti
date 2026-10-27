@@ -399,3 +399,5 @@ export * from "./zoneStats";
 export * from "./sessionBreaks";
 
 export * from "./reportDay";
+
+export * from "./reportTrade";
