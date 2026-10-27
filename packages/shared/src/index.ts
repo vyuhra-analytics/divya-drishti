@@ -387,3 +387,5 @@ export * from "./eiaArticle";
 export * from "./eiaArchive";
 export * from "./investingCalendar";
 export * from "./forecastTable";
+
+export * from "./eiaStrategy";
