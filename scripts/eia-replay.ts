@@ -1,7 +1,7 @@
 // Replay the EIA report-day strategy over the one-minute candles we hold (option_candles, side FUT) and print every release and a summary.
 //   bun run --env-file=.env scripts/eia-replay.ts [--report=WPSR|WNGSR] [--underlying=CRUDEOILM] [--rpct=0.3] [--delay=1] [--hold=60] [--slip=1]
 //                                                   [--threshold=3] [--since=2026-04-25]
-// R is a placeholder (a percentage of the entry price) until the strategy's own definition is set. The contract is the one with the most volume in the
+// R is 0.5% of the entry price (the owner's definition). The contract is the one with the most volume in the
 // hour BEFORE the release (nothing after it is used). A release with no traded minute before it (a contract we never held, or one not yet trading) is
 // skipped and counted, never filled with a guess. The sensitivity grid is for reading how much the answer depends on R, NOT for picking the best R.
 import { SQL } from "bun";
@@ -10,7 +10,7 @@ import { lotUnits, replayReportTrade, reportSignal, summarizeReplay, type Bar, t
 const arg = (n: string, d: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=")[1] ?? d;
 const report = arg("report", "WPSR");
 const underlying = arg("underlying", report === "WPSR" ? "CRUDEOILM" : "NATGASMINI");
-const rPct = Number(arg("rpct", "0.3"));
+const rPct = Number(arg("rpct", "0.5"));
 const delayMin = Number(arg("delay", "1"));
 const holdMin = Number(arg("hold", "60"));
 const slip = Number(arg("slip", report === "WPSR" ? "1" : "0.1"));
@@ -61,7 +61,7 @@ async function run(cfgR: number): Promise<Row[]> {
 }
 
 const rows = await run(rPct);
-console.log(`${report} on ${underlying} (${units} units a lot), threshold ${threshold}, R = ${rPct}% of entry (placeholder), entry ${delayMin} min after the release, hold ${holdMin} min, slippage ${slip} points, 1 lot per leg`);
+console.log(`${report} on ${underlying} (${units} units a lot), threshold ${threshold}, R = ${rPct}% of entry (owner: 0.5%), entry ${delayMin} min after the release, hold ${holdMin} min, slippage ${slip} points, 1 lot per leg`);
 console.log("date        surprise  side   result");
 for (const r of rows) {
   const d = new Date(r.at).toISOString().slice(0, 10);

@@ -1,6 +1,6 @@
 // The EIA report-day strategy as a replay over one-minute candles: a surprise at or beyond the threshold picks a side (a draw below the forecast = long, a
 // build above = short), the trade enters at the open of the first traded minute after the release, and is split in two equal legs with a stop at 1R and
-// targets at +1R and +2R. R is a PLACEHOLDER (a percentage of the entry price) until the owner defines it. Conservative on purpose: within one minute the
+// targets at +1R and +2R. R is a percentage of the entry price, 0.5% by the owner's definition. Conservative on purpose: within one minute the
 // stop is assumed hit before a target, a gap through the stop fills at the open, slippage is charged on every market fill, the full Upstox costs per leg.
 // Causal: nothing after the entry minute is used to decide the entry. Pure and tested; the runner that reads the database is scripts/eia-replay.ts.
 import { roundTrip, type Kind } from "./costs";
@@ -15,7 +15,7 @@ export function reportSignal(surprise: number | undefined, threshold: number): R
 }
 
 export interface ReportTradeConfig {
-  /** R as a percentage of the entry price (placeholder, see above) */
+  /** R as a percentage of the entry price (0.5 by the owner) */
   rPct: number;
   /** whole minutes after the release before the entry (the entry is the open of the first traded minute at or after this) */
   delayMin: number;
