@@ -133,6 +133,11 @@ export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, n
             <tr className={view.events.some((e) => e.kind === "tp2") ? "up" : ""}><td>TP2</td><td>{level(trade.tp2)}</td><td className="muted">{view.events.some((e) => e.kind === "tp2") ? "reached" : `${num(Math.abs(trade.tp2 - (price ?? trade.futureEntry)), 1)} away`}</td></tr>
           </tbody>
         </table>
+        {trade.delta !== undefined && (
+          <p className="muted" title="R translated to the option through the delta read at entry, fixed there: the premium levels to place as real orders if you want them">
+            Option premium levels (R × delta {num(Math.abs(trade.delta), 2)}): stop <b>{num(trade.premium - trade.rPoints * Math.abs(trade.delta), 1)}</b> · TP1 <b>{num(trade.premium + trade.rPoints * Math.abs(trade.delta), 1)}</b> · TP2 <b>{num(trade.premium + 2 * trade.rPoints * Math.abs(trade.delta), 1)}</b>
+          </p>
+        )}
         <p className={view.capHit ? "down" : "muted"}>
           Loss cap {rs(DAY_RULES.lossCap)}: {view.pnl === undefined ? "no option price yet" : view.pnl >= 0 ? "in profit" : `${rs(-view.pnl)} lost (${num((-view.pnl / DAY_RULES.lossCap) * 100, 0)}% of the cap)`}
           {view.rupeeR !== undefined && <> · 1R ≈ {rs(view.rupeeR)}</>}

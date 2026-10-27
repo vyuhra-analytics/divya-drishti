@@ -164,7 +164,13 @@ export function ReportDayWidget(_: { widget: Widget }) {
     };
   }, [cfg.symbol, stage === "range" || stage === "print" || stage === "window"]);
 
-  const { chain } = useChain(cfg.underlying, "", "auto", 6, stage !== undefined && stage !== "after");
+  // crude options: the nearest expiry; NATGASMINI options: the NEXT one (the nearest expires the day after the report: owner decision, USER_AND_JOBS.md)
+  const [expiry, setExpiry] = useState("");
+  const { chain } = useChain(cfg.underlying, expiry, "auto", 6, stage !== undefined && stage !== "after");
+  useEffect(() => setExpiry(""), [report]);
+  useEffect(() => {
+    if (report === "WNGSR" && expiry === "" && chain && chain.expiries.length > 1 && chain.expiry === chain.expiries[0]) setExpiry(chain.expiries[1]);
+  }, [report, expiry, chain?.expiry, chain?.expiries.length]);
 
   const surprise = print && forecast ? print.change - forecast.value : undefined;
   const side = reportSignal(surprise, cfg.threshold);

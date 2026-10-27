@@ -76,6 +76,7 @@ test("entering the trade: the form is prefilled from the signal and the suggeste
   expect(live.textContent).toContain("bought 170.0 · bid 165.0"); // the chain's bid until the live option quote arrives
   expect(live.textContent).toContain("−₹500"); // (165 - 170) x 100 units
   expect(live.textContent).toContain("Loss cap ₹2,000");
+  expect(live.textContent).toMatch(/Option premium levels \(R × delta 0\.52\): stop 1[0-9]{2}\.\d · TP1 1[0-9]{2}\.\d · TP2 [0-9]{3}\.\d/); // R translated through the delta read at entry
   expect(live.textContent).toMatch(/Time stop: .* to /);
   expect(live.textContent).toContain("This only follows the trade");
   expect(await screen.findByText("In trade", { selector: "b" }, { timeout: 3000 })).toBeTruthy(); // the strip follows the trader's own stage
