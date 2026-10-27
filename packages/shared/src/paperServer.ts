@@ -5,7 +5,7 @@
 import { UPSTOX_MCX_RATES, type CostRates, type Side } from "./costs";
 import { lotUnits } from "./costs";
 import { instrument } from "./index";
-import { closePaper, describeFill, exitHit, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade } from "./paper";
+import { closePaper, describeFill, exitHit, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OptionRef, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade } from "./paper";
 
 export type Actor = "ui" | "mcp";
 
@@ -91,6 +91,39 @@ export function parseOrderInput(body: any): { order: OrderInput } | { error: str
   }
 }
 
+/** An Upstox option instrument key. */
+export const PAPER_OPTION_KEY = /^MCX_FO\|\d{3,9}$/;
+
+export interface OptionOrderInput extends OrderMeta {
+  key: string;
+  lots: number;
+  stop?: number;
+  target?: number;
+}
+
+/** An order carries an `option` when it is an option order: { option: { key }, side: "buy", lots, stop?, target? } with stop and target in PREMIUM. Option paper trading is buy only. */
+export const isOptionOrder = (body: unknown): boolean => typeof body === "object" && body !== null && (body as { option?: unknown }).option !== undefined;
+
+export function parseOptionOrder(body: any): { order: OptionOrderInput } | { error: string } {
+  const key = body?.option?.key;
+  if (typeof key !== "string" || !PAPER_OPTION_KEY.test(key)) return { error: "option.key must be an Upstox instrument key like MCX_FO|583805" };
+  if (body.side !== "buy") return { error: "option paper trading is buy only: the strategies buy calls and puts" };
+  const lots = Number(body.lots);
+  if (!Number.isInteger(lots) || lots < 1) return { error: "lots must be a whole number of at least 1" };
+  const price = (v: unknown, name: string) => {
+    if (v === undefined || v === null || v === "") return undefined;
+    if (!Number.isFinite(Number(v)) || Number(v) <= 0 || typeof v === "boolean") throw new Error(`${name} must be a positive premium`);
+    return Number(v);
+  };
+  const m = parseOrderMeta(body);
+  if ("error" in m) return m;
+  try {
+    return { order: { key, lots, stop: price(body.stop, "stop"), target: price(body.target, "target"), ...m.meta } };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
 /** A stop/target change: a number sets it, null clears it, absent leaves it alone. `only_tighten` makes it a trailing update that can only move the stop closer to profit. */
 export function parseStopTarget(body: any): { stop?: number | null; target?: number | null; onlyTighten?: boolean; reason?: string } | { error: string } {
   const out: { stop?: number | null; target?: number | null; onlyTighten?: boolean; reason?: string } = {};
@@ -160,6 +193,12 @@ export interface PaperDeps {
   quote(symbol: string): PaperQuote | undefined;
   /** the exchange is open and the feed was heard from in the last minute */
   live(symbol: string): boolean;
+  /** option contracts (paper option trading): what a key is, its live premium quote, and whether that quote may be filled on */
+  option?: {
+    info(key: string): Promise<(OptionRef & { lot: number; expiresAt: number }) | undefined>;
+    quote(key: string): PaperQuote | undefined;
+    live(key: string): boolean;
+  };
   rates(): Promise<CostRates>;
   now(): number;
   newId(): string;
@@ -197,11 +236,27 @@ export class PaperEngine {
     return (this.d.limits ?? DEFAULT_LIMITS)[actor];
   }
 
+  /** The quote, liveness and price step of a position's contract: the future's, or the option's own. */
+  private quoteOf(p: PaperPosition): PaperQuote | undefined {
+    return p.option ? this.d.option?.quote(p.symbol) : this.d.quote(p.symbol);
+  }
+  private liveOf(p: PaperPosition): boolean {
+    return p.option ? !!this.d.option?.live(p.symbol) : this.d.live(p.symbol);
+  }
+  private tickOf(p: PaperPosition): number {
+    return p.option?.tick ?? tickSize(p.symbol);
+  }
+
   /** Run one change at a time: two orders or a stop firing during an order must not see half-written state. */
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.queue.then(fn);
     this.queue = p.catch(() => undefined);
     return p;
+  }
+
+  /** The Upstox keys of the option positions that are open: the stream keeps their quotes coming so stops fire with the browser closed. */
+  openOptionKeys(): string[] {
+    return [...this.open.values()].filter((x) => x.position.option).map((x) => x.position.symbol);
   }
 
   /** Reload open positions from the database (they are cached so a stop check on every tick costs no query). */
@@ -260,8 +315,8 @@ export class PaperEngine {
     if (!account) return fail(404, "no such account");
     const [positions, trades, rates] = await Promise.all([this.d.store.positions(id), this.d.store.trades(id, 100), this.d.rates()]);
     const nets = positions.map((p) => {
-      const q = this.d.quote(p.symbol);
-      return q ? unrealisedNet(p, q, account.slippage * tickSize(p.symbol), rates) : 0;
+      const q = this.quoteOf(p);
+      return q ? unrealisedNet(p, q, account.slippage * this.tickOf(p), rates) : 0;
     });
     const all = await this.d.store.trades(id, MAX_TRADES_KEPT);
     return { ok: true, state: { account, positions, trades, rates, limits: this.limits(actor), summary: summarizeAccount(account.capital, [...all].reverse(), nets) } };
@@ -271,8 +326,8 @@ export class PaperEngine {
     return this.serial(async () => {
       const r = await this.placeNow(accountId, raw, actor);
       // a repeat of an order already filled is recorded under its own action, so it never counts toward the daily order cap
-      await this.audit(actor, r.ok && r.duplicate ? "place_duplicate" : "place", accountId, raw, r, r.ok ? `${r.duplicate ? "duplicate of " : ""}${r.position.side} ${r.position.lots} ${r.position.symbol} @ ${r.position.entry}` : "");
-      if (r.ok && !r.duplicate) this.d.publish({ account: accountId, event: "opened", actor, text: `${actor === "mcp" ? "Claude" : "You"} opened ${r.position.lots} lot${r.position.lots === 1 ? "" : "s"} ${r.position.symbol} ${r.position.side === "buy" ? "long" : "short"} at ${r.position.entry}` });
+      await this.audit(actor, r.ok && r.duplicate ? "place_duplicate" : "place", accountId, raw, r, r.ok ? `${r.duplicate ? "duplicate of " : ""}${r.position.side} ${r.position.lots} ${r.position.option?.label ?? r.position.symbol} @ ${r.position.entry}` : "");
+      if (r.ok && !r.duplicate) this.d.publish({ account: accountId, event: "opened", actor, text: `${actor === "mcp" ? "Claude" : "You"} opened ${r.position.lots} lot${r.position.lots === 1 ? "" : "s"} ${r.position.option?.label ?? r.position.symbol} ${r.position.option ? "bought" : r.position.side === "buy" ? "long" : "short"} at ${r.position.entry}` });
       return r;
     });
   }
@@ -283,11 +338,62 @@ export class PaperEngine {
     if (open) return { position: open };
     const trade = (await this.d.store.trades(accountId, MAX_TRADES_KEPT)).find((t) => t.clientOrderId === clientOrderId);
     if (!trade) return undefined;
-    const { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, entryFill } = trade;
-    return { position: { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, fill: entryFill }, trade };
+    const { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, entryFill, option } = trade;
+    return { position: { id, symbol, side, lots, units, entry, openedAt, actor, clientOrderId: cid, tag, strategy, signalTime, rPoints, fill: entryFill, ...(option ? { option } : {}) }, trade };
+  }
+
+  /** Buy an option on paper: the premium fills at the ask (else the last price) plus slippage in premium ticks, stops and targets are on the premium. Browser only for now. */
+  private async placeOptionNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
+    const od = this.d.option;
+    if (!od) return fail(503, "option paper trading is not available on this server");
+    if (actor !== "ui") return fail(422, "option paper orders are placed from the browser: agents cannot place them yet");
+    const parsed = parseOptionOrder(raw);
+    if ("error" in parsed) return fail(400, parsed.error);
+    const { order } = parsed;
+    const account = await this.d.store.getAccount(accountId);
+    if (!account) return fail(404, "no such account");
+    if (order.clientOrderId) {
+      const dup = await this.findClientOrder(accountId, order.clientOrderId);
+      if (dup) {
+        const p = dup.position;
+        if (p.symbol !== order.key || p.lots !== order.lots) return fail(409, `client_order_id ${order.clientOrderId} was already used for a different order`);
+        return { ok: true, position: p, duplicate: true, ...(dup.trade ? { closed: dup.trade } : {}) };
+      }
+    }
+    const info = await od.info(order.key);
+    if (!info) return fail(404, "that is not an option contract of ours (crude, crude mini, gas or gas mini)");
+    if (this.d.now() >= info.expiresAt) return fail(422, `${info.label} has expired`);
+    const lim = this.limits(actor);
+    if (order.lots > lim.maxLots) return fail(422, `at most ${lim.maxLots} lot${lim.maxLots === 1 ? "" : "s"} per order for this client`);
+    const positions = await this.d.store.positions(accountId);
+    if (positions.some((p) => p.symbol === order.key)) return fail(409, "already in this contract: close that position first");
+    if (positions.length >= lim.maxOpenPositions) return fail(422, `at most ${lim.maxOpenPositions} open positions`);
+    if ((await this.d.store.ordersSince(accountId, actor, this.d.now() - 86_400_000)) >= lim.maxOrdersPerDay) return fail(422, `order limit reached: at most ${lim.maxOrdersPerDay} orders in 24 hours`);
+    const q = od.quote(order.key);
+    if (!q) return fail(503, "no live premium for this option yet: pick it in the panel so the feed watches it");
+    if (!od.live(order.key)) return fail(503, "the market is closed or the feed is stale: paper orders fill only on a live price");
+    const ref: OptionRef = { key: info.key, label: info.label, underlying: info.underlying, type: info.type, strike: info.strike, expiry: info.expiry, tick: info.tick };
+    const slippage = account.slippage * info.tick;
+    const filled = openPaper({ id: this.d.newId(), symbol: order.key, side: "buy", lots: order.lots, units: info.lot, stop: order.stop, target: order.target }, q, slippage, this.d.now());
+    if ("error" in filled) return fail(400, filled.error);
+    const position: PaperPosition = {
+      ...filled,
+      actor,
+      option: ref,
+      fill: describeFill("buy", q, slippage, info.tick),
+      ...(order.clientOrderId ? { clientOrderId: order.clientOrderId } : {}),
+      ...(order.tag ? { tag: order.tag } : {}),
+      ...(order.strategy ? { strategy: order.strategy } : {}),
+      ...(order.signalTime !== undefined ? { signalTime: order.signalTime } : {}),
+      ...(order.rPoints !== undefined ? { rPoints: order.rPoints } : {}),
+    };
+    await this.d.store.savePosition(accountId, position);
+    this.open.set(position.id, { account: accountId, position });
+    return { ok: true, position };
   }
 
   private async placeNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
+    if (isOptionOrder(raw)) return this.placeOptionNow(accountId, raw, actor);
     const parsed = parseOrderInput(raw);
     if ("error" in parsed) return fail(400, parsed.error);
     const { order } = parsed;
@@ -334,7 +440,7 @@ export class PaperEngine {
     return this.serial(async () => {
       const r = await this.closeNow(accountId, positionId, actor, reason);
       if (actor !== "engine") await this.audit(actor, "close", accountId, { positionId }, r, r.ok ? `net ${r.trade.net.toFixed(0)}` : "");
-      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? `${reason === "stop" ? "Stop" : "Target"} hit: ` : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.symbol} ${r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
+      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? `${reason === "stop" ? "Stop" : "Target"} hit: ` : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.option?.label ?? r.trade.symbol} ${r.trade.option ? "" : r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
       return r;
     });
   }
@@ -344,9 +450,9 @@ export class PaperEngine {
     if (!account) return fail(404, "no such account");
     const pos = (await this.d.store.positions(accountId)).find((p) => p.id === positionId);
     if (!pos) return fail(404, "no such open position");
-    const q = this.d.quote(pos.symbol);
+    const q = this.quoteOf(pos);
     if (!q) return fail(503, "no live price for this contract");
-    const slippage = account.slippage * tickSize(pos.symbol);
+    const slippage = account.slippage * this.tickOf(pos);
     const closed = closePaper(pos, q, slippage, this.d.now(), reason, await this.d.rates());
     const dir = pos.side === "buy" ? 1 : -1;
     const trade: PaperTrade = {
@@ -360,7 +466,7 @@ export class PaperEngine {
       ...(pos.signalTime !== undefined ? { signalTime: pos.signalTime } : {}),
       ...(pos.rPoints !== undefined ? { rPoints: pos.rPoints, rMultiple: Number(((dir * (closed.exit - pos.entry)) / pos.rPoints).toFixed(2)) } : {}),
       ...(pos.fill ? { entryFill: pos.fill } : {}),
-      exitFill: describeFill(pos.side === "buy" ? "sell" : "buy", q, slippage, tickSize(pos.symbol)),
+      exitFill: describeFill(pos.side === "buy" ? "sell" : "buy", q, slippage, this.tickOf(pos)),
     };
     await this.d.store.saveTrade(accountId, trade);
     await this.d.store.deletePosition(accountId, positionId);
@@ -382,7 +488,7 @@ export class PaperEngine {
           if ("target" in parsed) parsed.target === null ? delete next.target : (next.target = parsed.target);
           const long = next.side === "buy";
           // a stop or target is checked against where the market is NOW, not the entry: a trailing stop legitimately sits above a long's entry once it is in profit
-          const ref = this.d.quote(pos.symbol)?.price ?? pos.entry;
+          const ref = this.quoteOf(pos)?.price ?? pos.entry;
           const word = long ? "long" : "short";
           if (parsed.onlyTighten && "stop" in parsed && parsed.stop === null) r = fail(400, "only_tighten: a stop cannot be removed");
           else if (parsed.onlyTighten && "stop" in parsed && pos.stop !== undefined && next.stop !== undefined && (long ? next.stop < pos.stop : next.stop > pos.stop)) r = fail(400, `only_tighten: a ${word}'s stop can only move ${long ? "up" : "down"} (it is at ${pos.stop}, you asked for ${next.stop})`);
@@ -451,13 +557,13 @@ export class PaperEngine {
   /** Close positions whose stop or target a LIVE price has reached. Call after every accepted quote; cheap (no query unless something fires). */
   onQuotes(): Promise<void> {
     const due = [...this.open.values()].filter(({ position }) => {
-      const q = this.d.quote(position.symbol);
-      return q && this.d.live(position.symbol) && exitHit(position, q.price);
+      const q = this.quoteOf(position);
+      return q && this.liveOf(position) && exitHit(position, q.price);
     });
     if (due.length === 0) return Promise.resolve();
     return Promise.all(
       due.map(({ account, position }) => {
-        const q = this.d.quote(position.symbol)!;
+        const q = this.quoteOf(position)!;
         const hit = exitHit(position, q.price);
         return hit ? this.close(account, position.id, "engine", hit).then(() => undefined) : undefined;
       }),

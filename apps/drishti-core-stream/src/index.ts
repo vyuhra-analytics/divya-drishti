@@ -35,6 +35,7 @@ import {
   type SourcePrices,
   type Source,
   type Tick,
+  type OptionQuote,
 } from "@drishti/shared";
 import { loadFronts, loadOptionKeys, tvCloses, upstoxHasFuture, type Fronts } from "./contracts";
 import { LagWindow, OptionWatch } from "./optionWatch";
@@ -103,6 +104,7 @@ let buffer: Tick[] = [];
 
 // ---- live option quotes: clients name the contracts they show (`watch`), the Upstox feed carries them, and every tick is published on topic "options"
 let optionKeys = new Set<string>(); // every unexpired option on our MCX underlyings, from the public master (empty until it loads: any well-formed key is accepted then)
+const optionLatest = new Map<string, OptionQuote>(); // the newest priced quote of every option contract the stream watches: paper option trading fills and marks on it
 const optionWatch = new OptionWatch((k) => optionKeys.size === 0 || optionKeys.has(k));
 const optionLag = new LagWindow();
 const lastTrade = new Map<string, number>(); // per contract: the exchange trade time of the previous message, so lag is measured only on a NEW trade (a quiet strike repeats its old trade time)
@@ -265,6 +267,28 @@ paperEngine = new PaperEngine({
   store: paperStore,
   quote: (symbol) => latest.get(symbol),
   live: symbolLive,
+  option: {
+    // an option contract from the daily instrument list we keep (contract_master): its name, strike, expiry, lot and premium tick (listed in paise)
+    info: async (key) => {
+      const r = (await sql`SELECT key, symbol, underlying, kind, expiry, strike, lot, tick FROM contract_master WHERE key = ${key} AND kind IN ('CE', 'PE')`.catch(() => [])) as { key: string; symbol: string; underlying: string; kind: "CE" | "PE"; expiry: Date | string; strike: string | number; lot: string | number; tick: string | number }[];
+      const c = r[0];
+      if (!c) return undefined;
+      const day = new Date(c.expiry).toISOString().slice(0, 10);
+      return { key: c.key, label: c.symbol, underlying: c.underlying, type: c.kind, strike: Number(c.strike), expiry: day, tick: Number(c.tick) / 100, lot: Number(c.lot), expiresAt: Date.parse(`${day}T23:30:00+05:30`) };
+    },
+    quote: (key) => {
+      const q = optionLatest.get(key);
+      if (!q || !(q.price > 0)) return undefined;
+      // a bid or ask of zero means nobody is quoting that side: it is left out so a fill uses the last price instead of zero
+      return { price: q.price, ...(q.bid && q.bid > 0 ? { bid: q.bid } : {}), ...(q.ask && q.ask > 0 ? { ask: q.ask } : {}), source: "upstox", time: q.recvAt };
+    },
+    // the exchange is open, one of our MCX futures is live (so the Upstox feed is alive) and this option was heard from in the last 5 minutes (a quiet strike repeats its quote)
+    live: (key) => {
+      const q = optionLatest.get(key);
+      if (!q || Date.now() - q.recvAt > 5 * 60_000) return false;
+      return INSTRUMENTS.some((i) => i.exchange === "MCX" && symbolLive(i.symbol));
+    },
+  },
   rates: () => paperStore.rates().catch(() => UPSTOX_MCX_RATES),
   now: Date.now,
   newId: () => `pp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
@@ -274,6 +298,11 @@ paperEngine = new PaperEngine({
     mcp: { maxLots: envInt("PAPER_MCP_MAX_LOTS", DEFAULT_LIMITS.mcp.maxLots), maxOpenPositions: envInt("PAPER_MCP_MAX_POSITIONS", DEFAULT_LIMITS.mcp.maxOpenPositions), maxOrdersPerDay: envInt("PAPER_MCP_MAX_ORDERS_PER_DAY", DEFAULT_LIMITS.mcp.maxOrdersPerDay) },
   },
 });
+// the contracts of open option positions stay watched (the watch lapses after 60 s unless asked again), so a stop on a premium fires with every browser closed
+setInterval(() => {
+  const keys = paperEngine?.openOptionKeys() ?? [];
+  if (keys.length) optionWatch.request(keys);
+}, 20_000);
 const loadPaper = () => paperEngine!.refresh().catch((e) => console.warn(`paper trading idle (is the database migrated? bun run db:migrate): ${(e as Error).message}`));
 void loadPaper();
 setInterval(() => void loadPaper(), 15_000);
@@ -445,6 +474,7 @@ if (DEMO) {
     emit: (q) => {
       optionStats.messages++;
       optionStats.lastAt = q.recvAt;
+      optionLatest.set(q.key, q);
       const prev = lastTrade.get(q.key);
       lastTrade.set(q.key, q.time);
       if (prev !== undefined && q.time > prev) optionLag.add(optionLagMs(q));

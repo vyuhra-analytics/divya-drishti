@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ACCOUNT_ID, instrument, lotUnits, tickSize, unrealisedNet, type FillDetail, type PaperTrade, type Side } from "@drishti/shared";
 import { paperCall, usePaperAccount } from "./paperClient";
+import { PaperOptionTicket } from "./PaperOptionTicket";
 import { useFreshness } from "./market";
 import { useClock, useSettings } from "./settings";
-import { useStore } from "./store";
+import { sendWatch, useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const REASON = { manual: "Closed by hand", stop: "Stop hit", target: "Target hit" } as const;
@@ -36,6 +37,8 @@ export function PaperWidget({ widget }: { widget: Widget }) {
   const locale = useSettings((s) => s.locale);
   const clock = useClock();
   const quotes = useStore((s) => s.quotes);
+  const optionQuotes = useStore((s) => s.options);
+  const [ticket, setTicket] = useState<"futures" | "options">("futures");
   const fresh = useFreshness(symbol);
   const [accountId, setAccountId] = useState(remembered);
   const { state, accounts, error, reload } = usePaperAccount(accountId);
@@ -82,9 +85,20 @@ export function PaperWidget({ widget }: { widget: Widget }) {
 
   // open P&L is marked at the live quotes this browser already receives, so it ticks without asking the server
   const opens = (state?.positions ?? []).map((p) => {
-    const q = quotes[p.symbol];
-    return { p, q, net: q && state ? unrealisedNet(p, q, state.account.slippage * tickSize(p.symbol), state.rates) : 0 };
+    const oq = p.option ? optionQuotes[p.symbol] : undefined;
+    // a bid or ask of zero means nobody is quoting that side: left out, so a mark falls back to the last price
+    const q = p.option ? (oq ? { price: oq.price, ...(oq.bid && oq.bid > 0 ? { bid: oq.bid } : {}), ...(oq.ask && oq.ask > 0 ? { ask: oq.ask } : {}) } : undefined) : quotes[p.symbol];
+    return { p, q, net: q && state ? unrealisedNet(p, q, state.account.slippage * (p.option?.tick ?? tickSize(p.symbol)), state.rates) : 0 };
   });
+  // the stream drops an option contract nobody asked for in 60 s: keep the open ones watched so their premiums and P&L tick
+  const optionKeys = (state?.positions ?? []).filter((p) => p.option).map((p) => p.symbol).join(",");
+  useEffect(() => {
+    if (!optionKeys) return;
+    const keys = optionKeys.split(",");
+    sendWatch(keys);
+    const id = setInterval(() => sendWatch(keys), 20_000);
+    return () => clearInterval(id);
+  }, [optionKeys]);
   const unrealised = opens.reduce((s, o) => s + o.net, 0);
   const sum = state?.summary;
   const equity = state && sum ? state.account.capital + sum.realised + unrealised : undefined;
@@ -142,7 +156,17 @@ export function PaperWidget({ widget }: { widget: Widget }) {
             </div>
 
             <h2>Order ticket</h2>
-            {!mcx ? (
+            <div className="toolbar no-drag" role="group" aria-label="Ticket type">
+              <button className={ticket === "futures" ? "tf active" : "tf"} onClick={() => setTicket("futures")}>
+                Futures
+              </button>
+              <button className={ticket === "options" ? "tf active" : "tf"} onClick={() => setTicket("options")}>
+                Options (buy)
+              </button>
+            </div>
+            {ticket === "options" ? (
+              <PaperOptionTicket onOrder={(body) => run(() => paperCall(`/accounts/${accountId}/orders`, "POST", body))} />
+            ) : !mcx ? (
               <p className="muted">Link this panel to an MCX contract to place a paper order (costs follow Upstox's MCX schedule).</p>
             ) : (
               <>
@@ -196,11 +220,11 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                 <tbody>
                   {opens.map(({ p, q, net }) => (
                     <tr key={p.id}>
-                      <td>{p.symbol.split(":")[1]}</td>
-                      <td>{p.side === "buy" ? "Long" : "Short"}</td>
+                      <td title={p.option ? `${p.option.label}, expires ${p.option.expiry}` : undefined}>{p.option ? p.option.label : p.symbol.split(":")[1]}</td>
+                      <td>{p.option ? "Bought" : p.side === "buy" ? "Long" : "Short"}</td>
                       <td>{p.lots}</td>
                       <td>{px(p.symbol, p.entry)}</td>
-                      <td>{q ? px(p.symbol, q.price) : "—"}</td>
+                      <td>{q ? px(p.symbol, q.price) : "—"}{p.option && q && q.bid !== undefined ? <small className="muted"> bid {px(p.symbol, q.bid)}</small> : null}</td>
                       <td className="muted">
                         {p.stop === undefined ? "—" : px(p.symbol, p.stop)} / {p.target === undefined ? "—" : px(p.symbol, p.target)}
                       </td>
@@ -318,7 +342,7 @@ function TradeRow({ t, px, rs, stamp, onNote }: { t: PaperTrade; px: (s: string,
     <tr>
       <td className="muted">{stamp(t.closedAt)}</td>
       <td title={[REASON[t.reason], fillText("entry", t.entryFill), fillText("exit", t.exitFill)].filter(Boolean).join("\n")}>
-        {t.symbol.split(":")[1]} {t.side === "buy" ? "long" : "short"} {t.lots}× {px(t.symbol, t.entry)}→{px(t.symbol, t.exit)}{" "}
+        {t.option ? t.option.label : t.symbol.split(":")[1]} {t.option ? "bought" : t.side === "buy" ? "long" : "short"} {t.lots}× {px(t.symbol, t.entry)}→{px(t.symbol, t.exit)}{" "}
         {labels(t) && <small className="muted paper-labels"> · {labels(t)}</small>}
         {t.rMultiple !== undefined && <small className={t.rMultiple >= 0 ? "up" : "down"}> · {t.rMultiple >= 0 ? "+" : ""}{t.rMultiple}R</small>}
         {!(t.reason === "manual" && t.closedBy === "mcp") && <small className="muted">{REASON[t.reason]}</small>}
@@ -329,7 +353,7 @@ function TradeRow({ t, px, rs, stamp, onNote }: { t: PaperTrade; px: (s: string,
       <td className="muted">{rs(t.costs)}</td>
       <td className={t.net >= 0 ? "up" : "down"}>{rs(t.net)}</td>
       <td>
-        <input className="paper-note no-drag" aria-label={`Note for the ${t.symbol} trade`} value={note} maxLength={500} placeholder="Why / what I learned" onChange={(ev) => setNote(ev.target.value)} onBlur={() => note !== t.note && onNote(note)} />
+        <input className="paper-note no-drag" aria-label={`Note for the ${t.option?.label ?? t.symbol} trade`} value={note} maxLength={500} placeholder="Why / what I learned" onChange={(ev) => setNote(ev.target.value)} onBlur={() => note !== t.note && onNote(note)} />
       </td>
     </tr>
   );

@@ -47,6 +47,19 @@ export interface OrderMeta {
   rPoints?: number;
 }
 
+/** An option contract a position is in (paper option trading, buy only): the Upstox key, what to call it, and the premium's price step in rupees. */
+export interface OptionRef {
+  key: string;
+  label: string;
+  underlying: string;
+  type: "CE" | "PE";
+  strike: number;
+  /** YYYY-MM-DD */
+  expiry: string;
+  /** the premium's price step in rupees (Upstox lists it in paise) */
+  tick: number;
+}
+
 export interface PaperPosition extends OrderMeta {
   id: string;
   symbol: string;
@@ -63,6 +76,8 @@ export interface PaperPosition extends OrderMeta {
   actor?: string;
   /** how the entry was priced: quote, slippage (absent on positions opened before fills were recorded) */
   fill?: FillDetail;
+  /** set for an option position: `symbol` is then the Upstox instrument key, prices are premiums and costs use the option rates */
+  option?: OptionRef;
 }
 
 export type ExitReason = "manual" | "stop" | "target";
@@ -90,6 +105,8 @@ export interface PaperTrade extends OrderMeta {
   exitFill?: FillDetail;
   /** the move in the trade's favour (before costs) divided by `rPoints`; only when the order gave an R */
   rMultiple?: number;
+  /** set for an option trade */
+  option?: OptionRef;
 }
 
 /** Where an order fills: at the book's far side when depth is known (ask to buy, bid to sell), else the last price, then `slippage` points worse. */
@@ -133,13 +150,13 @@ export function exitHit(p: PaperPosition, price: number): "stop" | "target" | un
 /** Close at the market (not at the stop price: a gap through a stop fills where the market is), with slippage and full costs. */
 export function closePaper(p: PaperPosition, q: PaperQuote, slippage: number, now: number, reason: ExitReason, rates: CostRates = UPSTOX_MCX_RATES, note = ""): PaperTrade {
   const exit = fillPrice(opposite(p.side), q, slippage);
-  const rt = roundTrip("future", p.side, p.entry, exit, p.units, p.lots, rates);
-  return { id: p.id, symbol: p.symbol, side: p.side, lots: p.lots, units: p.units, entry: p.entry, exit, openedAt: p.openedAt, closedAt: now, gross: rt.gross, costs: rt.costs.total, net: rt.net, reason, note };
+  const rt = roundTrip(p.option ? "option" : "future", p.side, p.entry, exit, p.units, p.lots, rates);
+  return { id: p.id, symbol: p.symbol, side: p.side, lots: p.lots, units: p.units, entry: p.entry, exit, openedAt: p.openedAt, closedAt: now, gross: rt.gross, costs: rt.costs.total, net: rt.net, reason, note, ...(p.option ? { option: p.option } : {}) };
 }
 
 /** Net P&L if the position were closed now (exit costs and slippage included). */
 export function unrealisedNet(p: PaperPosition, q: PaperQuote, slippage: number, rates: CostRates = UPSTOX_MCX_RATES): number {
-  return roundTrip("future", p.side, p.entry, fillPrice(opposite(p.side), q, slippage), p.units, p.lots, rates).net;
+  return roundTrip(p.option ? "option" : "future", p.side, p.entry, fillPrice(opposite(p.side), q, slippage), p.units, p.lots, rates).net;
 }
 
 export interface Account {
