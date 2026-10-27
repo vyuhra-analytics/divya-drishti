@@ -36,14 +36,14 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
   expect(await names(client)).toEqual([
-    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
+    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_eia_release_context", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
   ].sort());
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(21);
+  expect((await names(client)).length).toBe(22);
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {
@@ -157,6 +157,46 @@ test("submit_briefing validates before any request: a bad bias or an over-long l
   const { call, calls } = await connect({ briefingWrite: true });
   expect((await call("submit_briefing", { ...submission, bias: "up" })).isError).toBe(true);
   expect((await call("submit_briefing", { ...submission, bull: Array.from({ length: 7 }, () => submission.bull[0]) })).isError).toBe(true);
+  expect(calls).toHaveLength(0);
+});
+
+const articleSubmission = { report: "WPSR", context_id: "ectx-1", title: "Crude draws", dek: "A draw.", sections: [{ heading: "The headline", paragraphs: [{ text: "Crude drew 3.06 million barrels.", cites: [{ field: "headline.change", value: "-3.06" }] }] }] };
+
+test("get_eia_release_context is always offered and reads the context of the report and week", async () => {
+  const { call, calls, client } = await connect({}, () => ({ body: { context_id: "ectx-1", citable: { "headline.change": -3.06 }, facts: { report: "WPSR" } } }));
+  expect(await names(client)).toContain("get_eia_release_context");
+  const r = await call("get_eia_release_context", { report: "WPSR", week: "2026-10-16" });
+  expect(r.isError).toBe(false);
+  expect(JSON.parse(r.text).context_id).toBe("ectx-1");
+  expect(calls[0]!.url).toBe("http://api.test/eia-report/context?report=WPSR&week=2026-10-16");
+  await call("get_eia_release_context", { report: "WNGSR" });
+  expect(calls[1]!.url).toBe("http://api.test/eia-report/context?report=WNGSR");
+});
+
+test("get_eia_release_context refuses a bad report or week before any request", async () => {
+  const { call, calls } = await connect();
+  expect((await call("get_eia_release_context", { report: "STEO" })).isError).toBe(true);
+  expect((await call("get_eia_release_context", { report: "WPSR", week: "last friday" })).isError).toBe(true);
+  expect(calls).toHaveLength(0);
+});
+
+test("submit_eia_article is offered only with briefing submissions on, posts the article and returns the verdict per paragraph", async () => {
+  expect(await names((await connect()).client)).not.toContain("submit_eia_article");
+  const verdict = { id: "ea-1", stored: true, verified: 0, total: 1, wrong: 1, paragraphs: [{ section: "The headline", paragraph: 1, verdict: "wrong", issues: ["headline.change is -3.06, not -9."] }], next: "Correct those paragraphs and submit again" };
+  const { call, calls, client } = await connect({ briefingWrite: true }, () => ({ status: 201, body: verdict }));
+  expect(await names(client)).toContain("submit_eia_article");
+  const r = await call("submit_eia_article", articleSubmission);
+  expect(r.isError).toBe(false);
+  expect(JSON.parse(r.text).paragraphs[0].issues[0]).toContain("-3.06");
+  expect(calls[0]).toMatchObject({ url: "http://api.test/eia-report/article/submit", method: "POST" });
+  expect(calls[0]!.body.context_id).toBe("ectx-1");
+});
+
+test("submit_eia_article validates before any request: no sections, too long a paragraph or too many cites never reach the API", async () => {
+  const { call, calls } = await connect({ briefingWrite: true });
+  expect((await call("submit_eia_article", { ...articleSubmission, sections: [] })).isError).toBe(true);
+  expect((await call("submit_eia_article", { ...articleSubmission, sections: [{ heading: "h", paragraphs: [{ text: "x".repeat(901), cites: [] }] }] })).isError).toBe(true);
+  expect((await call("submit_eia_article", { ...articleSubmission, report: "STEO" })).isError).toBe(true);
   expect(calls).toHaveLength(0);
 });
 

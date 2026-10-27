@@ -381,3 +381,6 @@ export * from "./feedCoverage";
 export * from "./recordedChain";
 export * from "./resample";
 export * from "./orderFlow";
+export * from "./eiaHistory";
+export * from "./releaseReaction";
+export * from "./eiaArticle";

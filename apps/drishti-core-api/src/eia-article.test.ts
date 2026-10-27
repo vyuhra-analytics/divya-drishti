@@ -1,0 +1,156 @@
+import { describe, expect, it } from "bun:test";
+import { BadRequestException, GoneException, NotFoundException } from "@nestjs/common";
+import type { Bar, EiaReportRow, FlowRow } from "@drishti/shared";
+import { EiaArticleController } from "./eia-article.controller";
+import { EiaArticleService, type ArticleSources } from "./eia-article.service";
+import type { StoredReport } from "./eia-report.store";
+
+// The release article routes over a fake database and fake sources: the facts a report gives, the reaction around the official release time, what an
+// agent may submit, and that the check runs against the context the agent was given. Live behaviour is checked by hand against the stored reports.
+const RELEASE = Date.parse("2026-10-21T14:30:00Z");
+const row = (seriesId: string, unit: string, value: number, over: Partial<EiaReportRow> = {}): EiaReportRow => ({ seriesId, report: "WPSR", table: "T1", group: "", parent: "", label: seriesId, unit, seq: 1, periodEnd: Date.UTC(2026, 9, 16), value, headline: false, ...over });
+const stored = (over: Partial<StoredReport> = {}): StoredReport => ({
+  eventId: 7,
+  report: "WPSR",
+  weekEnding: "2026-10-16",
+  scheduledAt: RELEASE,
+  officialReleaseAt: RELEASE,
+  firstStoredAt: RELEASE + 4000,
+  rows: [row("WPSR:T1:COMMERCIAL_EXCLUDING_SPR", "million barrels", 412.517, { change: -3.061, prior: 415.578, yearAgoPct: -2.4, yearAgo: 422.7, headline: true }), row("WPSR:T4:CUSHING", "million barrels", 27.594, { change: 0.987 })],
+  ...over,
+});
+
+const bar = (minute: number, price: number): Bar => ({ time: RELEASE / 1000 + minute * 60, open: price, high: price + 0.2, low: price - 0.2, close: price, volume: 10 });
+const quietBars = (): Bar[] => [...Array.from({ length: 40 }, (_, i) => bar(i - 40, 100)), ...Array.from({ length: 20 }, (_, i) => bar(i, 100 + i / 10))];
+
+function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => Bar[]; feed?: FlowRow[]; forecast?: { value: number; source: string }; writtenRow?: unknown } = {}) {
+  const inserts: unknown[][] = [];
+  const sql = Object.assign(
+    (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (text.includes("INSERT INTO eia_articles")) {
+        inserts.push(values);
+        return Promise.resolve([]);
+      }
+      if (text.includes("FROM eia_articles")) return Promise.resolve(opts.writtenRow ? [opts.writtenRow] : []);
+      return Promise.resolve([]);
+    },
+    {},
+  );
+  const db = { sql, redis: {} } as never;
+  const reports = { store: { latest: async () => ("stored" in opts ? opts.stored : stored()), forecastFor: async () => opts.forecast } } as never;
+  const history = { contexts: async () => ({}), status: async () => ({ series: [], syncing: false, lastSyncAt: null }) } as never;
+  const service = new EiaArticleService(db, reports, history);
+  const sources: ArticleSources = { bars: async (s) => (opts.bars ? opts.bars(s) : quietBars()), feed: async () => opts.feed ?? [], contexts: async () => ({}) };
+  service.sources = sources;
+  const controller = new EiaArticleController(service, history, db);
+  return { service, controller, inserts };
+}
+
+describe("EiaArticleService.facts", () => {
+  it("gives the report's figures rounded as printed, the forecast on record, and the reaction around the official release time", async () => {
+    const { service } = setup({ forecast: { value: -0.1, source: "Forex Factory" } });
+    const got = (await service.facts("WPSR"))!;
+    expect(got.facts.headline).toMatchObject({ level: 412.5, change: -3.06, forecast: -0.1 });
+    expect(got.facts.forecast).toEqual({ value: -0.1, source: "Forex Factory" });
+    expect(got.facts.storedAfterSeconds).toBe(4);
+    // two instruments are asked for; both have candles in this setup
+    expect(Object.keys(got.facts.reaction ?? {}).sort()).toEqual(["cl", "mcx_crude"]);
+    expect(got.facts.reaction!.cl.moves.m5.pct).toBeGreaterThan(0);
+    expect(got.facts.reaction!.cl.basePrice).toBe(100);
+  });
+
+  it("a typed forecast beats the one on record", async () => {
+    const { service } = setup({ forecast: { value: -0.1, source: "Forex Factory" } });
+    const got = (await service.facts("WPSR", undefined, -4))!;
+    expect(got.facts.forecast).toEqual({ value: -4, source: "typed in" });
+    expect(got.facts.headline.surprise).toBeCloseTo(0.94, 2);
+  });
+
+  it("says why an instrument has no reaction when its candles do not reach the release, and leaves the market section out", async () => {
+    const { service } = setup({ bars: () => [] });
+    const got = (await service.facts("WPSR"))!;
+    expect(got.facts.reaction).toBeUndefined();
+    expect(got.facts.notes.join(" ")).toContain("No market reaction for NYMEX WTI");
+  });
+
+  it("asks for no reaction before the release has happened", async () => {
+    const future = Date.now() + 3600_000;
+    let asked = 0;
+    const { service } = setup({ stored: stored({ officialReleaseAt: future, scheduledAt: future }), bars: () => (asked++, []) });
+    const got = (await service.facts("WPSR"))!;
+    expect(asked).toBe(0);
+    expect(got.facts.reaction).toBeUndefined();
+  });
+
+  it("is undefined when no report is stored", async () => {
+    expect(await setup({ stored: undefined }).service.facts("WPSR")).toBeUndefined();
+  });
+});
+
+describe("EiaArticleController", () => {
+  it("returns the app's article with its check, markdown and the facts, and no Claude article until one is stored", async () => {
+    const { controller } = setup();
+    const r = await controller.article("WPSR");
+    expect(r.template.article.title).toBe("EIA petroleum report: crude draws 3.06 million barrels");
+    expect(r.template.check.wrong).toBe(0);
+    expect(r.template.markdown).toStartWith("# EIA petroleum report: crude draws 3.06 million barrels");
+    expect(r.written).toBeNull();
+    expect(r.facts.weekEnding).toBe("2026-10-16");
+  });
+
+  it("returns the newest article Claude wrote with its stored verdict and markdown", async () => {
+    const written = { id: "ea-1", source: "claude-mcp", at: 1_700_000_000_000, article: { title: "Claude title", dek: "d", sections: [{ heading: "h", paragraphs: [{ text: "p", cites: [] }] }] }, grounding: { total: 1, verified: 1, wrong: 0, other: [], paragraphs: [] } };
+    const r = await setup({ writtenRow: written }).controller.article("WPSR");
+    expect(r.written?.article.title).toBe("Claude title");
+    expect(r.written?.markdown).toContain("Written by Claude from the app's facts");
+    expect(r.written?.markdown).toContain("1 of 1 paragraphs checked");
+  });
+
+  it("refuses bad input before any lookup and answers 404 when nothing is stored", async () => {
+    const { controller } = setup({ stored: undefined });
+    await expect(controller.article("STEO")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.article("WPSR", "last friday")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.article("WPSR", undefined, "abc")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.article("WPSR", undefined, "99999")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.article("WPSR")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.context("WPSR")).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("the agent's route: context, then submit", () => {
+  it("gives a context id with the citable figures, then checks the submitted article against THAT context and stores it", async () => {
+    const { controller, inserts } = setup();
+    const ctx = await controller.context("WPSR");
+    expect(ctx.context_id).toStartWith("ectx-");
+    expect(ctx.citable["headline.change"]).toBe(-3.06);
+    expect(ctx.instructions).toContain("submit_eia_article");
+
+    const good = { report: "WPSR", context_id: ctx.context_id, title: "Crude draws", dek: "A draw.", sections: [{ heading: "The headline", paragraphs: [{ text: "Commercial crude drew 3.06 million barrels.", cites: [{ field: "headline.change", value: "-3.06" }] }, { text: "Stocks fell 9.99 million barrels.", cites: [{ field: "headline.change", value: "-9.99" }] }] }] };
+    const r = await controller.submit(good);
+    expect(r).toMatchObject({ stored: true, total: 2, verified: 1, wrong: 1 });
+    expect(r.paragraphs).toEqual([{ section: "The headline", paragraph: 2, verdict: "wrong", issues: ["headline.change is -3.06, not -9.99."] }]);
+    expect(r.next).toContain("Correct those paragraphs");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toContain("claude-mcp");
+  });
+
+  it("refuses an unknown or expired context, a context for the other report, and a malformed article, storing nothing", async () => {
+    const { controller, inserts } = setup();
+    const ctx = await controller.context("WPSR");
+    const base = { report: "WPSR", context_id: ctx.context_id, title: "T", dek: "D", sections: [{ heading: "H", paragraphs: [{ text: "x", cites: [] }] }] };
+    await expect(controller.submit({ ...base, context_id: "ectx-nope" })).rejects.toBeInstanceOf(GoneException);
+    await expect(controller.submit({ ...base, report: "WNGSR" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.submit({ ...base, sections: [] })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.submit(null)).rejects.toBeInstanceOf(BadRequestException);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("a verified article returns no problem paragraphs and says where it will show", async () => {
+    const { controller } = setup();
+    const ctx = await controller.context("WPSR");
+    const r = await controller.submit({ report: "WPSR", context_id: ctx.context_id, title: "Crude draws", dek: "A draw.", sections: [{ heading: "H", paragraphs: [{ text: "Commercial crude drew 3.06 million barrels.", cites: [{ field: "headline.change", value: "-3.06" }] }] }] });
+    expect(r).toMatchObject({ verified: 1, wrong: 0, paragraphs: [], other: [] });
+    expect(r.next).toContain("Article tab");
+  });
+});

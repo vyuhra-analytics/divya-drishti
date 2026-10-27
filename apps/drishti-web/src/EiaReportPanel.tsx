@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { inReleaseWindow, type AnalysisLine, type EiaReportCode, type EiaReportRow, type ReportAnalysis } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
+import { EiaArticleView } from "./EiaArticleView";
 import { useNow } from "./market";
 import type { Widget } from "./workspace";
 
@@ -104,6 +105,7 @@ export function EiaReportWidget(_: { widget: Widget }) {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
+  const [view, setView] = useState<"analysis" | "article">("analysis");
   const seenWeek = useRef<string | undefined>(undefined);
   const windowOpen = inReleaseWindow(now);
 
@@ -161,10 +163,19 @@ export function EiaReportWidget(_: { widget: Widget }) {
           Forecast ({report === "WPSR" ? "MB" : "Bcf"})
           <input inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={data?.forecast ? `${data.forecast.value} (${data.forecast.source ?? "recorded"})` : "type the number"} aria-label="Forecast of the change" />
         </label>
+        <span className="er-views" role="group" aria-label="View">
+          <button className={view === "analysis" ? "tf active" : "tf"} aria-pressed={view === "analysis"} onClick={() => setView("analysis")}>
+            Analysis
+          </button>
+          <button className={view === "article" ? "tf active" : "tf"} aria-pressed={view === "article"} onClick={() => setView("article")} title="A written article for this release: headline, context from history, what moved it, the market reaction">
+            Article
+          </button>
+        </span>
         {windowOpen && <span className="er-live" title="A release is due: looking every 3 seconds">watching</span>}
       </div>
-      {!data && <p className="empty muted">{error ?? "Loading the report…"}</p>}
-      {data && h && a && (
+      <EiaArticleView report={report} forecast={forecastParam} active={view === "article"} />
+      {view === "analysis" && !data && <p className="empty muted">{error ?? "Loading the report…"}</p>}
+      {view === "analysis" && data && h && a && (
         <div className="er-body" tabIndex={0} role="region" aria-label="EIA report analysis">
           <div className={`er-headline${fresh ? " fresh" : ""}`}>
             <div>

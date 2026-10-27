@@ -692,3 +692,14 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ch-zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .ch-key.delta { height: 6px; border: 0; background: var(--up); }
 .ch-key.imb { border-top: 2px solid var(--g-blue); }
+
+.er-views { display: inline-flex; gap: 4px; margin-left: auto; }
+.er-article { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.er-art-title { font-size: 15px; margin: 6px 0 2px; }
+.er-dek { margin: 0 0 8px; font-style: italic; color: var(--muted); }
+.er-para { margin: 0 0 8px; line-height: 1.45; }
+.er-check { display: inline-block; width: 14px; margin-right: 4px; font-style: normal; font-size: 11px; }
+.er-check.verified { color: var(--up); }
+.er-check.unverified { color: var(--muted); }
+.er-check.wrong { color: var(--down); }
+.er-art-foot { font-size: 10px; margin-top: 10px; }

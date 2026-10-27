@@ -66,7 +66,7 @@ export function citableFields(ctx: BriefingContext): Record<string, Scalar> {
   return out;
 }
 
-const toNumber = (s: Scalar): number | undefined => {
+export const toNumber = (s: Scalar): number | undefined => {
   if (typeof s === "number") return s;
   const n = Number(s.replace(/[,%\s]/g, "").replace(/^[+−–]/, (m) => (m === "+" ? "" : "-")));
   return s.trim() !== "" && Number.isFinite(n) ? n : undefined;
@@ -76,7 +76,7 @@ const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.011, Math.
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 /** Does the value the model quoted for a field match the data? */
-function matches(actual: Scalar, quoted: string): boolean {
+export function matches(actual: Scalar, quoted: string): boolean {
   if (typeof actual === "number") {
     const q = toNumber(quoted);
     return q !== undefined && close(actual, q);
@@ -88,7 +88,7 @@ function matches(actual: Scalar, quoted: string): boolean {
 const NUMBER = /(?<![\w.])[-−]?\d[\d,]*(?:\.\d+)?/g;
 
 /** Figures in prose that are not in the data. Small whole numbers (counts, "14-period") and years are ignored. */
-function looseFigures(text: string, known: number[]): string[] {
+export function looseFigures(text: string, known: number[]): string[] {
   const bad: string[] = [];
   for (const m of text.matchAll(NUMBER)) {
     const raw = m[0];
