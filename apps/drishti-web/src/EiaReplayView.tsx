@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { REPLAY_UNDERLYINGS, type ReplayParams, type ReplayReport, type ReplayRow, type ReplaySummary } from "@drishti/shared";
+import { REPLAY_UNDERLYINGS, type ReplayEntry, type ReplayParams, type ReplayReport, type ReplayRow, type ReplaySummary } from "@drishti/shared";
 import { apiUrl, useSettings } from "./settings";
 
 const DEFAULTS: Record<ReplayParams["report"], Pick<ReplayParams, "underlying" | "slip" | "threshold">> = {
   WPSR: { underlying: "CRUDEOILM", slip: 1, threshold: 3 },
   WNGSR: { underlying: "NATGASMINI", slip: 0.1, threshold: 5 },
 };
+const ENTRY_NAMES: Record<ReplayEntry, string> = { release: "at the open after the release", "amd-sweep": "AMD against the sweep", "amd-surprise": "AMD with the surprise" };
 const CRUDE = ["CRUDEOIL", "CRUDEOILM"];
 const GAS = ["NATURALGAS", "NATGASMINI"];
 
@@ -18,6 +19,7 @@ export function EiaReplayView() {
   const locale = useSettings((s) => s.locale);
   const [report, setReport] = useState<ReplayParams["report"]>("WPSR");
   const [underlying, setUnderlying] = useState<ReplayParams["underlying"]>("CRUDEOILM");
+  const [entry, setEntry] = useState<ReplayEntry>("release");
   const [rPct, setRPct] = useState(0.5);
   const [delay, setDelay] = useState(1);
   const [hold, setHold] = useState(60);
@@ -42,7 +44,7 @@ export function EiaReplayView() {
     setState("running");
     setOut(null);
     try {
-      const q = new URLSearchParams({ report, underlying, rpct: String(rPct), delay: String(delay), hold: String(hold), slip: String(slip), threshold: String(threshold), sensitivity: "1" });
+      const q = new URLSearchParams({ report, entry, underlying, rpct: String(rPct), delay: String(delay), hold: String(hold), slip: String(slip), threshold: String(threshold), sensitivity: "1" });
       const res = await fetch(`${apiUrl()}/research/eia-replay?${q}`);
       if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`);
       setOut(await res.json());
@@ -75,6 +77,14 @@ export function EiaReplayView() {
               ))}
             </select>
           </label>
+          <label title="How the trade is entered. At the open: right after the release, in the surprise's direction. AMD: wait for the first spike to sweep the pre-release range, then for a strong move that leaves a gap, and enter when price retraces into the gap (limit order; no retrace, no trade). The exits are the same.">
+            Entry
+            <select value={entry} onChange={(ev) => setEntry(ev.target.value as ReplayEntry)}>
+              <option value="release">At the open after the release</option>
+              <option value="amd-sweep">AMD: against the sweep, on the retrace</option>
+              <option value="amd-surprise">AMD: with the surprise, on the retrace</option>
+            </select>
+          </label>
           <label title="R, the risk per trade, as a percentage of the entry price. The stop is 1R, the targets +1R and +2R.">
             R (% of price)
             <input type="number" min={0.05} max={5} step="any" value={rPct} onChange={(ev) => setRPct(Number(ev.target.value) || 0.5)} />
@@ -104,7 +114,7 @@ export function EiaReplayView() {
         {out && s && (
           <>
             <p className="muted bt-asof">
-              {out.params.underlying} ({out.units} units a lot), {out.rows.length} releases since {out.params.since} · one lot a leg, two legs · Upstox costs and {out.params.slip} point{out.params.slip === 1 ? "" : "s"} slippage on every market fill
+              {out.params.underlying} ({out.units} units a lot), entry {ENTRY_NAMES[out.params.entry]}, {out.rows.length} releases since {out.params.since} · one lot a leg, two legs · Upstox costs and {out.params.slip} point{out.params.slip === 1 ? "" : "s"} slippage on every market fill
             </p>
             <div className={`bt-verdict ${s.trades >= 30 ? "up" : "down"}`}>
               <strong>{s.trades >= 30 ? `${s.trades} trades` : `Only ${s.trades} trade${s.trades === 1 ? "" : "s"}: this cannot separate the rule from chance`}</strong>

@@ -48,6 +48,27 @@ describe("runEiaReplay", () => {
     expect(r.sensitivity).toBeUndefined();
   });
 
+  it("replays the AMD entry on the same release: a spike, a displacement that leaves a gap, the retrace, and a short against the sweep", async () => {
+    const m = (i: number, o: number, h: number, l: number, c: number, v = 10) => ({ key: "K1", t: REL / 1000 + i * 60, open: o, high: h, low: l, close: c, volume: v });
+    const candles = [
+      ...Array.from({ length: 30 }, (_, i) => m(-30 + i, 100, 100.5, 99.5, 100.1)),
+      m(0, 100.1, 102, 101, 101.8),
+      m(1, 101.5, 101.6, 99.0, 99.1),
+      m(2, 99.1, 99.5, 98.8, 99.0),
+      m(3, 99.0, 99.2, 98.9, 99.0),
+      m(4, 99.0, 99.7, 98.9, 99.2),
+      m(5, 99.2, 99.3, 98.6, 98.7),
+      m(6, 98.7, 98.8, 98.3, 98.4),
+    ];
+    const { sql } = fakeSql({ forecasts: [release(0.2)], candles, changes: [{ at: new Date(REL), change: 8.5 }] }); // a build: the surprise is short
+    const r = await runEiaReplay(sql, { ...defaultReplay("WPSR"), entry: "amd-sweep", rPct: 0.5, slip: 0 });
+    const t = r.rows[0].result;
+    if (typeof t === "string") throw new Error(t);
+    expect(t.side).toBe("short");
+    expect(t.entry).toBeCloseTo(99.5, 6);
+    expect(defaultReplay("WPSR").entry).toBe("release");
+  });
+
   it("skips a release with no candles, says so, and gives the sensitivity grid when asked", async () => {
     const { sql } = fakeSql({ forecasts: [release(0.2)], candles: [], changes });
     const r = await runEiaReplay(sql, defaultReplay("WPSR"), true);
@@ -83,6 +104,7 @@ describe("GET /research/eia-replay", () => {
     await expect(ctl.replay("WPSR", undefined, undefined, undefined, undefined, "-1")).rejects.toBeInstanceOf(BadRequestException);
     await expect(ctl.replay("WPSR", undefined, undefined, undefined, undefined, undefined, "abc")).rejects.toBeInstanceOf(BadRequestException);
     await expect(ctl.replay("WPSR", undefined, undefined, undefined, undefined, undefined, undefined, "yesterday")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(ctl.replay("WPSR", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "market")).rejects.toBeInstanceOf(BadRequestException);
     expect(asked.asked).toHaveLength(0);
   });
 });

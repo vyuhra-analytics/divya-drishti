@@ -1,9 +1,10 @@
 import type { SQL } from "bun";
-import { lotUnits, replayReportTrade, reportSignal, SENSITIVITY_R, summarizeReplay, type Bar, type ReplayParams, type ReplayReport, type ReplayRow } from "@drishti/shared";
+import { lotUnits, replayAmdTrade, replayReportTrade, reportSignal, SENSITIVITY_R, summarizeReplay, type Bar, type ReplayParams, type ReplayReport, type ReplayRow } from "@drishti/shared";
 
 /** The default parameters of the replay for a report: crude mini on the petroleum report, gas mini on the gas report, R = 0.5% of the entry price. */
 export const defaultReplay = (report: ReplayParams["report"]): ReplayParams => ({
   report,
+  entry: "release",
   underlying: report === "WPSR" ? "CRUDEOILM" : "NATGASMINI",
   rPct: 0.5,
   delayMin: 1,
@@ -52,7 +53,10 @@ export async function runEiaReplay(sql: SQL, p: ReplayParams, withSensitivity = 
       const actual = p.report === "WPSR" ? (published.find(([t]) => Math.abs(t - at) < 20 * 3600_000)?.[1] ?? f.actual) : f.actual;
       const surprise = f.forecast !== null && actual !== null && actual !== undefined ? actual - f.forecast : undefined;
       const found = await barsAt(at);
-      const result = replayReportTrade(found?.bars ?? [], at / 1000, reportSignal(surprise, p.threshold), { rPct, delayMin: p.delayMin, holdMin: p.holdMin, slip: p.slip, units, lotsPerLeg: 1 });
+      const cfg = { rPct, delayMin: p.delayMin, holdMin: p.holdMin, slip: p.slip, units, lotsPerLeg: 1 };
+      const side = reportSignal(surprise, p.threshold); // the surprise must reach the threshold whatever the entry, so the entries compare on the same releases
+      const result =
+        p.entry === "release" ? replayReportTrade(found?.bars ?? [], at / 1000, side, cfg) : replayAmdTrade(found?.bars ?? [], at / 1000, side, { ...cfg, direction: p.entry === "amd-sweep" ? "sweep" : "surprise" });
       out.push({ at, surprise, contract: found?.key, result });
     }
     return out;

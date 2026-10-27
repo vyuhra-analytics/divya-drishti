@@ -1,7 +1,7 @@
 // Replay the EIA report-day strategy over the one-minute candles we hold (option_candles, side FUT) and print every release and a summary. The same
 // code serves the Strategy tester panel (GET /research/eia-replay), see apps/drishti-core-api/src/eia-replay.run.ts.
 //   bun run --env-file=.env scripts/eia-replay.ts [--report=WPSR|WNGSR] [--underlying=CRUDEOILM] [--rpct=0.5] [--delay=1] [--hold=60] [--slip=1]
-//                                                   [--threshold=3] [--since=2026-04-25]
+//                                                   [--threshold=3] [--since=2026-04-25] [--entry=release|amd-sweep|amd-surprise]
 // R is 0.5% of the entry price (the owner's definition). The contract is the one with the most volume in the hour BEFORE the release. The sensitivity
 // grid is for reading how much the answer depends on R, NOT for picking the best R.
 import { SQL } from "bun";
@@ -12,6 +12,7 @@ const report = (arg("report") ?? "WPSR") as "WPSR" | "WNGSR";
 const d = defaultReplay(report);
 const p = {
   report,
+  entry: (arg("entry") ?? d.entry) as typeof d.entry,
   underlying: (arg("underlying") ?? d.underlying) as typeof d.underlying,
   rPct: Number(arg("rpct") ?? d.rPct),
   delayMin: Number(arg("delay") ?? d.delayMin),
@@ -23,7 +24,7 @@ const p = {
 
 const sql = new SQL(process.env.DATABASE_URL!);
 const r = await runEiaReplay(sql, p, true);
-console.log(`${p.report} on ${p.underlying} (${r.units} units a lot), threshold ${p.threshold}, R = ${p.rPct}% of entry, entry ${p.delayMin} min after the release, hold ${p.holdMin} min, slippage ${p.slip} points, 1 lot per leg`);
+console.log(`${p.report} on ${p.underlying}, entry ${p.entry} (${r.units} units a lot), threshold ${p.threshold}, R = ${p.rPct}% of entry, entry ${p.delayMin} min after the release, hold ${p.holdMin} min, slippage ${p.slip} points, 1 lot per leg`);
 console.log("date        surprise  side   result");
 for (const row of r.rows) {
   const day = new Date(row.at).toISOString().slice(0, 10);

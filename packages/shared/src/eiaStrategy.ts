@@ -51,7 +51,14 @@ export interface ReportTrade {
   netR: number;
 }
 
-export type ReportSkip = "no signal" | "no traded minute before the release" | "no traded minute after the release";
+export type ReportSkip =
+  | "no signal"
+  | "no traded minute before the release"
+  | "no traded minute after the release"
+  | "no sweep of the pre-release range"
+  | "the spike went with the surprise: no manipulation to trade"
+  | "no displacement after the sweep"
+  | "no retrace into the gap";
 
 /**
  * Replay one release. `bars` are the candles of ONE contract, any order. A minute counts as traded when its volume is above zero (Upstox forward-fills
@@ -65,8 +72,17 @@ export function replayReportTrade(bars: readonly Bar[], releaseAtSec: number, si
   const iEntry = sorted.findIndex((b) => b.time >= from && b.volume > 0);
   if (iEntry < 0 || sorted[iEntry].time > from + 5 * 60) return "no traded minute after the release";
 
+  return simulateTrade(sorted, iEntry, sorted[iEntry].open, side, cfg);
+}
+
+/**
+ * Run a trade that is filled in bar `iEntry` at `rawEntry` (a market entry at the open, or a limit level touched in that bar): the two legs, the stop at
+ * 1R, the targets at +1R and +2R and the time exit, with slippage on the entry and on every market fill. The same exits whatever the entry, so two
+ * entry rules can be compared on the exits alone.
+ */
+function simulateTrade(sorted: readonly Bar[], iEntry: number, rawEntry: number, side: ReportSide, cfg: ReportTradeConfig): ReportTrade {
   const dir = side === "long" ? 1 : -1;
-  const entry = sorted[iEntry].open + dir * cfg.slip;
+  const entry = rawEntry + dir * cfg.slip;
   const R = (entry * cfg.rPct) / 100;
   const stop = entry - dir * R;
   const targets = { 1: entry + dir * R, 2: entry + dir * 2 * R } as const;
@@ -104,6 +120,83 @@ export function replayReportTrade(bars: readonly Bar[], releaseAtSec: number, si
   }
   const risk = R * cfg.units * cfg.lotsPerLeg * 2;
   return { side, entry, entryAt: sorted[iEntry].time, rPoints: R, legs: legs.sort((a, b) => a.targetR - b.targetR), gross, costs, net: gross - costs, netR: (gross - costs) / risk };
+}
+
+export type AmdDirection = "sweep" | "surprise";
+
+export interface AmdConfig extends ReportTradeConfig {
+  /** which way to trade: against the sweep (the article's reversal after the manipulation) or with the surprise (entered on the retrace after the spike) */
+  direction: AmdDirection;
+  /** minutes before the release whose high and low are the accumulation range (default 30) */
+  preMin?: number;
+  /** minutes after the release in which the range must be swept (default 15) */
+  sweepWithinMin?: number;
+  /** minutes after the sweep to find the displacement, and after the gap to find the retrace (default 30 each) */
+  waitMin?: number;
+  /** a displacement bar's body must be this many times the average body of the accumulation bars (default 1.5) */
+  bodyMult?: number;
+}
+
+/**
+ * The "wait for the manipulation, enter on the retrace" entry of the AMD model (accumulation, manipulation, distribution) around a scheduled release,
+ * as one mechanical rule on one-minute bars, then the SAME exits as `replayReportTrade` (stop 1R, targets +1R and +2R), so only the entry differs.
+ *  - accumulation: the high and low of the `preMin` minutes before the release;
+ *  - manipulation: the first bar within `sweepWithinMin` minutes after the release that takes out one side of that range (the spike);
+ *  - displacement: a later bar in the opposite direction of the spike (for `direction: "sweep"`) or in the surprise's direction, whose body is large (a multiple of the average body of the accumulation bars) and
+ *    that closes beyond the sweep bar, leaving a fair value gap (three bars where the first bar's low is above the third bar's high, or the mirror);
+ *  - entry: a limit at the near edge of the gap, filled by the first bar that retraces into it (at the open when the bar opens already through it); if
+ *    there is no retrace in `waitMin` minutes, no trade (never chase).
+ * Every decision uses bars that have closed; the gap needs the bar after the displacement, so the entry search starts one bar later.
+ */
+export function replayAmdTrade(bars: readonly Bar[], releaseAtSec: number, surpriseSide: ReportSide | undefined, cfg: AmdConfig): ReportTrade | ReportSkip {
+  if (!surpriseSide) return "no signal";
+  const b = [...bars].sort((x, y) => x.time - y.time);
+  if (!b.some((x) => x.volume > 0 && x.time < releaseAtSec && x.time >= releaseAtSec - 3600)) return "no traded minute before the release";
+  const preMin = cfg.preMin ?? 30;
+  const sweepWithin = cfg.sweepWithinMin ?? 15;
+  const wait = cfg.waitMin ?? 30;
+  const mult = cfg.bodyMult ?? 1.5;
+
+  const pre = b.filter((x) => x.time >= releaseAtSec - preMin * 60 && x.time < releaseAtSec && x.volume > 0);
+  if (!pre.length) return "no traded minute before the release";
+  const H = Math.max(...pre.map((x) => x.high));
+  const L = Math.min(...pre.map((x) => x.low));
+
+  // manipulation: the first bar that takes out the range
+  const iSweep = b.findIndex((x) => x.time >= releaseAtSec && x.time < releaseAtSec + sweepWithin * 60 && x.volume > 0 && (x.high > H || x.low < L));
+  if (iSweep < 0) return "no sweep of the pre-release range";
+  const sweptHigh = b[iSweep].high > H;
+  if (b[iSweep].high > H && b[iSweep].low < L) return "no sweep of the pre-release range"; // both sides in one bar: no direction
+
+  const side: ReportSide = cfg.direction === "sweep" ? (sweptHigh ? "short" : "long") : surpriseSide;
+  if (cfg.direction === "surprise" && (side === "long") === sweptHigh) return "the spike went with the surprise: no manipulation to trade";
+  const dir = side === "long" ? 1 : -1;
+
+  // displacement leaving a gap
+  const body = (x: Bar) => Math.abs(x.close - x.open);
+  let iDisp = -1;
+  // "strong" is measured against the accumulation bars (the quiet minutes before the release), not the bars just before the displacement, which include the spike
+  const avg = pre.reduce((a, x) => a + body(x), 0) / pre.length;
+  for (let j = iSweep + 1; j < b.length - 1 && b[j].time <= b[iSweep].time + wait * 60; j++) {
+    const strong = body(b[j]) >= mult * avg && body(b[j]) > 0;
+    const inDir = dir === 1 ? b[j].close > b[j].open && b[j].close > b[iSweep].high : b[j].close < b[j].open && b[j].close < b[iSweep].low;
+    const gapOk = dir === 1 ? b[j - 1].high < b[j + 1].low : b[j - 1].low > b[j + 1].high;
+    if (strong && inDir && gapOk) {
+      iDisp = j;
+      break;
+    }
+  }
+  if (iDisp < 0) return "no displacement after the sweep";
+
+  // the gap: for a short, from the third bar's high up to the first bar's low (price retraces up into it); the mirror for a long
+  const near = dir === 1 ? b[iDisp + 1].low : b[iDisp + 1].high;
+  const until = b[iDisp + 1].time + wait * 60;
+  for (let k = iDisp + 2; k < b.length && b[k].time <= until; k++) {
+    const touched = dir === 1 ? b[k].low <= near : b[k].high >= near;
+    // a limit fills at its level, or at the open when the bar opens already through it (a gap): never better than the market gave
+    if (touched && b[k].volume > 0) return simulateTrade(b, k, dir === 1 ? Math.min(near, b[k].open) : Math.max(near, b[k].open), side, cfg);
+  }
+  return "no retrace into the gap";
 }
 
 export interface ReplaySummary {
@@ -152,8 +245,13 @@ export interface ReplayRow {
   result: ReportTrade | ReportSkip;
 }
 
+/** how the trade is entered: at the open right after the release, or the AMD entry (wait for the sweep and enter on the retrace into the gap) against the sweep or with the surprise */
+export const REPLAY_ENTRIES = ["release", "amd-sweep", "amd-surprise"] as const;
+export type ReplayEntry = (typeof REPLAY_ENTRIES)[number];
+
 export interface ReplayParams {
   report: "WPSR" | "WNGSR";
+  entry: ReplayEntry;
   underlying: "CRUDEOIL" | "CRUDEOILM" | "NATURALGAS" | "NATGASMINI";
   rPct: number;
   delayMin: number;
