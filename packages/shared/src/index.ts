@@ -386,3 +386,4 @@ export * from "./releaseReaction";
 export * from "./eiaArticle";
 export * from "./eiaArchive";
 export * from "./investingCalendar";
+export * from "./forecastTable";

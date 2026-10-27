@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { inReleaseWindow, type AnalysisLine, type EiaReportCode, type EiaReportRow, type ReportAnalysis } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { EiaArticleView } from "./EiaArticleView";
+import { EiaForecastsView } from "./EiaForecastsView";
 import { useNow } from "./market";
 import type { Widget } from "./workspace";
 
@@ -111,7 +112,7 @@ export function EiaReportWidget(_: { widget: Widget }) {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
-  const [view, setView] = useState<"analysis" | "article">("analysis");
+  const [view, setView] = useState<"analysis" | "article" | "forecasts">("analysis");
   /** "" follows the newest stored report; a date shows that week (a report stored earlier, backfilled ones included) */
   const [week, setWeek] = useState("");
   const [weeks, setWeeks] = useState<StoredWeek[]>([]);
@@ -215,9 +216,13 @@ export function EiaReportWidget(_: { widget: Widget }) {
           <button className={view === "article" ? "tf active" : "tf"} aria-pressed={view === "article"} onClick={() => setView("article")} title="A written article for this release: headline, context from history, what moved it, the market reaction">
             Article
           </button>
+          <button className={view === "forecasts" ? "tf active" : "tf"} aria-pressed={view === "forecasts"} onClick={() => setView("forecasts")} title="The forecasts against what came out, week by week, and how often the report-day rule's threshold was reached">
+            Forecasts
+          </button>
         </span>
         {windowOpen && <span className="er-live" title="A release is due: looking every 3 seconds">watching</span>}
       </div>
+      <EiaForecastsView report={report} active={view === "forecasts"} />
       <EiaArticleView report={report} week={week || undefined} forecast={forecastParam} active={view === "article"} />
       {view === "analysis" && !data && <p className="empty muted">{error ?? "Loading the report…"}</p>}
       {view === "analysis" && data && h && a && (

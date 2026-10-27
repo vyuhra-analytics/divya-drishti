@@ -120,3 +120,47 @@ describe("matching a forecast to a release", () => {
     expect(await setup().svc.crudeFor(releaseAt)).toBeUndefined();
   });
 });
+
+describe("ForecastService.table", () => {
+  const WED = (n: number) => Date.UTC(2026, 9, 7, 14, 30) + n * 7 * 86_400_000;
+  const make = (forecastRows: object[], changes: object[]) => {
+    const sql = Object.assign(
+      (strings: TemplateStringsArray) => {
+        const text = strings.join("?");
+        if (text.includes("FROM release_forecasts WHERE release_at >=")) return Promise.resolve(forecastRows);
+        if (text.includes("FROM eia_report_arrivals a JOIN eia_report_values v")) return Promise.resolve(changes);
+        return Promise.resolve([]);
+      },
+      {},
+    );
+    const svc = new ForecastService({ sql } as never);
+    svc.io = { ...svc.io, now: () => WED(2) + 2 * 86_400_000 };
+    return svc;
+  };
+
+  it("lays the forecasts against the published changes, with the surprise and the rule's figures", async () => {
+    const svc = make(
+      [
+        { series: "eia_crude", release_at: WED(1), forecast: 0.2, actual: -8.557 },
+        { series: "eia_crude", release_at: WED(2), forecast: -0.1, actual: -3.06 },
+        { series: "eia_crude", release_at: WED(3), forecast: -0.3, actual: null },
+      ],
+      [{ at: WED(2), series_id: "WPSR:T1:COMMERCIAL_EXCLUDING_SPR", change: -3.061 }, { at: WED(2), series_id: "WPSR:T1:TOTAL_MOTOR_GASOLINE", change: null }],
+    );
+    const t = await svc.table(52);
+    expect(t.releases.map((r) => [r.upcoming, r.crude.forecast, r.crude.actual, r.crude.actualFrom])).toEqual([
+      [true, -0.3, undefined, undefined],
+      [false, -0.1, -3.06, "published"],
+      [false, 0.2, -8.56, "investing"], // no stored report for that week: the page's own figure
+    ]);
+    expect(t.rule).toEqual({ threshold: 3, of: 2, reached: 1, long: 1, short: 0 });
+    expect(t.threshold).toBe(3);
+  });
+
+  it("is empty when nothing is stored, and a failing database is empty rather than an error", async () => {
+    expect((await make([], []).table(52)).releases).toEqual([]);
+    const broken = new ForecastService({ sql: Object.assign(() => Promise.reject(new Error("db down")), {}) } as never);
+    expect((await broken.table(52)).releases).toEqual([]);
+  });
+});
+

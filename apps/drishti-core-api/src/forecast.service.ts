@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { INVESTING_BLOCK_MS, INVESTING_PAGES, investingProblem, parseInvestingEvent, shouldFetchInvesting, withUserAgent, type InvestingOccurrence, type InvestingPage, type InvestingSeries } from "@drishti/shared";
+import { buildForecastTable, INVESTING_BLOCK_MS, INVESTING_PAGES, investingProblem, parseInvestingEvent, shouldFetchInvesting, withUserAgent, type ForecastRowIn, type ForecastTable, type InvestingOccurrence, type InvestingPage, type InvestingSeries, type PublishedChange } from "@drishti/shared";
 import { Db } from "./db";
 
 const SOURCE = "investing.com";
@@ -165,6 +165,30 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
       ORDER BY release_at DESC LIMIT 1`.catch(() => [])) as { release_at: number; forecast: number | null; actual: number | null }[];
     const api = apiRows[0]?.actual != null ? { change: Number(apiRows[0].actual), forecast: apiRows[0].forecast ?? undefined, at: Math.round(Number(apiRows[0].release_at)) } : undefined;
     return { gasoline: gasoline?.forecast, distillates: distillates?.forecast, api };
+  }
+
+  /**
+   * The forecasts laid against what came out, for the newest `weeks` EIA releases and the next one: the forecasts are Investing.com's, the actuals are
+   * the figures from the reports we stored as published (the page's own figure fills a week with no stored report).
+   */
+  async table(weeks: number, threshold = 3): Promise<ForecastTable & { threshold: number }> {
+    const from = new Date(this.io.now() - (weeks + 2) * 7 * 86_400_000).toISOString();
+    const rows = (await this.db.sql`
+      SELECT series, extract(epoch FROM release_at)::float8 * 1000 AS release_at, forecast, actual FROM release_forecasts WHERE release_at >= ${from} ORDER BY release_at`.catch(() => [])) as { series: ForecastRow["series"]; release_at: number; forecast: number | null; actual: number | null }[];
+    const changes = (await this.db.sql`
+      SELECT extract(epoch FROM a.official_release_at)::float8 * 1000 AS at, v.series_id, v.change
+      FROM eia_report_arrivals a JOIN eia_report_values v ON v.event_id = a.event_id
+      WHERE a.official_release_at >= ${from} AND v.series_id IN ('WPSR:T1:COMMERCIAL_EXCLUDING_SPR', 'WPSR:T1:TOTAL_MOTOR_GASOLINE', 'WPSR:T1:DISTILLATE_FUEL_OIL')`.catch(() => [])) as { at: number; series_id: string; change: number | null }[];
+    const key: Record<string, "crude" | "gasoline" | "distillates"> = { "WPSR:T1:COMMERCIAL_EXCLUDING_SPR": "crude", "WPSR:T1:TOTAL_MOTOR_GASOLINE": "gasoline", "WPSR:T1:DISTILLATE_FUEL_OIL": "distillates" };
+    const published = new Map<number, PublishedChange>();
+    for (const c of changes) {
+      const at = Math.round(Number(c.at));
+      const p = published.get(at) ?? { at };
+      if (c.change !== null) p[key[c.series_id]] = Number(c.change);
+      published.set(at, p);
+    }
+    const input: ForecastRowIn[] = rows.map((r) => ({ series: r.series, releaseAt: Math.round(Number(r.release_at)), forecast: r.forecast ?? undefined, actual: r.actual ?? undefined }));
+    return { ...buildForecastTable({ rows: input, published: [...published.values()], now: this.io.now(), weeks, threshold }), threshold };
   }
 
   async status(): Promise<ForecastStatus> {

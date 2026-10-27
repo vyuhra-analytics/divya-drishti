@@ -33,3 +33,27 @@ describe("GET /eia-report/weeks", () => {
     expect(asked).toHaveLength(0);
   });
 });
+
+describe("GET /eia-report/forecasts", () => {
+  const withForecasts = (table: unknown) => {
+    const asked: number[] = [];
+    const c = new EiaReportController({ store: {} } as never, { table: async (weeks: number) => (asked.push(weeks), table) } as never);
+    return { c, asked };
+  };
+
+  it("returns the forecast table of the service for the weeks asked, 52 by default", async () => {
+    const table = { releases: [{ releaseAt: 1 }], stats: {}, rule: undefined, threshold: 3 };
+    const { c, asked } = withForecasts(table);
+    expect(await c.forecastTable()).toEqual(table as never);
+    await c.forecastTable("26");
+    expect(asked).toEqual([52, 26]);
+  });
+
+  it("refuses a bad number of weeks before asking the service, and answers an empty table when the forecast service is not there", async () => {
+    const { c, asked } = withForecasts({});
+    for (const bad of ["0", "201", "abc", "1.5"]) await expect(c.forecastTable(bad)).rejects.toBeInstanceOf(BadRequestException);
+    expect(asked).toHaveLength(0);
+    expect(await new EiaReportController({ store: {} } as never).forecastTable()).toEqual({ releases: [], stats: {}, rule: undefined, threshold: 3 });
+  });
+});
+

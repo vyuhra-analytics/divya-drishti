@@ -705,3 +705,15 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .er-art-foot { font-size: 10px; margin-top: 10px; }
 .er-week { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
 .er-week select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; max-width: 170px; }
+
+.ef { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.ef-src { font-size: 10px; margin-left: auto; }
+.ef-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 8px; font-size: 11px; }
+.ef-stat { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 190px; }
+.ef-rule { flex-basis: 100%; }
+.ef-table th { text-align: center; white-space: nowrap; }
+.ef-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.ef-table td:first-child { text-align: left; white-space: nowrap; }
+.ef-table tr.reached td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ef-table tr.next td { font-style: italic; }
+.ef-foot { font-size: 10px; margin-top: 8px; }

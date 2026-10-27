@@ -48,6 +48,19 @@ export class EiaReportController {
     return this.reports.store.weeks(report, limit);
   }
 
+  /**
+   * The forecasts against what came out, week by week: GET /eia-report/forecasts?weeks=52. One row per EIA release (the next one first, with its forecast
+   * only) with the forecast, the actual and the surprise for crude, gasoline and distillates and the API's report the day before, how the forecasts have
+   * done, and how often the report-day rule's threshold was reached. Forecasts are Investing.com's; actuals are the published reports.
+   */
+  @Get("forecasts")
+  async forecastTable(@Query("weeks") weeksParam?: string) {
+    const weeks = weeksParam === undefined ? 52 : Number(weeksParam);
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 200) throw new BadRequestException("weeks must be 1 to 200");
+    if (!this.forecasts) return { releases: [], stats: {}, rule: undefined, threshold: 3 };
+    return this.forecasts.table(weeks);
+  }
+
   /** Where the third-party consensus forecasts stand: on or off, blocked or not, rows and last read per page. GET /eia-report/forecasts/status */
   @Get("forecasts/status")
   forecastStatus() {
