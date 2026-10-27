@@ -4,6 +4,7 @@ import { Db } from "./db";
 import { EiaHistoryService } from "./eia-history.service";
 import { EiaReportService } from "./eia-report.service";
 import { upstoxHistory, yahooHistory } from "./history";
+import { ForecastService } from "./forecast.service";
 import type { StoredReport } from "./eia-report.store";
 
 const FACTS_TTL_MS = 30_000; // the panel asks again every minute; one gather per half minute is plenty
@@ -18,6 +19,8 @@ export interface ArticleSources {
   feed(key: string, from: number, to: number): Promise<FlowRow[]>;
   /** the context of the series a report cites, as of its week */
   contexts(report: EiaReportCode, weekEnding: string, rows: readonly EiaReportRow[]): Promise<Record<string, SeriesContext>>;
+  /** consensus forecasts for the products and the API's report the day before a petroleum release; empty when none are known */
+  expectations(releaseAt: number): Promise<{ gasoline?: number; distillates?: number; api?: { change: number; forecast?: number; at: number } }>;
 }
 
 export interface WrittenArticle {
@@ -53,6 +56,7 @@ export class EiaArticleService {
     private readonly db: Db,
     private readonly reports: EiaReportService,
     private readonly history: EiaHistoryService,
+    private readonly forecasts?: ForecastService,
   ) {
     this.sources = {
       bars: async (symbol) => {
@@ -66,6 +70,7 @@ export class EiaArticleService {
           SELECT extract(epoch FROM time)::float8 * 1000 AS time, price, volume, bid, ask, bid_qty AS "bidQty", ask_qty AS "askQty", depth
           FROM feed_quotes WHERE key = ${key} AND time >= ${new Date(from).toISOString()} AND time < ${new Date(to).toISOString()} ORDER BY time LIMIT 100000`.catch(() => [])) as FlowRow[],
       contexts: (report, weekEnding, rows) => this.history.contexts(report, weekEnding, rows).catch(() => ({})),
+      expectations: async (releaseAt) => (await this.forecasts?.expectationsFor(releaseAt).catch(() => undefined)) ?? {},
     };
   }
 
@@ -78,7 +83,9 @@ export class EiaArticleService {
     if (hit && Date.now() - hit.at < FACTS_TTL_MS) return { stored, facts: hit.facts };
 
     let forecast = forecastOverride === undefined ? undefined : { value: forecastOverride, source: "typed in" };
+    // typed in, then recorded for the release (Forex Factory), then Investing.com's consensus as the last resort
     if (!forecast) forecast = await this.reports.store.forecastFor(stored.eventId).catch(() => undefined);
+    if (!forecast && report === "WPSR") forecast = await this.forecasts?.crudeFor(stored.officialReleaseAt ?? stored.scheduledAt).catch(() => undefined);
     const analysis = analyzeReport({ report, periodEnd: Date.parse(stored.weekEnding), releasedAt: stored.officialReleaseAt, rows: stored.rows }, { forecast: forecast?.value });
     if (!analysis) return undefined;
     const releaseAt = stored.officialReleaseAt ?? stored.scheduledAt;
@@ -111,6 +118,7 @@ export class EiaArticleService {
       analysis,
       context: await this.sources.contexts(report, stored.weekEnding, stored.rows),
       forecast,
+      expectations: report === "WPSR" ? await this.sources.expectations(releaseAt) : undefined,
       releasedAt: stored.officialReleaseAt,
       storedAt: stored.firstStoredAt,
       backfilled: stored.backfilled,

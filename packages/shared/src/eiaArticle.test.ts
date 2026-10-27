@@ -180,6 +180,18 @@ describe("buildFacts", () => {
     expect(citableFacts(f)["series.crude.change"]).toBe(-3.06);
   });
 
+  it("gives the product forecasts and the API's report as facts with each surprise worked out from the week's change, petroleum only", () => {
+    const rows = [row("WPSR:T1:COMMERCIAL_EXCLUDING_SPR", "million barrels", 412.517, { change: -3.061, headline: true }), row("WPSR:T1:TOTAL_MOTOR_GASOLINE", "million barrels", 205.31, { change: -2.952 })];
+    const expectations = { gasoline: -0.4, distillates: -1.2, api: { change: -4.93, forecast: -1.3, at: Date.UTC(2026, 9, 20, 20, 30) } };
+    const f = buildFacts({ report: { report: "WPSR", periodEnd: Date.UTC(2026, 9, 16), rows }, analysis, context: {}, expectations });
+    expect(f.expect?.gasoline).toEqual({ forecast: -0.4, surprise: -2.55 });
+    expect(f.expect?.distillates).toBeUndefined(); // no distillate row in this report: nothing to compare the forecast with
+    expect(f.expect?.api).toEqual({ change: -4.93, forecast: -1.3, surprise: -3.63, atIso: "2026-10-20T20:30:00.000Z" });
+    expect(f.notes.join(" ")).toContain("Investing.com's consensus");
+    const gas = buildFacts({ report: { ...report, report: "WNGSR" }, analysis, context: {}, expectations });
+    expect(gas.expect).toBeUndefined();
+  });
+
   it("measures our timing only for a report stored live, and notes when there was no forecast or the history lags", () => {
     const f = buildFacts({ report, analysis, context: { crude: ctx({ level: 400, period: "2026-10-09" }) }, backfilled: true, releasedAt: Date.UTC(2026, 9, 21, 14, 30), storedAt: Date.UTC(2026, 9, 23) });
     expect(f.storedAfterSeconds).toBeUndefined();

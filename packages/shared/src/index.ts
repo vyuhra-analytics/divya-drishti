@@ -385,3 +385,4 @@ export * from "./eiaHistory";
 export * from "./releaseReaction";
 export * from "./eiaArticle";
 export * from "./eiaArchive";
+export * from "./investingCalendar";

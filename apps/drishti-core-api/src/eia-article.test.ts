@@ -23,7 +23,7 @@ const stored = (over: Partial<StoredReport> = {}): StoredReport => ({
 const bar = (minute: number, price: number): Bar => ({ time: RELEASE / 1000 + minute * 60, open: price, high: price + 0.2, low: price - 0.2, close: price, volume: 10 });
 const quietBars = (): Bar[] => [...Array.from({ length: 40 }, (_, i) => bar(i - 40, 100)), ...Array.from({ length: 20 }, (_, i) => bar(i, 100 + i / 10))];
 
-function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => Bar[]; feed?: FlowRow[]; forecast?: { value: number; source: string }; writtenRow?: unknown; savedReaction?: unknown } = {}) {
+function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => Bar[]; feed?: FlowRow[]; forecast?: { value: number; source: string }; writtenRow?: unknown; savedReaction?: unknown; expectations?: object; crudeConsensus?: { value: number; source: string } } = {}) {
   const inserts: unknown[][] = [];
   const savedReactions: unknown[][] = [];
   const sql = Object.assign(
@@ -46,8 +46,9 @@ function setup(opts: { stored?: StoredReport | undefined; bars?: (s: string) => 
   const db = { sql, redis: {} } as never;
   const reports = { store: { latest: async () => ("stored" in opts ? opts.stored : stored()), forecastFor: async () => opts.forecast } } as never;
   const history = { contexts: async () => ({}), status: async () => ({ series: [], syncing: false, lastSyncAt: null }) } as never;
-  const service = new EiaArticleService(db, reports, history);
-  const sources: ArticleSources = { bars: async (s) => (opts.bars ? opts.bars(s) : quietBars()), feed: async () => opts.feed ?? [], contexts: async () => ({}) };
+  const forecasts = { crudeFor: async () => opts.crudeConsensus, expectationsFor: async () => opts.expectations ?? {} } as never;
+  const service = new EiaArticleService(db, reports, history, forecasts);
+  const sources: ArticleSources = { bars: async (s) => (opts.bars ? opts.bars(s) : quietBars()), feed: async () => opts.feed ?? [], contexts: async () => ({}), expectations: async () => opts.expectations ?? {} };
   service.sources = sources;
   const controller = new EiaArticleController(service, history, db);
   return { service, controller, inserts, savedReactions };
@@ -64,6 +65,29 @@ describe("EiaArticleService.facts", () => {
     expect(Object.keys(got.facts.reaction ?? {}).sort()).toEqual(["cl", "mcx_crude"]);
     expect(got.facts.reaction!.cl.moves.m5.pct).toBeGreaterThan(0);
     expect(got.facts.reaction!.cl.basePrice).toBe(100);
+  });
+
+  it("ranks the forecasts: typed in, then recorded for the release, then Investing.com's consensus as the last resort", async () => {
+    const consensus = { value: -0.1, source: "Investing.com consensus" };
+    expect((await setup({ crudeConsensus: consensus }).service.facts("WPSR"))!.facts.forecast).toEqual(consensus); // nothing else on record
+    expect((await setup({ crudeConsensus: consensus, forecast: { value: 0.4, source: "Forex Factory" } }).service.facts("WPSR"))!.facts.forecast).toEqual({ value: 0.4, source: "Forex Factory" });
+    expect((await setup({ crudeConsensus: consensus, forecast: { value: 0.4, source: "Forex Factory" } }).service.facts("WPSR", undefined, -4))!.facts.forecast).toEqual({ value: -4, source: "typed in" });
+  });
+
+  it("adds the product forecasts and the API's report the day before, with each surprise, and the article says them with every figure checked", async () => {
+    const { service } = setup({
+      stored: stored({ rows: [...stored().rows, row("WPSR:T1:TOTAL_MOTOR_GASOLINE", "million barrels", 205.31, { change: -2.952 }), row("WPSR:T1:DISTILLATE_FUEL_OIL", "million barrels", 104.286, { change: 1.674 })] }),
+      expectations: { gasoline: -0.4, distillates: -1.2, api: { change: -4.93, forecast: -1.3, at: RELEASE - 18 * 3600_000 } },
+    });
+    const r = (await service.article("WPSR"))!;
+    expect(r.facts.expect).toMatchObject({ gasoline: { forecast: -0.4, surprise: -2.55 }, distillates: { forecast: -1.2, surprise: 2.87 }, api: { change: -4.93, forecast: -1.3, surprise: -3.63 } });
+    const text = r.template.article.sections.flatMap((s) => s.paragraphs.map((p) => p.text)).join("\n");
+    expect(text).toContain("The API reported a draw of 4.93 million barrels the day before, against a forecast of −1.30; EIA's figure for the week was −3.06 million barrels.");
+    expect(text).toContain("the forecast was −0.40 (a surprise of −2.55)");
+    expect(text).toContain("the forecast was −1.20 (a surprise of +2.87)");
+    expect(r.facts.notes.join(" ")).toContain("Investing.com's consensus");
+    expect(r.template.check.wrong).toBe(0);
+    expect(r.template.check.paragraphs.filter((p) => p.verdict !== "verified")).toEqual([]);
   });
 
   it("a typed forecast beats the one on record", async () => {

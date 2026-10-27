@@ -54,6 +54,12 @@ export interface ReleaseFacts {
   series: Record<string, SeriesNow>;
   context: Record<string, SeriesContext>;
   reaction?: Record<string, ReactionFacts>;
+  /** forecasts for the products (petroleum only) and the API's report the day before, from a third-party consensus; each surprise is the week's change minus the forecast */
+  expect?: {
+    gasoline?: { forecast: number; surprise: number };
+    distillates?: { forecast: number; surprise: number };
+    api?: { change: number; forecast?: number; surprise?: number; atIso: string };
+  };
   /** what the article must say about its own limits */
   notes: string[];
 }
@@ -89,6 +95,8 @@ export interface FactsInput {
   releasedAt?: number;
   storedAt?: number;
   backfilled?: boolean;
+  /** consensus forecasts of the products' stock changes and the API's reported change (million barrels), when known */
+  expectations?: { gasoline?: number; distillates?: number; api?: { change: number; forecast?: number; at: number } };
   reactions?: Record<string, { label: string; decimals?: number; reaction?: Reaction; micro?: Microstructure } | undefined>;
 }
 
@@ -148,6 +156,19 @@ export function buildFacts(input: FactsInput): ReleaseFacts {
     };
   }
 
+  const expect: NonNullable<ReleaseFacts["expect"]> = {};
+  if (report.report === "WPSR" && input.expectations) {
+    const e = input.expectations;
+    for (const [k, key] of [["gasoline", "gasoline"], ["distillates", "distillate"]] as const) {
+      const f = e[k];
+      const change = series[key]?.change;
+      if (f !== undefined && change !== undefined) expect[k] = { forecast: round(f, "MB", true)!, surprise: round(change - f, "MB", true)! };
+    }
+    if (e.api) {
+      const f = e.api.forecast;
+      expect.api = { change: round(e.api.change, "MB", true)!, forecast: f === undefined ? undefined : round(f, "MB", true), surprise: f === undefined ? undefined : round(e.api.change - f, "MB", true), atIso: new Date(e.api.at).toISOString() };
+    }
+  }
   const notes: string[] = [];
   const reaction: Record<string, ReactionFacts> = {};
   for (const [key, x] of Object.entries(input.reactions ?? {})) {
@@ -177,6 +198,7 @@ export function buildFacts(input: FactsInput): ReleaseFacts {
   else notes.push(`The forecast is ${input.forecast.source}: a single figure, not an official consensus.`);
   if (lagging.length) notes.push(`EIA's weekly history had not caught up with this report for ${lagging.length} series (${lagging.slice(0, 4).join(", ")}), so their context is left out.`);
   if (report.report === "WPSR" && Object.values(context).some((c) => c.fiveYear)) notes.push("Five-year figures for crude and products are our own calculation from EIA's weekly history (the same week in each of the five previous years); EIA's published five-year averages can differ slightly.");
+  if (Object.keys(expect).length) notes.push("Forecasts for gasoline and distillates, and the API's figures, are Investing.com's consensus: a single third-party figure, not an official one.");
   if (input.backfilled) notes.push("This report was stored after the fact, so the market reaction and our timing are measured from the official release time.");
   if (Object.values(reaction).some((x) => x.micro)) notes.push("Delta and book figures are estimates from our own recording of the Upstox feed (Upstox has no trade tape); spreads and counts are as recorded.");
 
@@ -201,6 +223,7 @@ export function buildFacts(input: FactsInput): ReleaseFacts {
     series,
     context,
     reaction: Object.keys(reaction).length ? reaction : undefined,
+    expect: Object.keys(expect).length ? expect : undefined,
     notes,
   };
 }
@@ -394,6 +417,19 @@ function wpsr(facts: ReleaseFacts): Article {
     );
   }
 
+  const api = facts.expect?.api;
+  if (api) {
+    w.p(
+      `The API reported a ${word(api.change, "build", "draw")} of `,
+      { path: "expect.api.change", text: `${fixed(abs(api.change), 2)} million barrels` },
+      " the day before",
+      api.forecast !== undefined ? [", against a forecast of ", { path: "expect.api.forecast", text: `${sign(api.forecast)}${fixed(abs(api.forecast), 2)}` }].flat() : [],
+      "; EIA's figure for the week was ",
+      { path: "headline.change", text: `${sign(h.change)}${fixed(abs(h.change), 2)}` },
+      " million barrels.",
+    );
+  }
+
   w.heading("In context");
   const cc = c.crude;
   if (cc?.streak && cc.streak.weeks >= 2 && cc.streak.direction !== "flat") w.p(`This is the ${ordinal(cc.streak.weeks)} ${cc.streak.direction === "draw" ? "weekly draw" : "weekly build"} in a row for commercial crude.`, { path: "context.crude.streak.weeks", text: "" });
@@ -471,12 +507,14 @@ function wpsr(facts: ReleaseFacts): Article {
     const st = facts.series[stock];
     if (st?.change === undefined) continue;
     const d = facts.series[demand];
+    const exp = stock === "gasoline" ? (facts.expect?.gasoline ? "gasoline" : undefined) : stock === "distillate" ? (facts.expect?.distillates ? "distillates" : undefined) : undefined;
     w.p(
       `${name} stocks ${word(st.change, "built", "drew")} `,
       { path: `series.${stock}.change`, text: fixed(abs(st.change), 2) },
       " million barrels to ",
       { path: `series.${stock}.level`, text: `${fixed(st.level, 1)} million barrels` },
       c[stock]?.fiveYear ? [", ", { path: `context.${stock}.fiveYear.vsAvg`, text: fixed(abs(c[stock].fiveYear!.vsAvg), 1) }, ` ${c[stock].fiveYear!.vsAvg < 0 ? "below" : "above"} the five-year average`].flat() : [],
+      exp ? [`; the forecast was `, { path: `expect.${exp}.forecast`, text: `${sign(facts.expect![exp]!.forecast)}${fixed(abs(facts.expect![exp]!.forecast), 2)}` }, " (a surprise of ", { path: `expect.${exp}.surprise`, text: `${sign(facts.expect![exp]!.surprise)}${fixed(abs(facts.expect![exp]!.surprise), 2)}` }, ")"].flat() : [],
       d?.change !== undefined ? ["; demand (product supplied) was ", { path: `series.${demand}.level`, text: fixed(d.level, 0) }, " thousand barrels a day, ", word(d.change, "up ", "down ", "unchanged"), { path: `series.${demand}.change`, text: fixed(abs(d.change), 0) }, " on the week"].flat() : [],
       ".",
     );

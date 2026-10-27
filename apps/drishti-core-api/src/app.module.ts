@@ -11,6 +11,7 @@ import { FeedController } from "./feed.controller";
 import { EiaHistoryService } from "./eia-history.service";
 import { EiaArticleController } from "./eia-article.controller";
 import { EiaArticleService } from "./eia-article.service";
+import { ForecastService } from "./forecast.service";
 import { CalendarController } from "./calendar.controller";
 import { CalendarService } from "./calendar.service";
 import { EiaReportController } from "./eia-report.controller";
@@ -28,5 +29,5 @@ import { PositionsController } from "./positions.controller";
 import { InstrumentSync } from "./instruments.sync";
 import { AnalysisController } from "./analysis.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, FeedController, CalendarController, EiaReportController, EiaArticleController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService, EiaHistoryService, EiaArticleService] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, FeedController, CalendarController, EiaReportController, EiaArticleController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService, EiaHistoryService, EiaArticleService, ForecastService] })
 export class AppModule {}

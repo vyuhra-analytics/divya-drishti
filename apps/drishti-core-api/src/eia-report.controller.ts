@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Get, NotFoundException, Query } from "@nestjs/common";
 import { analyzeReport } from "@drishti/shared";
 import { EiaReportService } from "./eia-report.service";
+import { ForecastService } from "./forecast.service";
 
 /**
  * GET /eia-report?report=WPSR|WNGSR&week=YYYY-MM-DD&forecast=-1.2: the newest stored official EIA report (or a given week) with every row, the official
@@ -10,7 +11,10 @@ import { EiaReportService } from "./eia-report.service";
  */
 @Controller("eia-report")
 export class EiaReportController {
-  constructor(private readonly reports: EiaReportService) {}
+  constructor(
+    private readonly reports: EiaReportService,
+    private readonly forecasts?: ForecastService,
+  ) {}
 
   @Get()
   async latest(@Query("report") report?: string, @Query("week") week?: string, @Query("forecast") forecastParam?: string) {
@@ -25,6 +29,12 @@ export class EiaReportController {
       const recorded = await this.reports.store.forecastFor(found.eventId);
       forecast = recorded?.value;
       forecastSource = recorded?.source;
+      if (forecast === undefined && report === "WPSR") {
+        // nothing typed or recorded: Investing.com's consensus is the forecast of last resort, and the panel says where it came from
+        const consensus = await this.forecasts?.crudeFor(found.officialReleaseAt ?? found.scheduledAt).catch(() => undefined);
+        forecast = consensus?.value;
+        forecastSource = consensus?.source;
+      }
     }
     const analysis = analyzeReport({ report, periodEnd: Date.parse(found.weekEnding), releasedAt: found.officialReleaseAt, rows: found.rows }, { forecast });
     return { ...found, forecast: forecast === undefined ? undefined : { value: forecast, source: forecastSource }, analysis };
@@ -36,6 +46,12 @@ export class EiaReportController {
     const limit = limitParam === undefined ? 400 : Number(limitParam);
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new BadRequestException("limit must be 1 to 1000");
     return this.reports.store.weeks(report, limit);
+  }
+
+  /** Where the third-party consensus forecasts stand: on or off, blocked or not, rows and last read per page. GET /eia-report/forecasts/status */
+  @Get("forecasts/status")
+  forecastStatus() {
+    return this.forecasts ? this.forecasts.status() : { on: false, blockedUntil: null, pages: [] };
   }
 
   @Get("arrivals")
