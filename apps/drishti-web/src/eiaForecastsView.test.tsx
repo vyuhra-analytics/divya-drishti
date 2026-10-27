@@ -60,11 +60,8 @@ test("a different number of weeks asks for that many", async () => {
   await waitFor(() => expect(urls.some((u) => u.includes("weeks=26"))).toBe(true));
 });
 
-test("asks for nothing while the tab is not shown, and says so for gas, an empty store and an error", async () => {
+test("asks for nothing while the tab is not shown, and says so for an empty store and an error", async () => {
   const { rerender } = render(<EiaForecastsView report="WPSR" active={false} />);
-  expect(urls).toHaveLength(0);
-  rerender(<EiaForecastsView report="WNGSR" active />);
-  expect(screen.getByText(/no gas storage forecast source yet/)).toBeTruthy();
   expect(urls).toHaveLength(0);
   cleanup();
   globalThis.fetch = mock(async () => ({ ok: true, status: 200, json: async () => ({ ...table, releases: [], stats: {}, rule: undefined }) })) as never;
@@ -74,6 +71,17 @@ test("asks for nothing while the tab is not shown, and says so for gas, an empty
   globalThis.fetch = mock(async () => ({ ok: false, status: 500, json: async () => ({}) })) as never;
   render(<EiaForecastsView report="WPSR" active />);
   expect(await screen.findByText("HTTP 500")).toBeTruthy();
+});
+
+test("gas storage: asks for the gas report, shows its table in Bcf, and offers 5 and 10 years", async () => {
+  const gas = { threshold: 5, rule: { threshold: 5, of: 10, reached: 4, long: 1, short: 3 }, stats: { n: 10, bias: 1.2, meanAbs: 4.1 }, releases: [{ releaseAt: WED, upcoming: false, storage: { forecast: 76, actual: 85, surprise: 9, actualFrom: "investing" } }] };
+  globalThis.fetch = mock(async (u: string) => (urls.push(String(u)), { ok: true, status: 200, json: async () => gas })) as never;
+  render(<EiaForecastsView report="WNGSR" active />);
+  expect(await screen.findByText(/rule reached 4 of 10/)).toBeTruthy();
+  expect(urls[0]).toContain("report=WNGSR");
+  expect(screen.getByText("+9.00")).toBeTruthy();
+  fireEvent.click(screen.getByText("10 years"));
+  await waitFor(() => expect(urls.some((u) => u.includes("weeks=520"))).toBe(true));
 });
 
 test("the EIA Report panel has a Forecasts tab", async () => {

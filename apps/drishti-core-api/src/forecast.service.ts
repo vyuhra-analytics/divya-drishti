@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { buildForecastTable, INVESTING_BLOCK_MS, INVESTING_PAGES, investingProblem, parseInvestingEvent, shouldFetchInvesting, withUserAgent, type ForecastRowIn, type ForecastTable, type InvestingOccurrence, type InvestingPage, type InvestingSeries, type PublishedChange } from "@drishti/shared";
+import { buildForecastTable, buildGasForecastTable, INVESTING_BLOCK_MS, INVESTING_PAGES, investingProblem, parseInvestingEvent, shouldFetchInvesting, withUserAgent, type ForecastRowIn, type ForecastTable, type GasForecastTable, type InvestingOccurrence, type InvestingPage, type InvestingSeries, type PublishedChange } from "@drishti/shared";
 import { Db } from "./db";
 
 const SOURCE = "investing.com";
@@ -189,6 +189,15 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
     }
     const input: ForecastRowIn[] = rows.map((r) => ({ series: r.series, releaseAt: Math.round(Number(r.release_at)), forecast: r.forecast ?? undefined, actual: r.actual ?? undefined }));
     return { ...buildForecastTable({ rows: input, published: [...published.values()], now: this.io.now(), weeks, threshold }), threshold };
+  }
+
+  /** Natural gas storage forecasts against the page's actuals (Bcf): GET /eia-report/forecasts?report=WNGSR. */
+  async gasTable(weeks: number, threshold = 5): Promise<GasForecastTable & { threshold: number }> {
+    const from = new Date(this.io.now() - (weeks + 2) * 7 * 86_400_000).toISOString();
+    const rows = (await this.db.sql`
+      SELECT series, extract(epoch FROM release_at)::float8 * 1000 AS release_at, forecast, actual FROM release_forecasts WHERE series = 'eia_gas' AND release_at >= ${from} ORDER BY release_at`.catch(() => [])) as { series: ForecastRow["series"]; release_at: number; forecast: number | null; actual: number | null }[];
+    const input: ForecastRowIn[] = rows.map((r) => ({ series: r.series, releaseAt: Math.round(Number(r.release_at)), forecast: r.forecast ?? undefined, actual: r.actual ?? undefined }));
+    return { ...buildGasForecastTable({ rows: input, now: this.io.now(), weeks, threshold }), threshold };
   }
 
   async status(): Promise<ForecastStatus> {

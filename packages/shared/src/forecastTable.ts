@@ -127,3 +127,34 @@ export function buildForecastTable(input: { rows: readonly ForecastRowIn[]; publ
       : undefined,
   };
 }
+
+export interface GasForecastTable {
+  releases: { releaseAt: number; upcoming: boolean; storage: Cell }[];
+  stats: SeriesStats | undefined;
+  /** the report-day rule for gas: a build below forecast by the threshold (Bcf) = long, above = short */
+  rule: RuleStats | undefined;
+}
+
+/**
+ * Natural gas storage (WNGSR): the same layout for the one series, in Bcf. EIA keeps no archive of past gas reports, so the actual is the figure on
+ * Investing.com's page (marked as such). The newest `weeks` releases plus the next one, newest first.
+ */
+export function buildGasForecastTable(input: { rows: readonly ForecastRowIn[]; now: number; weeks: number; threshold?: number }): GasForecastTable {
+  const threshold = input.threshold ?? 5;
+  const gas = input.rows.filter((r) => r.series === "eia_gas");
+  const times = [...new Set(gas.map((r) => r.releaseAt))].sort((a, b) => b - a);
+  const past = times.filter((t) => t <= input.now).slice(0, input.weeks);
+  const next = times.filter((t) => t > input.now).sort((a, b) => a - b)[0];
+  const releases = [...(next === undefined ? [] : [next]), ...past].map((at) => {
+    const row = gas.find((r) => r.releaseAt === at);
+    const upcoming = at > input.now;
+    return { releaseAt: at, upcoming, storage: cell(row?.forecast, undefined, upcoming ? undefined : row?.actual) };
+  });
+  const done = releases.filter((r) => !r.upcoming).map((r) => r.storage);
+  const s = done.flatMap((c) => (c.surprise === undefined ? [] : [c.surprise]));
+  return {
+    releases,
+    stats: stats(done),
+    rule: s.length ? { threshold, of: s.length, reached: s.filter((x) => Math.abs(x) >= threshold).length, long: s.filter((x) => x <= -threshold).length, short: s.filter((x) => x >= threshold).length } : undefined,
+  };
+}

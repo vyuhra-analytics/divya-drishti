@@ -54,9 +54,11 @@ export class EiaReportController {
    * done, and how often the report-day rule's threshold was reached. Forecasts are Investing.com's; actuals are the published reports.
    */
   @Get("forecasts")
-  async forecastTable(@Query("weeks") weeksParam?: string) {
+  async forecastTable(@Query("weeks") weeksParam?: string, @Query("report") report?: string) {
     const weeks = weeksParam === undefined ? 52 : Number(weeksParam);
-    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 200) throw new BadRequestException("weeks must be 1 to 200");
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 600) throw new BadRequestException("weeks must be 1 to 600");
+    if (report !== undefined && report !== "WPSR" && report !== "WNGSR") throw new BadRequestException("report must be WPSR or WNGSR");
+    if (report === "WNGSR") return this.forecasts ? this.forecasts.gasTable(weeks) : { releases: [], stats: undefined, rule: undefined, threshold: 5 };
     if (!this.forecasts) return { releases: [], stats: {}, rule: undefined, threshold: 3 };
     return this.forecasts.table(weeks);
   }

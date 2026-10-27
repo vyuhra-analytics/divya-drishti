@@ -49,9 +49,17 @@ describe("GET /eia-report/forecasts", () => {
     expect(asked).toEqual([52, 26]);
   });
 
+  it("asks the service for gas storage when the report is WNGSR, and refuses an unknown report", async () => {
+    const gasAsked: number[] = [];
+    const c = new EiaReportController({ store: {} } as never, { gasTable: async (w: number) => (gasAsked.push(w), { releases: [], stats: undefined, rule: undefined, threshold: 5 }) } as never);
+    expect((await c.forecastTable("520", "WNGSR")) as never).toEqual({ releases: [], stats: undefined, rule: undefined, threshold: 5 } as never);
+    expect(gasAsked).toEqual([520]);
+    await expect(c.forecastTable("52", "STEO")).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it("refuses a bad number of weeks before asking the service, and answers an empty table when the forecast service is not there", async () => {
     const { c, asked } = withForecasts({});
-    for (const bad of ["0", "201", "abc", "1.5"]) await expect(c.forecastTable(bad)).rejects.toBeInstanceOf(BadRequestException);
+    for (const bad of ["0", "601", "abc", "1.5"]) await expect(c.forecastTable(bad)).rejects.toBeInstanceOf(BadRequestException);
     expect(asked).toHaveLength(0);
     expect(await new EiaReportController({ store: {} } as never).forecastTable()).toEqual({ releases: [], stats: {}, rule: undefined, threshold: 3 });
   });

@@ -127,7 +127,7 @@ describe("ForecastService.table", () => {
     const sql = Object.assign(
       (strings: TemplateStringsArray) => {
         const text = strings.join("?");
-        if (text.includes("FROM release_forecasts WHERE release_at >=")) return Promise.resolve(forecastRows);
+        if (text.includes("FROM release_forecasts WHERE")) return Promise.resolve(forecastRows);
         if (text.includes("FROM eia_report_arrivals a JOIN eia_report_values v")) return Promise.resolve(changes);
         return Promise.resolve([]);
       },
@@ -155,6 +155,13 @@ describe("ForecastService.table", () => {
     ]);
     expect(t.rule).toEqual({ threshold: 3, of: 2, reached: 1, long: 1, short: 0 });
     expect(t.threshold).toBe(3);
+  });
+
+  it("lays gas storage forecasts against the page's actuals, newest first", async () => {
+    const svc = make([{ series: "eia_gas", release_at: WED(1), forecast: 80, actual: 77 }, { series: "eia_gas", release_at: WED(2), forecast: 76, actual: 85 }], []);
+    const t = await svc.gasTable(52);
+    expect(t.releases.map((r) => [r.storage.forecast, r.storage.actual, r.storage.surprise])).toEqual([[76, 85, 9], [80, 77, -3]]);
+    expect(t.rule).toEqual({ threshold: 5, of: 2, reached: 1, long: 0, short: 1 });
   });
 
   it("is empty when nothing is stored, and a failing database is empty rather than an error", async () => {

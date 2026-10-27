@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildForecastTable, type ForecastRowIn, type PublishedChange } from "./forecastTable";
+import { buildForecastTable, buildGasForecastTable, type ForecastRowIn, type PublishedChange } from "./forecastTable";
 
 const H = 3600_000;
 const WED = (n: number) => Date.UTC(2026, 9, 7, 14, 30) + n * 7 * 24 * H; // Wed 7 Oct 2026 10:30 New York, then weekly
@@ -59,5 +59,36 @@ describe("buildForecastTable", () => {
     expect(buildForecastTable({ rows, published, now: NOW, weeks: 2 }).releases.filter((r) => !r.upcoming)).toHaveLength(2);
     const empty = buildForecastTable({ rows: [], published: [], now: NOW, weeks: 52 });
     expect(empty).toEqual({ releases: [], stats: { crude: undefined, gasoline: undefined, distillates: undefined, api: undefined }, rule: undefined });
+  });
+});
+
+describe("buildGasForecastTable", () => {
+  const rows: ForecastRowIn[] = [
+    { series: "eia_gas", releaseAt: WED(1), forecast: 80, actual: 77 },
+    { series: "eia_gas", releaseAt: WED(2), forecast: 76, actual: 85 },
+    { series: "eia_gas", releaseAt: WED(3), forecast: 90, actual: 91 },
+    { series: "eia_gas", releaseAt: WED(4), forecast: 70 },
+    { series: "eia_crude", releaseAt: WED(2), forecast: 1, actual: 2 },
+  ];
+  const t = buildGasForecastTable({ rows, now: WED(3) + H, weeks: 52 });
+
+  it("lists the next release first with its forecast only, then the past newest first, ignoring other series", () => {
+    expect(t.releases.map((r) => [r.upcoming, r.storage.forecast, r.storage.actual, r.storage.surprise])).toEqual([
+      [true, 70, undefined, undefined],
+      [false, 90, 91, 1],
+      [false, 76, 85, 9],
+      [false, 80, 77, -3],
+    ]);
+    expect(t.releases[1].storage.actualFrom).toBe("investing");
+  });
+
+  it("counts the weeks the 5 Bcf rule reached and on which side: below forecast long, above short", () => {
+    expect(t.rule).toEqual({ threshold: 5, of: 3, reached: 1, long: 0, short: 1 });
+    expect(t.stats).toEqual({ n: 3, bias: 2.33, meanAbs: 4.33 });
+  });
+
+  it("keeps only the newest weeks asked for, and is empty without rows", () => {
+    expect(buildGasForecastTable({ rows, now: WED(3) + H, weeks: 1 }).releases).toHaveLength(2);
+    expect(buildGasForecastTable({ rows: [], now: WED(3), weeks: 52 })).toEqual({ releases: [], stats: undefined, rule: undefined });
   });
 });
