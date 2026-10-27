@@ -2,7 +2,7 @@
 // (the range of an average minute, volume a minute) so a short window and a long one compare fairly. The windows are the five ICT killzones plus the
 // gaps between them, named, so the table shows whether the killzones really are the busy hours or whether the quiet hours were simply left out.
 // Pure and tested; the API route is apps/drishti-core-api/src/time-profile.ts and the panel is web TimeProfileView.tsx.
-import { nyClock, ZONES, type ZoneId } from "./sessionZones";
+import { LONDON_OPEN_WINDOW, londonClock, nyClock, ZONES, type ZoneId } from "./sessionZones";
 
 export interface ProfileWindow {
   id: string;
@@ -90,13 +90,16 @@ function barSecs(bars: readonly { time: number }[]): number {
 }
 
 /** Every window of every New York day in the bars: its high, low, range, average and volume. A day with too few bars in a window has no row for it. */
-export function zoneDays(bars: readonly ProfileBar[]): ZoneDay[] {
+export function zoneDays(bars: readonly ProfileBar[], opts: { londonOpen?: boolean } = {}): ZoneDay[] {
   const tf = barSecs(bars);
   if (!tf || tf >= 3600) return []; // hourly bars cannot resolve a 90-minute window
   const acc = new Map<string, { w: ProfileWindow; day: string; high: number; low: number; sum: number; volume: number; n: number; first: number; last: number }>();
   for (const b of bars) {
     const { date, minutes } = nyClock(b.time);
-    const w = PROFILE_WINDOWS.find((x) => minutes >= x.from && minutes < x.to);
+    // London anchored to its own cash open: its window is London's 07:00 to 10:00, and New York's 02:00 to 05:00 is then no window at all
+    const ldn = opts.londonOpen ? londonClock(b.time).minutes : 0;
+    const inLdn = opts.londonOpen && ldn >= LONDON_OPEN_WINDOW.from && ldn < LONDON_OPEN_WINDOW.to;
+    const w = inLdn ? PROFILE_WINDOWS.find((x) => x.id === "london") : PROFILE_WINDOWS.find((x) => minutes >= x.from && minutes < x.to && !(opts.londonOpen && x.id === "london"));
     if (!w) continue;
     const key = `${date}|${w.id}`;
     const a = acc.get(key) ?? { w, day: date, high: -Infinity, low: Infinity, sum: 0, volume: 0, n: 0, first: b.time, last: b.time };

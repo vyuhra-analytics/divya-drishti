@@ -69,7 +69,19 @@ test("zone boxes name each killzone of the latest days with its high, low, range
   expect(last.kind).toBe("box");
   expect(last.from).toEqual({ time: edt("2026-10-22", "07:00"), price: 104 });
   expect(last.to).toEqual({ time: edt("2026-10-22", "10:00"), price: 98 });
-  expect(last.text).toBe(["New York AM", "H 104  L 98", "Range 6  Avg 100"].join("\n"));
+  expect(last.text).toBe(["New York AM  16:30-19:30 IST", "H 104  L 98", "Range 6  Avg 100"].join("\n"));
   expect(d.draws!({ bars, values: {}, settings: settings({ box_days: 0 }) })).toEqual([]);
   expect(d.draws!({ bars, values: {}, settings: settings({ box_days: 2, show_nyam: false }) })).toEqual([]);
+});
+
+test("london_open anchors the London zone to London's 07:00-10:00 and labels the settings in Indian time", () => {
+  const d = killzoneIndicator();
+  const utcBar = (iso: string, p: number) => bar(Date.parse(`${iso}Z`) / 1000, p);
+  // 28 Oct 2026: London is on winter time, New York still on summer time
+  const bars = [utcBar("2026-10-28T06:30:00", 1), utcBar("2026-10-28T09:30:00", 2)]; // 02:30 and 05:30 New York
+  const ny = d.background!({ bars, values: {}, settings: settings() }) as (string | null)[];
+  expect([ny[0] !== null, ny[1] !== null]).toEqual([true, false]);
+  const ldn = d.background!({ bars, values: {}, settings: settings({ london_open: true }) }) as (string | null)[];
+  expect([ldn[0] !== null, ldn[1] !== null]).toEqual([false, true]);
+  expect(d.inputs.find((i) => i.key === "show_london")!.label).toMatch(/IST/);
 });

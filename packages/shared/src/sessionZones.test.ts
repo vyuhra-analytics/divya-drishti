@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 import { barSeconds, nyClock, sessionLevels, zoneAt, ZONES } from "./sessionZones";
 import type { Bar } from "./index";
 
@@ -95,4 +95,35 @@ describe("sessionLevels", () => {
     const b = sessionLevels([...base, ...run(edt("2026-10-21", "02:00"), 24, 9999)]);
     for (const k of ["midnight", "asiaHigh", "asiaLow"] as const) expect(b[k].slice(0, base.length)).toEqual(a[k]);
   });
+});
+
+import { istWindow as _istWindow, londonClock as _londonClock, toIst as _toIst, zoneAt as _zoneAt, LONDON_OPEN_WINDOW as _LDN } from "./sessionZones";
+
+const utc = (iso: string) => Date.parse(`${iso}Z`) / 1000;
+
+test("Indian time follows daylight saving in New York and London", () => {
+  // US summer time (EDT, UTC-4): 20:00 NY is 05:30 IST; US winter (EST, UTC-5): 06:30 IST
+  expect(_istWindow({ from: 20 * 60, to: 24 * 60 }, utc("2026-10-28T12:00:00"))).toBe("05:30-09:30 IST");
+  expect(_istWindow({ from: 20 * 60, to: 24 * 60 }, utc("2026-11-03T12:00:00"))).toBe("06:30-10:30 IST");
+  // the 10:30 ET release: 20:00 IST in summer time, 21:00 after the clock change
+  expect(_toIst(10 * 60 + 30, utc("2026-10-28T12:00:00"))).toBe(20 * 60);
+  expect(_toIst(10 * 60 + 30, utc("2026-11-03T12:00:00"))).toBe(21 * 60);
+  // London 07:00-10:00 is 12:30-15:30 IST in London winter time, 11:30-14:30 in its summer time
+  expect(_istWindow(_LDN, utc("2026-10-28T12:00:00"), "london")).toBe("12:30-15:30 IST");
+  expect(_istWindow(_LDN, utc("2026-07-15T12:00:00"), "london")).toBe("11:30-14:30 IST");
+});
+
+test("the London zone on the London cash open moves with London's clock, not New York's", () => {
+  // 28 Oct 2026: Europe is back on winter time, the US is not: 07:30 London = 03:30 New York
+  const t = utc("2026-10-28T07:30:00");
+  expect(_zoneAt(t)).toBe("london"); // New York's 02:00-05:00 happens to hold it too
+  // 06:30 London = 02:30 New York: the New York clock calls it London, the London clock does not (the cash market is not open yet)
+  const early = utc("2026-10-28T06:30:00");
+  expect(_zoneAt(early)).toBe("london");
+  expect(_zoneAt(early, undefined, true)).toBeUndefined();
+  // 09:30 London = 05:30 New York: outside New York's window, inside the London open's
+  const late = utc("2026-10-28T09:30:00");
+  expect(_zoneAt(late)).toBeUndefined();
+  expect(_zoneAt(late, undefined, true)).toBe("london");
+  expect(_londonClock(late).minutes).toBe(9 * 60 + 30);
 });

@@ -31,10 +31,47 @@ export function nyClock(sec: number): { date: string; minutes: number } {
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
 }
 
-/** The killzone an instant (a bar's open) falls in, or undefined. `only` limits it to the zones switched on. */
-export function zoneAt(sec: number, only?: readonly ZoneId[]): ZoneId | undefined {
+const LDN = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+/** The London calendar date and minutes after midnight of an instant (epoch seconds); London keeps its own daylight saving, which differs from New York's for a few weeks a year. */
+export function londonClock(sec: number): { date: string; minutes: number } {
+  const p: Record<string, string> = {};
+  for (const part of LDN.formatToParts(new Date(sec * 1000))) p[part.type] = part.value;
+  return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
+}
+
+/** The London killzone anchored to the London cash open instead of New York's clock: 07:00 to 10:00 London time (the usual 02:00 to 05:00 New York, except in the weeks the two daylight-saving changes fall apart). */
+export const LONDON_OPEN_WINDOW = { from: 7 * 60, to: 10 * 60 };
+
+/** The killzone an instant (a bar's open) falls in, or undefined. `only` limits it to the zones switched on; `londonOpen` puts the London zone on London's own clock. */
+export function zoneAt(sec: number, only?: readonly ZoneId[], londonOpen = false): ZoneId | undefined {
   const { minutes } = nyClock(sec);
-  return ZONES.find((z) => (!only || only.includes(z.id)) && minutes >= z.from && minutes < z.to)?.id;
+  const ldn = londonOpen ? londonClock(sec).minutes : 0;
+  return ZONES.find((z) => {
+    if (only && !only.includes(z.id)) return false;
+    if (z.id === "london" && londonOpen) return ldn >= LONDON_OPEN_WINDOW.from && ldn < LONDON_OPEN_WINDOW.to;
+    return minutes >= z.from && minutes < z.to;
+  })?.id;
+}
+
+/** Minutes after midnight in Indian time (IST, UTC+5:30, no daylight saving) of an instant. */
+const istMinutes = (sec: number) => (Math.floor(sec / 60) + 330) % 1440;
+
+/**
+ * A clock time given in New York (or London) minutes, as Indian time on the day of `sec`: the offset is read from that instant, so daylight saving in
+ * either city is followed (a 20:00 New York window is 05:30 IST in US summer time and 06:30 IST in winter).
+ */
+export function toIst(minutes: number, sec: number, tz: "ny" | "london" = "ny"): number {
+  const here = tz === "ny" ? nyClock(sec).minutes : londonClock(sec).minutes;
+  const delta = (((istMinutes(sec) - here) % 1440) + 1440) % 1440;
+  return (minutes + delta) % 1440;
+}
+
+const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/** "05:30-09:30 IST": a window as Indian time on the day of `sec`. */
+export function istWindow(w: { from: number; to: number }, sec: number, tz: "ny" | "london" = "ny"): string {
+  return `${hm(toIst(w.from, sec, tz))}-${hm(toIst(w.to, sec, tz))} IST`;
 }
 
 /** The bar length in seconds: the smallest gap between neighbouring bars (the usual one even across a session break). 0 without two bars. */

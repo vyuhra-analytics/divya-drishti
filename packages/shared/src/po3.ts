@@ -3,7 +3,7 @@
 // closes back inside the range (the confirmation). A swept high that closes back inside is the bearish setup, a swept low the bullish one. The marker
 // sits on the confirming bar, so it never knows more than that bar knew; what happened afterwards is measured separately (`po3Outcome`), for counting,
 // never for drawing. The trader's own reading of the three phases is judgement; this rule is only the part a machine can state. Pure and tested.
-import { nyClock, sessionLevels, type ZoneBar } from "./sessionZones";
+import { LONDON_OPEN_WINDOW, londonClock, nyClock, sessionLevels, type ZoneBar } from "./sessionZones";
 
 export type Po3Bias = "bullish" | "bearish";
 
@@ -27,6 +27,8 @@ export interface Po3Event {
 export interface Po3Options {
   /** bars after the sweep within which a close back inside confirms it (default 6) */
   confirmBars?: number;
+  /** read the London killzone as London's 07:00 to 10:00 instead of New York's 02:00 to 05:00 */
+  londonOpen?: boolean;
 }
 
 const LONDON = { from: 2 * 60, to: 5 * 60 };
@@ -48,7 +50,9 @@ export function po3Sweeps(bars: readonly ZoneBar[], opts: Po3Options = {}): Po3E
     const { date, minutes } = clocks[i];
     const H = lv.asiaHigh[i];
     const L = lv.asiaLow[i];
-    if (done.has(date) || H === null || L === null || minutes < LONDON.from || minutes >= LONDON.to) continue;
+    const ldn = opts.londonOpen ? londonClock(bars[i].time).minutes : 0;
+    const inLondon = opts.londonOpen ? ldn >= LONDON_OPEN_WINDOW.from && ldn < LONDON_OPEN_WINDOW.to : minutes >= LONDON.from && minutes < LONDON.to;
+    if (done.has(date) || H === null || L === null || !inLondon) continue;
     const up = bars[i].high > H;
     const down = bars[i].low < L;
     if (!up && !down) continue;
