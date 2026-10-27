@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { instrument, isAllowedOrigin, parseRates, type Actor, type PaperEngine, type PaperQuote, type Quote, type RateLimiter, type Result } from "@drishti/shared";
+import { hasEntry, instrument, isAllowedOrigin, parseRates, type Actor, type PaperEngine, type PaperQuote, type Quote, type RateLimiter, type Result } from "@drishti/shared";
 import type { PgPaperStore } from "./paperStore";
 
 /**
@@ -64,11 +64,19 @@ export function paperRoutes(opts: {
     })
     .delete("/accounts/:id", async ({ request, params, set }) => reply(set, await engine.deleteAccount(params.id, actorOf(request))))
     .post("/accounts/:id/orders", async ({ request, params, body, set }) => {
+      // an order that names an entry price is a limit order: it fills when the market reaches it, or waits
+      if (hasEntry(body)) {
+        const lr = await engine.placeLimit(params.id, body, actorOf(request));
+        if (!lr.ok) return reply(set, lr);
+        set.status = lr.duplicate ? 200 : 201;
+        return reply(set, lr);
+      }
       const r = await engine.place(params.id, body, actorOf(request));
       if (!r.ok) return reply(set, r);
       set.status = r.duplicate ? 200 : 201; // a repeat of an order already filled is not a new order
       return reply(set, r);
     })
+    .delete("/accounts/:id/orders/:oid", async ({ request, params, set }) => reply(set, await engine.cancelOrder(params.id, params.oid, actorOf(request))))
     .post("/accounts/:id/positions/:pid/close", async ({ request, params, set }) => reply(set, await engine.close(params.id, params.pid, actorOf(request))))
     .patch("/accounts/:id/positions/:pid", async ({ request, params, body, set }) => reply(set, await engine.setStopTarget(params.id, params.pid, body, actorOf(request))))
     .put("/accounts/:id/trades/:tid/note", async ({ request, params, body, set }) => reply(set, await engine.setNote(params.id, params.tid, (body as { note?: unknown } | null)?.note, actorOf(request))))

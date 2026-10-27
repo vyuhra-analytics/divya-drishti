@@ -21,6 +21,8 @@ export interface FillDetail {
   slippagePoints: number;
   /** the price the order filled at */
   price: number;
+  /** a limit order: the price the trader asked for (the fill is that or better) */
+  limit?: number;
 }
 
 /** Describe a fill for the record. `slippagePoints` is what was added against the trader; `tick` is the contract's price step. */
@@ -58,6 +60,25 @@ export interface OptionRef {
   expiry: string;
   /** the premium's price step in rupees (Upstox lists it in paise) */
   tick: number;
+}
+
+/** A limit order waiting for its price: it fills when the market reaches `entry` (a buy when the ask is at or under it, a sell when the bid is at or over it), or is cancelled. */
+export interface PendingOrder extends OrderMeta {
+  id: string;
+  /** an MCX future (MCX:CRUDEOIL) or, with `option`, the Upstox key */
+  symbol: string;
+  side: Side;
+  lots: number;
+  units: number;
+  /** the limit price the trader asked for */
+  entry: number;
+  stop?: number;
+  target?: number;
+  createdAt: number;
+  /** it is cancelled if it has not filled by then (epoch ms) */
+  expiresAt: number;
+  actor?: string;
+  option?: OptionRef;
 }
 
 export interface PaperPosition extends OrderMeta {
@@ -116,6 +137,21 @@ export function fillPrice(side: Side, q: PaperQuote, slippage: number): number {
 }
 
 const round6 = (n: number) => Number(n.toFixed(6));
+
+/**
+ * Does a limit order trade on this quote, and at what price? A buy trades when the ask (else the last price) is at or under the limit, at that ask: the limit
+ * or better, never worse; a sell when the bid is at or over it. Undefined when the price has not reached the limit. No slippage: the trader named the price.
+ */
+export function limitFill(side: Side, q: PaperQuote, limit: number): number | undefined {
+  const ref = side === "buy" ? (q.ask ?? q.price) : (q.bid ?? q.price);
+  return (side === "buy" ? ref <= limit : ref >= limit) ? round6(ref) : undefined;
+}
+
+/** How a limit order was filled: the quote used, the price, no slippage, and the limit asked for. */
+export function describeLimitFill(side: Side, q: PaperQuote, price: number, limit: number): FillDetail {
+  const d = describeFill(side, q, 0, 1);
+  return { ...d, reference: price, price, slippageTicks: 0, slippagePoints: 0, limit };
+}
 
 const opposite = (s: Side): Side => (s === "buy" ? "sell" : "buy");
 

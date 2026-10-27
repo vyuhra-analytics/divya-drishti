@@ -5,7 +5,7 @@
 import { UPSTOX_MCX_RATES, type CostRates, type Side } from "./costs";
 import { lotUnits } from "./costs";
 import { instrument } from "./index";
-import { closePaper, describeFill, exitHit, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OptionRef, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade } from "./paper";
+import { closePaper, describeFill, describeLimitFill, exitHit, limitFill, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OptionRef, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade, type PendingOrder } from "./paper";
 
 export type Actor = "ui" | "mcp";
 
@@ -42,6 +42,21 @@ export interface OrderInput extends OrderMeta {
   lots: number;
   stop?: number;
   target?: number;
+  /** a limit price: the order waits for the market to reach it (absent = at the market) */
+  entry?: number;
+}
+
+/** Does the order name an entry price (a limit order)? */
+export const hasEntry = (body: unknown): boolean => {
+  const v = typeof body === "object" && body !== null ? (body as { entry?: unknown }).entry : undefined;
+  return v !== undefined && v !== null && v !== "";
+};
+
+/** The limit price of an order: a positive number, or undefined when absent. */
+function parseEntry(v: unknown): number | undefined | Error {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v === "boolean" || !Number.isFinite(Number(v)) || Number(v) <= 0) return new Error("entry must be a positive price, or left out to trade at the market");
+  return Number(v);
 }
 
 const CLIENT_ORDER_ID = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -85,7 +100,9 @@ export function parseOrderInput(body: any): { order: OrderInput } | { error: str
   const m = parseOrderMeta(body);
   if ("error" in m) return m;
   try {
-    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target"), ...m.meta } };
+    const entry = parseEntry(body.entry);
+    if (entry instanceof Error) return { error: entry.message };
+    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta } };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -99,6 +116,8 @@ export interface OptionOrderInput extends OrderMeta {
   lots: number;
   stop?: number;
   target?: number;
+  /** a limit premium: the order waits for the option's ask to fall to it */
+  entry?: number;
 }
 
 /** An order carries an `option` when it is an option order: { option: { key }, side: "buy", lots, stop?, target? } with stop and target in PREMIUM. Option paper trading is buy only. */
@@ -118,7 +137,9 @@ export function parseOptionOrder(body: any): { order: OptionOrderInput } | { err
   const m = parseOrderMeta(body);
   if ("error" in m) return m;
   try {
-    return { order: { key, lots, stop: price(body.stop, "stop"), target: price(body.target, "target"), ...m.meta } };
+    const entry = parseEntry(body.entry);
+    if (entry instanceof Error) return { error: entry.message };
+    return { order: { key, lots, stop: price(body.stop, "stop"), target: price(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta } };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -183,6 +204,11 @@ export interface PaperStore {
   saveTrade(account: string, t: PaperTrade): Promise<void>;
   setNote(account: string, tradeId: string, note: string): Promise<boolean>;
   reset(account: string): Promise<void>;
+  /** limit orders waiting for their price */
+  pendingOrders(account: string): Promise<PendingOrder[]>;
+  allPending(): Promise<{ account: string; order: PendingOrder }[]>;
+  savePending(account: string, o: PendingOrder): Promise<void>;
+  deletePending(account: string, id: string): Promise<void>;
   /** orders placed by `actor` on `account` since `sinceMs` (from the audit log) */
   ordersSince(account: string, actor: string, sinceMs: number): Promise<number>;
   audit(e: AuditEntry): Promise<void>;
@@ -214,12 +240,24 @@ export interface PlaceResult {
   closed?: PaperTrade;
 }
 
+/** What a limit order answers: filled at once (the market was already at its price), or waiting. */
+export interface LimitResult {
+  position?: PaperPosition;
+  pending?: PendingOrder;
+  duplicate?: true;
+}
+
+/** How long a limit order waits before it is cancelled. */
+export const PENDING_TTL_MS = 24 * 3600_000;
+
 export type Result<T> = ({ ok: true } & T) | { ok: false; status: 400 | 404 | 409 | 422 | 503; error: string };
 const fail = (status: 400 | 404 | 409 | 422 | 503, error: string) => ({ ok: false as const, status, error });
 
 export interface AccountState {
   account: AccountRow;
   positions: PaperPosition[];
+  /** limit orders waiting for their price */
+  pending: PendingOrder[];
   trades: PaperTrade[];
   rates: CostRates;
   limits: Limits;
@@ -228,6 +266,7 @@ export interface AccountState {
 
 export class PaperEngine {
   private open = new Map<string, { account: string; position: PaperPosition }>();
+  private waiting = new Map<string, { account: string; order: PendingOrder }>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly d: PaperDeps) {}
@@ -237,13 +276,13 @@ export class PaperEngine {
   }
 
   /** The quote, liveness and price step of a position's contract: the future's, or the option's own. */
-  private quoteOf(p: PaperPosition): PaperQuote | undefined {
+  private quoteOf(p: { symbol: string; option?: OptionRef }): PaperQuote | undefined {
     return p.option ? this.d.option?.quote(p.symbol) : this.d.quote(p.symbol);
   }
-  private liveOf(p: PaperPosition): boolean {
+  private liveOf(p: { symbol: string; option?: OptionRef }): boolean {
     return p.option ? !!this.d.option?.live(p.symbol) : this.d.live(p.symbol);
   }
-  private tickOf(p: PaperPosition): number {
+  private tickOf(p: { symbol: string; option?: OptionRef }): number {
     return p.option?.tick ?? tickSize(p.symbol);
   }
 
@@ -263,6 +302,7 @@ export class PaperEngine {
   async refresh() {
     const all = await this.d.store.allPositions();
     this.open = new Map(all.map((x) => [x.position.id, x]));
+    this.waiting = new Map((await this.d.store.allPending()).map((x) => [x.order.id, x]));
   }
 
   private async audit(actor: string, action: string, account: string, args: unknown, r: { ok: boolean; error?: string }, detail = "") {
@@ -291,6 +331,7 @@ export class PaperEngine {
       if (!(await this.d.store.getAccount(id))) return fail(404, "no such account");
       await this.d.store.deleteAccount(id);
       for (const [pid, x] of this.open) if (x.account === id) this.open.delete(pid);
+      for (const [pid, x] of this.waiting) if (x.account === id) this.waiting.delete(pid);
       await this.audit(actor, "delete_account", id, {}, { ok: true });
       this.d.publish({ account: id, event: "reset", actor, text: `Account ${id} deleted` });
       return { ok: true };
@@ -313,13 +354,13 @@ export class PaperEngine {
   async state(id: string, actor: Actor = "ui"): Promise<Result<{ state: AccountState }>> {
     const account = await this.d.store.getAccount(id);
     if (!account) return fail(404, "no such account");
-    const [positions, trades, rates] = await Promise.all([this.d.store.positions(id), this.d.store.trades(id, 100), this.d.rates()]);
+    const [positions, pending, trades, rates] = await Promise.all([this.d.store.positions(id), this.d.store.pendingOrders(id), this.d.store.trades(id, 100), this.d.rates()]);
     const nets = positions.map((p) => {
       const q = this.quoteOf(p);
       return q ? unrealisedNet(p, q, account.slippage * this.tickOf(p), rates) : 0;
     });
     const all = await this.d.store.trades(id, MAX_TRADES_KEPT);
-    return { ok: true, state: { account, positions, trades, rates, limits: this.limits(actor), summary: summarizeAccount(account.capital, [...all].reverse(), nets) } };
+    return { ok: true, state: { account, positions, pending, trades, rates, limits: this.limits(actor), summary: summarizeAccount(account.capital, [...all].reverse(), nets) } };
   }
 
   place(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
@@ -436,6 +477,190 @@ export class PaperEngine {
     return { ok: true, position };
   }
 
+  /**
+   * A limit order: { symbol or option, side, lots, entry, stop?, target? }. If the market is already at its price it fills at once (at the market price, the
+   * limit or better); otherwise it waits, up to 24 hours, and fills when a live quote reaches the price (a buy when the ask is at or under it, a sell when the bid
+   * is at or over it), at that price or better and with no slippage: the trader named the price. Stops and targets are checked against the entry price. The
+   * same caps as a market order apply, and a waiting order counts as an order and as an open position for them.
+   */
+  placeLimit(accountId: string, raw: unknown, actor: Actor): Promise<Result<LimitResult>> {
+    return this.serial(async () => {
+      const r = await this.placeLimitNow(accountId, raw, actor);
+      const what = r.ok ? (r.position ? `${r.position.side} ${r.position.lots} ${r.position.option?.label ?? r.position.symbol} @ ${r.position.entry}` : r.pending ? `limit ${r.pending.side} ${r.pending.lots} ${r.pending.option?.label ?? r.pending.symbol} @ ${r.pending.entry}` : "") : "";
+      await this.audit(actor, r.ok && r.duplicate ? "place_duplicate" : "place", accountId, raw, r, r.ok ? `${r.duplicate ? "duplicate of " : ""}${what}` : "");
+      if (r.ok && !r.duplicate) {
+        const who = actor === "mcp" ? "Claude" : "You";
+        if (r.position) this.d.publish({ account: accountId, event: "opened", actor, text: `${who} opened ${r.position.lots} lot${r.position.lots === 1 ? "" : "s"} ${r.position.option?.label ?? r.position.symbol} at ${r.position.entry} (limit)` });
+        else if (r.pending) this.d.publish({ account: accountId, event: "updated", actor, text: `${who} placed a limit ${r.pending.side} on ${r.pending.option?.label ?? r.pending.symbol} at ${r.pending.entry}` });
+      }
+      return r;
+    });
+  }
+
+  private async placeLimitNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<LimitResult>> {
+    const isOpt = isOptionOrder(raw);
+    const account = await this.d.store.getAccount(accountId);
+    if (!account) return fail(404, "no such account");
+    // what is being bought or sold: an MCX future, or an option contract (buy only)
+    let symbol: string;
+    let side: Side;
+    let lots: number;
+    let units: number;
+    let stop: number | undefined;
+    let target: number | undefined;
+    let entry: number;
+    let meta: OrderMeta;
+    let option: OptionRef | undefined;
+    if (isOpt) {
+      const od = this.d.option;
+      if (!od) return fail(503, "option paper trading is not available on this server");
+      if (actor !== "ui") return fail(422, "option paper orders are placed from the browser: agents cannot place them yet");
+      const parsed = parseOptionOrder(raw);
+      if ("error" in parsed) return fail(400, parsed.error);
+      const o = parsed.order;
+      if (o.entry === undefined) return fail(400, "a limit order needs an entry price");
+      const info = await od.info(o.key);
+      if (!info) return fail(404, "that is not an option contract of ours (crude, crude mini, gas or gas mini)");
+      if (this.d.now() >= info.expiresAt) return fail(422, `${info.label} has expired`);
+      symbol = o.key;
+      side = "buy";
+      lots = o.lots;
+      units = info.lot;
+      stop = o.stop;
+      target = o.target;
+      entry = o.entry;
+      meta = { clientOrderId: o.clientOrderId, tag: o.tag, strategy: o.strategy, signalTime: o.signalTime, rPoints: o.rPoints };
+      option = { key: info.key, label: info.label, underlying: info.underlying, type: info.type, strike: info.strike, expiry: info.expiry, tick: info.tick };
+    } else {
+      const parsed = parseOrderInput(raw);
+      if ("error" in parsed) return fail(400, parsed.error);
+      const o = parsed.order;
+      if (o.entry === undefined) return fail(400, "a limit order needs an entry price");
+      symbol = o.symbol;
+      side = o.side;
+      lots = o.lots;
+      units = lotUnits(o.symbol)!;
+      stop = o.stop;
+      target = o.target;
+      entry = o.entry;
+      meta = { clientOrderId: o.clientOrderId, tag: o.tag, strategy: o.strategy, signalTime: o.signalTime, rPoints: o.rPoints };
+    }
+    const clean = Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined)) as OrderMeta;
+
+    // a retry with the same client_order_id gets the original answer (a waiting order, an open position or a closed trade)
+    if (clean.clientOrderId) {
+      const waiting = [...this.waiting.values()].find((x) => x.account === accountId && x.order.clientOrderId === clean.clientOrderId);
+      if (waiting) {
+        if (waiting.order.symbol !== symbol || waiting.order.side !== side || waiting.order.lots !== lots) return fail(409, `client_order_id ${clean.clientOrderId} was already used for a different order`);
+        return { ok: true, pending: waiting.order, duplicate: true };
+      }
+      const dup = await this.findClientOrder(accountId, clean.clientOrderId);
+      if (dup) {
+        if (dup.position.symbol !== symbol || dup.position.side !== side || dup.position.lots !== lots) return fail(409, `client_order_id ${clean.clientOrderId} was already used for a different order`);
+        return { ok: true, position: dup.position, duplicate: true };
+      }
+    }
+    const lim = this.limits(actor);
+    if (lots > lim.maxLots) return fail(422, `at most ${lim.maxLots} lot${lim.maxLots === 1 ? "" : "s"} per order for ${actor === "mcp" ? "agents" : "this client"}`);
+    const positions = await this.d.store.positions(accountId);
+    const waitingHere = [...this.waiting.values()].filter((x) => x.account === accountId);
+    if (positions.some((p) => p.symbol === symbol)) return fail(409, "already in this contract: close that position first");
+    if (waitingHere.some((x) => x.order.symbol === symbol)) return fail(409, "a limit order for this contract is already waiting: cancel it first");
+    if (positions.length + waitingHere.length >= lim.maxOpenPositions) return fail(422, `at most ${lim.maxOpenPositions} open positions and waiting orders`);
+    if ((await this.d.store.ordersSince(accountId, actor, this.d.now() - 86_400_000)) >= lim.maxOrdersPerDay) return fail(422, `order limit reached: at most ${lim.maxOrdersPerDay} orders in 24 hours`);
+
+    // a stop must be on the losing side of the entry price and a target on the winning side
+    const long = side === "buy";
+    if (stop !== undefined && (long ? stop >= entry : stop <= entry)) return fail(400, `A ${long ? "long" : "short"}'s stop must be ${long ? "below" : "above"} the entry price (${entry}).`);
+    if (target !== undefined && (long ? target <= entry : target >= entry)) return fail(400, `A ${long ? "long" : "short"}'s target must be ${long ? "above" : "below"} the entry price (${entry}).`);
+
+    const ref = { symbol, option };
+    // "filled": the trader already took this trade at `entry` and wants it in the account, whatever the market says now
+    const recorded = (raw as { filled?: unknown })?.filled === true;
+    const q = this.quoteOf(ref) ?? (recorded ? { price: entry } : undefined);
+    const price = recorded ? entry : q && this.liveOf(ref) ? limitFill(side, q, entry) : undefined;
+    if (q && price !== undefined) {
+      const position = this.positionFrom({ id: this.d.newId(), symbol, side, lots, units, entry, stop, target, createdAt: this.d.now(), expiresAt: 0, actor, ...(option ? { option } : {}), ...clean }, q, price);
+      await this.d.store.savePosition(accountId, position);
+      this.open.set(position.id, { account: accountId, position });
+      return { ok: true, position };
+    }
+    const order: PendingOrder = { id: this.d.newId(), symbol, side, lots, units, entry, stop, target, createdAt: this.d.now(), expiresAt: this.d.now() + PENDING_TTL_MS, actor, ...(option ? { option } : {}), ...clean };
+    await this.d.store.savePending(accountId, order);
+    this.waiting.set(order.id, { account: accountId, order });
+    return { ok: true, pending: order };
+  }
+
+  /** The position a limit order becomes when the market reaches its price. */
+  private positionFrom(o: PendingOrder, q: PaperQuote, price: number): PaperPosition {
+    const tick = this.tickOf(o);
+    return {
+      id: o.id,
+      symbol: o.symbol,
+      side: o.side,
+      lots: o.lots,
+      units: o.units,
+      entry: price,
+      ...(o.stop !== undefined ? { stop: o.stop } : {}),
+      ...(o.target !== undefined ? { target: o.target } : {}),
+      openedAt: this.d.now(),
+      actor: o.actor,
+      fill: { ...describeLimitFill(o.side, q, price, o.entry), slippageTicks: 0, quote: describeFill(o.side, q, 0, tick).quote },
+      ...(o.option ? { option: o.option } : {}),
+      ...(o.clientOrderId ? { clientOrderId: o.clientOrderId } : {}),
+      ...(o.tag ? { tag: o.tag } : {}),
+      ...(o.strategy ? { strategy: o.strategy } : {}),
+      ...(o.signalTime !== undefined ? { signalTime: o.signalTime } : {}),
+      ...(o.rPoints !== undefined ? { rPoints: o.rPoints } : {}),
+    };
+  }
+
+  /** Cancel a waiting limit order. */
+  cancelOrder(accountId: string, orderId: string, actor: Actor | "engine", why = ""): Promise<Result<{ order: PendingOrder }>> {
+    return this.serial(async () => {
+      const w = this.waiting.get(orderId);
+      const order = w && w.account === accountId ? w.order : (await this.d.store.pendingOrders(accountId)).find((o) => o.id === orderId);
+      if (!order) return fail(404, "no such waiting order");
+      await this.d.store.deletePending(accountId, orderId);
+      this.waiting.delete(orderId);
+      await this.audit(actor, "cancel_order", accountId, { orderId, why }, { ok: true }, why);
+      this.d.publish({ account: accountId, event: "updated", actor, text: `${why ? `Limit order cancelled: ${why}` : `${actor === "mcp" ? "Claude" : "You"} cancelled a limit order`} (${order.option?.label ?? order.symbol} at ${order.entry})` });
+      return { ok: true, order };
+    });
+  }
+
+  /** A waiting order whose price a live quote has reached becomes a position; one that no longer can (the contract is taken, a cap) or has waited too long is cancelled with the reason. */
+  private fillWaiting(accountId: string, orderId: string): Promise<void> {
+    return this.serial(async () => {
+      const w = this.waiting.get(orderId);
+      if (!w || w.account !== accountId) return;
+      const o = w.order;
+      const cancel = async (why: string) => {
+        await this.d.store.deletePending(accountId, orderId);
+        this.waiting.delete(orderId);
+        await this.audit("engine", "cancel_order", accountId, { orderId, why }, { ok: true }, why);
+        this.d.publish({ account: accountId, event: "updated", actor: "engine", text: `Limit order cancelled: ${why} (${o.option?.label ?? o.symbol} at ${o.entry})` });
+      };
+      if (this.d.now() >= o.expiresAt) return cancel("not filled in 24 hours");
+      if (o.option && this.d.now() >= (await this.d.option?.info(o.symbol))!.expiresAt) return cancel("the option expired");
+      const q = this.quoteOf(o);
+      if (!q || !this.liveOf(o)) return;
+      const price = limitFill(o.side, q, o.entry);
+      if (price === undefined) return;
+      const positions = await this.d.store.positions(accountId);
+      if (positions.some((p) => p.symbol === o.symbol)) return cancel("already in this contract");
+      const lim = this.limits((o.actor as Actor) ?? "ui");
+      if (positions.length >= lim.maxOpenPositions) return cancel(`at most ${lim.maxOpenPositions} open positions`);
+      const position = this.positionFrom(o, q, price);
+      await this.d.store.savePosition(accountId, position);
+      await this.d.store.deletePending(accountId, orderId);
+      this.open.set(position.id, { account: accountId, position });
+      this.waiting.delete(orderId);
+      await this.audit("engine", "fill_limit", accountId, { orderId }, { ok: true }, `${o.side} ${o.lots} ${o.option?.label ?? o.symbol} @ ${price} (limit ${o.entry})`);
+      this.d.publish({ account: accountId, event: "opened", actor: "engine", text: `Limit filled: ${o.lots} lot${o.lots === 1 ? "" : "s"} ${o.option?.label ?? o.symbol} ${o.option ? "bought" : o.side === "buy" ? "long" : "short"} at ${price} (limit ${o.entry})` });
+    });
+  }
+
   close(accountId: string, positionId: string, actor: Actor | "engine", reason: ExitReason = "manual"): Promise<Result<{ trade: PaperTrade }>> {
     return this.serial(async () => {
       const r = await this.closeNow(accountId, positionId, actor, reason);
@@ -548,6 +773,7 @@ export class PaperEngine {
       if (!(await this.d.store.getAccount(accountId))) return fail(404, "no such account");
       await this.d.store.reset(accountId);
       for (const [id, x] of this.open) if (x.account === accountId) this.open.delete(id);
+      for (const [id, x] of this.waiting) if (x.account === accountId) this.waiting.delete(id);
       await this.audit(actor, "reset", accountId, {}, { ok: true });
       this.d.publish({ account: accountId, event: "reset", actor, text: "Account reset" });
       return { ok: true };
@@ -556,18 +782,25 @@ export class PaperEngine {
 
   /** Close positions whose stop or target a LIVE price has reached. Call after every accepted quote; cheap (no query unless something fires). */
   onQuotes(): Promise<void> {
+    const fills = [...this.waiting.values()].filter(({ order }) => {
+      if (this.d.now() >= order.expiresAt) return true;
+      const q = this.quoteOf(order);
+      return q && this.liveOf(order) && limitFill(order.side, q, order.entry) !== undefined;
+    });
+    const filling = fills.length ? Promise.all(fills.map(({ account, order }) => this.fillWaiting(account, order.id))).then(() => undefined) : Promise.resolve();
     const due = [...this.open.values()].filter(({ position }) => {
       const q = this.quoteOf(position);
       return q && this.liveOf(position) && exitHit(position, q.price);
     });
-    if (due.length === 0) return Promise.resolve();
-    return Promise.all(
-      due.map(({ account, position }) => {
+    if (due.length === 0) return filling;
+    return Promise.all([
+      filling,
+      ...due.map(({ account, position }) => {
         const q = this.quoteOf(position)!;
         const hit = exitHit(position, q.price);
         return hit ? this.close(account, position.id, "engine", hit).then(() => undefined) : undefined;
       }),
-    ).then(() => undefined);
+    ]).then(() => undefined);
   }
 }
 

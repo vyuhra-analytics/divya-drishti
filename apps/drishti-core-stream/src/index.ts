@@ -475,6 +475,7 @@ if (DEMO) {
       optionStats.messages++;
       optionStats.lastAt = q.recvAt;
       optionLatest.set(q.key, q);
+      void paperEngine?.onQuotes().catch(() => undefined); // a premium stop or a waiting limit order may be due on this tick
       const prev = lastTrade.get(q.key);
       lastTrade.set(q.key, q.time);
       if (prev !== undefined && q.time > prev) optionLag.add(optionLagMs(q));

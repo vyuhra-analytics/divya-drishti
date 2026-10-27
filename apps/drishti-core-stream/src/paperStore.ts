@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import { MAX_TRADES_KEPT, normalizeRates, UPSTOX_MCX_RATES, type AccountRow, type AuditEntry, type CostRates, type PaperPosition, type PaperStore, type PaperTrade } from "@drishti/shared";
+import { MAX_TRADES_KEPT, normalizeRates, UPSTOX_MCX_RATES, type AccountRow, type AuditEntry, type CostRates, type PaperPosition, type PaperStore, type PaperTrade, type PendingOrder } from "@drishti/shared";
 
 /** Postgres-backed paper account storage (tables in infra/sql/006_paper.sql). jsonb goes in as text first: Bun sends a string param cast straight to jsonb as a JSON string. */
 export class PgPaperStore implements PaperStore {
@@ -39,6 +39,23 @@ export class PgPaperStore implements PaperStore {
     await this.sql`DELETE FROM paper_positions WHERE id = ${id} AND account = ${account}`;
   }
 
+  async pendingOrders(account: string) {
+    return ((await this.sql`SELECT data FROM paper_orders WHERE account = ${account} ORDER BY created_at`) as { data: PendingOrder }[]).map((r) => r.data);
+  }
+
+  async allPending() {
+    return ((await this.sql`SELECT account, data FROM paper_orders`) as { account: string; data: PendingOrder }[]).map((r) => ({ account: r.account, order: r.data }));
+  }
+
+  async savePending(account: string, o: PendingOrder) {
+    await this.sql`INSERT INTO paper_orders (id, account, data, created_at) VALUES (${o.id}, ${account}, ${JSON.stringify(o)}::text::jsonb, to_timestamp(${o.createdAt / 1000}))
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`;
+  }
+
+  async deletePending(account: string, id: string) {
+    await this.sql`DELETE FROM paper_orders WHERE id = ${id} AND account = ${account}`;
+  }
+
   async trades(account: string, limit: number) {
     return ((await this.sql`SELECT data FROM paper_trades WHERE account = ${account} ORDER BY closed_at DESC, id DESC LIMIT ${limit}`) as { data: PaperTrade }[]).map((r) => r.data);
   }
@@ -57,6 +74,7 @@ export class PgPaperStore implements PaperStore {
 
   async reset(account: string) {
     await this.sql`DELETE FROM paper_positions WHERE account = ${account}`;
+    await this.sql`DELETE FROM paper_orders WHERE account = ${account}`;
     await this.sql`DELETE FROM paper_trades WHERE account = ${account}`;
   }
 

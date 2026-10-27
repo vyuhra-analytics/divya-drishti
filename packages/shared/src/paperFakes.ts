@@ -1,11 +1,12 @@
 // An in-memory PaperStore for tests of the paper engine (no database).
-import type { PaperPosition, PaperTrade } from "./paper";
+import type { PaperPosition, PaperTrade, PendingOrder } from "./paper";
 import type { AccountRow, AuditEntry, PaperStore } from "./paperServer";
 
 export class FakeStore implements PaperStore {
   accounts = new Map<string, AccountRow>([["main", { id: "main", capital: 500_000, slippage: 1 }]]);
   pos = new Map<string, { account: string; position: PaperPosition }>();
   tr: { account: string; trade: PaperTrade }[] = [];
+  waiting = new Map<string, { account: string; order: PendingOrder }>();
   log: AuditEntry[] = [];
   async listAccounts() {
     return [...this.accounts.values()];
@@ -32,6 +33,18 @@ export class FakeStore implements PaperStore {
   async deletePosition(_account: string, id: string) {
     this.pos.delete(id);
   }
+  async pendingOrders(account: string) {
+    return [...this.waiting.values()].filter((x) => x.account === account).map((x) => x.order);
+  }
+  async allPending() {
+    return [...this.waiting.values()];
+  }
+  async savePending(account: string, order: PendingOrder) {
+    this.waiting.set(order.id, { account, order });
+  }
+  async deletePending(_account: string, id: string) {
+    this.waiting.delete(id);
+  }
   async trades(account: string, limit: number) {
     return this.tr.filter((x) => x.account === account).map((x) => x.trade).reverse().slice(0, limit);
   }
@@ -46,6 +59,7 @@ export class FakeStore implements PaperStore {
   }
   async reset(account: string) {
     for (const [id, x] of this.pos) if (x.account === account) this.pos.delete(id);
+    for (const [id, x] of this.waiting) if (x.account === account) this.waiting.delete(id);
     this.tr = this.tr.filter((x) => x.account !== account);
   }
   async ordersSince(account: string, actor: string, since: number) {

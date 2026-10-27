@@ -63,6 +63,15 @@ test("the panel shows the server account and places an order through the API", a
   expect(await screen.findByRole("cell", { name: /^Long$/ })).toBeTruthy();
 });
 
+test("an entry price turns the ticket into a limit order and the body carries it", async () => {
+  render(<PaperWidget widget={widget} />);
+  const entry = (await screen.findByLabelText(/Entry \(empty = current price\)/)) as HTMLInputElement;
+  fireEvent.change(entry, { target: { value: "9300" } });
+  fireEvent.click(await screen.findByText(/Place limit buy 1 lot Crude Oil at 9300/));
+  const post = await waitFor(() => calls.find((c) => c.path.endsWith("/orders"))!);
+  expect(post.body).toEqual({ symbol: SYM, side: "buy", lots: 1, entry: 9300 });
+});
+
 test("a trade an agent places over MCX appears in the panel when the stream announces it, tagged as Claude's", async () => {
   render(<PaperWidget widget={widget} />);
   await screen.findByText("None."); // no open positions yet

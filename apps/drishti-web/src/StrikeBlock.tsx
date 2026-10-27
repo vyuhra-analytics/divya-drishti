@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { DAY_RULES, nearestWalls, type Chain, type DaySide, type StrikeSuggestion } from "@drishti/shared";
 import { sendWatch, useStore } from "./store";
 
@@ -11,8 +12,9 @@ const rs = (v: number) => `₹${Math.round(v).toLocaleString("en-IN")}`;
 const LIVE_MS = 10_000;
 
 export function StrikeBlock({ strike, chain, side, price }: { strike: StrikeSuggestion; chain: Chain | null | undefined; side?: DaySide; price?: number }) {
-  const options = useStore((s) => s.options);
   const keys = useMemo(() => strike.rows.map((r) => r.leg?.ukey).filter((k): k is string => !!k), [strike.rows]);
+  // only the five strikes' quotes: the whole options map changes on every tick of every contract
+  const options = useStore(useShallow((s) => Object.fromEntries(keys.map((k) => [k, s.options[k]]))));
   useEffect(() => {
     if (!keys.length) return;
     sendWatch(keys);

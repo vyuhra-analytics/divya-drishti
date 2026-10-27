@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ACCOUNT_ID, instrument, lotUnits, tickSize, unrealisedNet, type FillDetail, type PaperTrade, type Side } from "@drishti/shared";
 import { paperCall, usePaperAccount } from "./paperClient";
 import { PaperOptionTicket } from "./PaperOptionTicket";
@@ -36,14 +37,14 @@ export function PaperWidget({ widget }: { widget: Widget }) {
   const inst = instrument(symbol);
   const locale = useSettings((s) => s.locale);
   const clock = useClock();
-  const quotes = useStore((s) => s.quotes);
-  const optionQuotes = useStore((s) => s.options);
   const [ticket, setTicket] = useState<"futures" | "options">("futures");
   const fresh = useFreshness(symbol);
   const [accountId, setAccountId] = useState(remembered);
   const { state, accounts, error, reload } = usePaperAccount(accountId);
   const [side, setSide] = useState<Side>("buy");
   const [lots, setLots] = useState(1);
+  const [entry, setEntry] = useState("");
+  const [taken, setTaken] = useState(false);
   const [stop, setStop] = useState("");
   const [target, setTarget] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -80,10 +81,16 @@ export function PaperWidget({ widget }: { widget: Widget }) {
   const nf = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
   const rs = (v: number) => `${v < 0 ? "−" : ""}₹${nf.format(Math.abs(v))}`;
   const px = (s: string, v: number) => v.toFixed(instrument(s)?.decimals ?? 2);
+  // only the quotes this panel shows (the linked contract and the futures positions): the whole quotes map changes on every tick of every instrument
+  const futuresKeys = [symbol, ...[...(state?.positions ?? []), ...(state?.pending ?? [])].filter((p) => !p.option).map((p) => p.symbol)];
+  const quotes = useStore(useShallow((s) => Object.fromEntries(futuresKeys.map((k) => [k, s.quotes[k]]))));
   const last = quotes[symbol]?.price;
   const mcx = inst?.exchange === "MCX" && lotUnits(symbol) !== undefined;
 
   // open P&L is marked at the live quotes this browser already receives, so it ticks without asking the server
+  // only the quotes of the option positions that are open: reading the whole options map would redraw this panel on every option tick of every contract
+  const heldOptionKeys = [...(state?.positions ?? []), ...(state?.pending ?? [])].filter((p) => p.option).map((p) => p.symbol);
+  const optionQuotes = useStore(useShallow((s) => Object.fromEntries(heldOptionKeys.map((k) => [k, s.options[k]]))));
   const opens = (state?.positions ?? []).map((p) => {
     const oq = p.option ? optionQuotes[p.symbol] : undefined;
     // a bid or ask of zero means nobody is quoting that side: left out, so a mark falls back to the last price
@@ -110,8 +117,10 @@ export function PaperWidget({ widget }: { widget: Widget }) {
     return r.ok;
   };
   const submit = async () => {
-    const ok = await run(() => paperCall(`/accounts/${accountId}/orders`, "POST", { symbol, side, lots, ...(stop !== "" ? { stop: Number(stop) } : {}), ...(target !== "" ? { target: Number(target) } : {}) }));
+    const ok = await run(() => paperCall(`/accounts/${accountId}/orders`, "POST", { symbol, side, lots, ...(entry !== "" ? { entry: Number(entry), ...(taken ? { filled: true } : {}) } : {}), ...(stop !== "" ? { stop: Number(stop) } : {}), ...(target !== "" ? { target: Number(target) } : {}) }));
     if (ok) {
+      setEntry("");
+      setTaken(false);
       setStop("");
       setTarget("");
     }
@@ -182,6 +191,15 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                     Lots
                     <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
                   </label>
+                  <label title="Leave it empty to trade at the current price. Type a price to place a limit order: it waits until the market reaches that price (a buy when the ask is at or under it, a sell when the bid is at or over it), for up to 24 hours.">
+                    Entry (empty = current price)
+                    <input type="number" step="any" value={entry} placeholder={last === undefined ? "current price" : px(symbol, side === "buy" ? (quotes[symbol]?.ask ?? last) : (quotes[symbol]?.bid ?? last))} onChange={(ev) => setEntry(ev.target.value)} />
+                  </label>
+                  {entry !== "" && (
+                    <label title="Tick this when you already took the trade at this price: it opens at once at exactly that price, so you can follow its profit and loss. Leave it off for a limit order that waits for the market.">
+                      <input type="checkbox" checked={taken} onChange={(ev) => setTaken(ev.target.checked)} /> Already taken at this price
+                    </label>
+                  )}
                   <label>
                     Stop (optional)
                     <input type="number" step="any" value={stop} placeholder={last === undefined ? "" : px(symbol, last * (side === "buy" ? 0.995 : 1.005))} onChange={(ev) => setStop(ev.target.value)} />
@@ -192,12 +210,58 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                   </label>
                 </div>
                 <button className="tf active" onClick={submit}>
-                  {side === "buy" ? "Buy" : "Sell"} {lots} lot{lots === 1 ? "" : "s"} {inst!.name} at market{last === undefined ? "" : ` (${px(symbol, last)})`}
+                  {entry !== "" ? `${taken ? "Record" : "Place limit"} ${side === "buy" ? "buy" : "sell"} ${lots} lot${lots === 1 ? "" : "s"} ${inst!.name} at ${entry}` : `${side === "buy" ? "Buy" : "Sell"} ${lots} lot${lots === 1 ? "" : "s"} ${inst!.name} at market${last === undefined ? "" : ` (${px(symbol, last)})`}`}
                 </button>
                 {fresh !== "live" && <span className="muted paper-state"> · market {fresh}: orders wait for a live price</span>}
               </>
             )}
             {msg && <p className="down">{msg}</p>}
+
+            {(state.pending?.length ?? 0) > 0 && (
+              <>
+                <h2>
+                  Waiting orders <small className="muted">· limit orders fill when the market reaches their price, or are cancelled after 24 hours</small>
+                </h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Contract</th>
+                      <th>Order</th>
+                      <th>Lots</th>
+                      <th>Limit</th>
+                      <th>Now</th>
+                      <th>Stop / target</th>
+                      <th>Placed</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(state.pending ?? []).map((o) => {
+                      const nowQ = o.option ? optionQuotes[o.symbol] : quotes[o.symbol];
+                      const ref = nowQ ? (o.side === "buy" ? (nowQ.ask && nowQ.ask > 0 ? nowQ.ask : nowQ.price) : (nowQ.bid && nowQ.bid > 0 ? nowQ.bid : nowQ.price)) : undefined;
+                      return (
+                        <tr key={o.id}>
+                          <td>{o.option ? o.option.label : o.symbol.split(":")[1]}</td>
+                          <td>{o.option ? "Buy limit" : o.side === "buy" ? "Buy limit" : "Sell limit"}</td>
+                          <td>{o.lots}</td>
+                          <td>{px(o.symbol, o.entry)}</td>
+                          <td className="muted">{ref === undefined ? "—" : px(o.symbol, ref)}</td>
+                          <td className="muted">
+                            {o.stop === undefined ? "—" : px(o.symbol, o.stop)} / {o.target === undefined ? "—" : px(o.symbol, o.target)}
+                          </td>
+                          <td className="muted">{clock.stamp(o.createdAt)}</td>
+                          <td>
+                            <button className="tf" onClick={() => run(() => paperCall(`/accounts/${accountId}/orders/${o.id}`, "DELETE"))}>
+                              Cancel
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
+            )}
 
             <h2>Open positions</h2>
             {opens.length === 0 ? (

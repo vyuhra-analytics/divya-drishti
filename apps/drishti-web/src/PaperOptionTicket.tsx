@@ -16,6 +16,8 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
   const [type, setType] = useState<"CE" | "PE">("CE");
   const [strike, setStrike] = useState<number | undefined>(undefined);
   const [lots, setLots] = useState(1);
+  const [entry, setEntry] = useState("");
+  const [taken, setTaken] = useState(false);
   const [stop, setStop] = useState("");
   const [target, setTarget] = useState("");
   const { chain, error } = useChain(underlying, expiry, "auto", 8);
@@ -92,6 +94,15 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
           Lots
           <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
         </label>
+        <label title="Leave it empty to buy at the current ask. Type a premium to place a limit order: it waits until the option's ask falls to it, for up to 24 hours.">
+          Entry (premium, empty = current ask)
+          <input type="number" step="any" value={entry} placeholder={ask === undefined ? "current ask" : num(ask)} onChange={(ev) => setEntry(ev.target.value)} />
+        </label>
+        {entry !== "" && (
+          <label title="Tick this when you already bought at this premium: it opens at once at exactly that price, so you can follow its profit and loss. Leave it off for a limit order that waits for the market.">
+            <input type="checkbox" checked={taken} onChange={(ev) => setTaken(ev.target.checked)} /> Already taken at this price
+          </label>
+        )}
         <label title="A premium: the position closes when the option's price falls to it">
           Stop (premium, optional)
           <input type="number" step="any" value={stop} placeholder={ask === undefined ? "" : num(ask * 0.7)} onChange={(ev) => setStop(ev.target.value)} />
@@ -107,14 +118,16 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
         className="tf active"
         disabled={!key || busy}
         onClick={async () => {
-          const ok = await onOrder({ option: { key }, side: "buy", lots, ...(stop !== "" ? { stop: Number(stop) } : {}), ...(target !== "" ? { target: Number(target) } : {}) });
+          const ok = await onOrder({ option: { key }, side: "buy", lots, ...(entry !== "" ? { entry: Number(entry), ...(taken ? { filled: true } : {}) } : {}), ...(stop !== "" ? { stop: Number(stop) } : {}), ...(target !== "" ? { target: Number(target) } : {}) });
           if (ok) {
+            setEntry("");
+            setTaken(false);
             setStop("");
             setTarget("");
           }
         }}
       >
-        Buy {lots} lot{lots === 1 ? "" : "s"} {name} at the ask{ask === undefined ? "" : ` (${num(ask)})`}
+        {entry !== "" ? `${taken ? "Record" : "Place limit"} buy ${lots} lot${lots === 1 ? "" : "s"} ${name} at ${entry}` : `Buy ${lots} lot${lots === 1 ? "" : "s"} ${name} at the ask${ask === undefined ? "" : ` (${num(ask)})`}`}
       </button>
       {ask !== undefined && leg && (
         <span className="muted paper-state">

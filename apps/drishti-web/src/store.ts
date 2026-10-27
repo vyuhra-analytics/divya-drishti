@@ -54,6 +54,22 @@ setInterval(() => {
   if (useStore.getState().status === "open" && Date.now() - lastMessageAt > SILENCE_MS) reconnect();
 }, 5_000);
 
+// Option quotes arrive by the hundred a second (every contract the stream watches, the recorder's too). One state change per message would copy the whole map and
+// wake every panel that reads options each time; they are collected and applied together at most every OPTION_FLUSH_MS, which is invisible on screen.
+const OPTION_FLUSH_MS = 250;
+const pendingOptions = new Map<string, OptionQuote>();
+let optionFlush: ReturnType<typeof setTimeout> | undefined;
+export function queueOption(q: OptionQuote) {
+  pendingOptions.set(q.key, q);
+  if (optionFlush !== undefined) return;
+  optionFlush = setTimeout(() => {
+    optionFlush = undefined;
+    const batch = Object.fromEntries(pendingOptions);
+    pendingOptions.clear();
+    useStore.setState((s) => ({ options: { ...s.options, ...batch } }));
+  }, OPTION_FLUSH_MS);
+}
+
 let ws: WebSocket | undefined;
 
 /** Tell the stream which option contracts this tab shows (it drops one nobody has asked for in 60 s); ignored while the socket is down. */
@@ -87,7 +103,7 @@ export function connectStream() {
         useStore.setState((s) => ({ briefingRev: s.briefingRev + 1 }));
         useAlerts.getState().push(`briefing-${msg.id}`, `Claude wrote a ${msg.bias} briefing on ${msg.symbol.split(":")[1]}: ${msg.verified} of ${msg.total} points checked against the data${msg.wrong ? `, ${msg.wrong} contradict it` : ""}`);
       }
-      if (msg.type === "opt" && msg.q?.key) useStore.setState((s) => ({ options: { ...s.options, [msg.q.key]: msg.q } }));
+      if (msg.type === "opt" && msg.q?.key) queueOption(msg.q);
       if (msg.type === "news") useStore.setState((s) => ({ news: dedupeNews(s.news, msg.items) }));
       if (msg.type === "hb" && msg.seen) useStore.setState((s) => ({ seen: { ...s.seen, ...msg.seen }, mcxStatus: msg.mcxStatus ?? undefined }));
       return;
