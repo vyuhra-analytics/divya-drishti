@@ -389,3 +389,5 @@ export * from "./investingCalendar";
 export * from "./forecastTable";
 
 export * from "./eiaStrategy";
+
+export * from "./sessionZones";
