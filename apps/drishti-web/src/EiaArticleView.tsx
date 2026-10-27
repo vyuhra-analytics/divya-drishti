@@ -27,7 +27,7 @@ const TIP = {
  * The release article for the report shown: the one the app writes from its own rules, and, once Claude has written one over MCP, that one beside it.
  * Each paragraph carries the result of the check of its figures against the data (a tick, a question mark, a cross). Export as markdown.
  */
-export function EiaArticleView({ report, forecast, active }: { report: EiaReportCode; forecast?: number; active: boolean }) {
+export function EiaArticleView({ report, week, forecast, active }: { report: EiaReportCode; /** a stored week to write about; leave out for the newest */ week?: string; forecast?: number; active: boolean }) {
   const clock = useClock();
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +39,7 @@ export function EiaArticleView({ report, forecast, active }: { report: EiaReport
     const ctrl = new AbortController();
     const load = () => {
       const q = new URLSearchParams({ report });
+      if (week) q.set("week", week);
       if (forecast !== undefined) q.set("forecast", String(forecast));
       fetch(`${apiUrl()}/eia-report/article?${q}`, { signal: ctrl.signal })
         .then(async (res) => {
@@ -59,7 +60,7 @@ export function EiaArticleView({ report, forecast, active }: { report: EiaReport
       ctrl.abort();
       clearInterval(id);
     };
-  }, [report, forecast, active]);
+  }, [report, week, forecast, active]);
 
   if (!active) return null;
   if (!data) return <p className="empty muted">{error ?? "Writing the article…"}</p>;

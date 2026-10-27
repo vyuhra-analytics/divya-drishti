@@ -156,6 +156,16 @@ export class PgEiaReportStore {
     return r[0] && { value: Number(r[0].value_num), source: r[0].source };
   }
 
+  /** The weeks of a report that are stored with their rows, newest first: what the panel's week picker offers. */
+  async weeks(report: EiaReportCode, limit = 400): Promise<{ weekEnding: string; officialReleaseAt?: number; backfilled: boolean }[]> {
+    const rows = (await this.sql`
+      SELECT e.key, a.official_release_at, a.backfilled
+      FROM economic_events e LEFT JOIN eia_report_arrivals a ON a.event_id = e.id
+      WHERE e.series_code = ${report} AND EXISTS (SELECT 1 FROM eia_report_values v WHERE v.event_id = e.id)
+      ORDER BY e.key DESC LIMIT ${limit}`) as { key: string; official_release_at: Date | null; backfilled: boolean | null }[];
+    return rows.map((r) => ({ weekEnding: r.key, officialReleaseAt: r.official_release_at ? new Date(r.official_release_at).getTime() : undefined, backfilled: Boolean(r.backfilled) }));
+  }
+
   /** The last arrivals, newest first: what the delay log shows. */
   async arrivals(limit = 20) {
     return (await this.sql`

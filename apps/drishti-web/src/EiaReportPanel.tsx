@@ -20,6 +20,12 @@ interface Loaded {
 const POLL_FAST_MS = 3000;
 const POLL_SLOW_MS = 60_000;
 
+interface StoredWeek {
+  weekEnding: string;
+  officialReleaseAt?: number;
+  backfilled: boolean;
+}
+
 const num = (n: number | undefined, dp = 1) => (n === undefined ? "" : n.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
 const signed = (n: number | undefined, dp = 1) => (n === undefined ? "" : `${n > 0 ? "+" : n < 0 ? "-" : ""}${num(Math.abs(n), dp)}`);
 const cls = (n: number | undefined) => (n === undefined || n === 0 ? "" : n > 0 ? "up" : "down");
@@ -106,14 +112,39 @@ export function EiaReportWidget(_: { widget: Widget }) {
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
   const [view, setView] = useState<"analysis" | "article">("analysis");
+  /** "" follows the newest stored report; a date shows that week (a report stored earlier, backfilled ones included) */
+  const [week, setWeek] = useState("");
+  const [weeks, setWeeks] = useState<StoredWeek[]>([]);
   const seenWeek = useRef<string | undefined>(undefined);
   const windowOpen = inReleaseWindow(now);
 
   const forecastParam = typed.trim() !== "" && Number.isFinite(Number(typed)) ? Number(typed) : undefined;
+  const live = week === ""; // only the newest report is watched closely: an older one does not change
+
+  // the weeks that can be picked, newest first; looked at again every minute so a report stored at the release appears
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const load = () =>
+      fetch(`${apiUrl()}/eia-report/weeks?report=${report}`, { signal: ctrl.signal })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const list = await res.json();
+          setWeeks(Array.isArray(list) ? list : []); // anything but a list leaves the picker with just "Latest"
+        })
+        .catch(() => undefined);
+    load();
+    const id = setInterval(load, POLL_SLOW_MS);
+    return () => {
+      ctrl.abort();
+      clearInterval(id);
+    };
+  }, [report]);
+
   useEffect(() => {
     const ctrl = new AbortController();
     const load = () => {
       const q = new URLSearchParams({ report });
+      if (week !== "") q.set("week", week);
       if (forecastParam !== undefined) q.set("forecast", String(forecastParam));
       fetch(`${apiUrl()}/eia-report?${q}`, { signal: ctrl.signal })
         .then(async (res) => {
@@ -124,7 +155,7 @@ export function EiaReportWidget(_: { widget: Widget }) {
           }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const d: Loaded = await res.json();
-          if (seenWeek.current !== undefined && seenWeek.current !== `${report}:${d.weekEnding}`) {
+          if (live && seenWeek.current !== undefined && seenWeek.current !== `${report}:${d.weekEnding}`) {
             setFresh(true);
             setTimeout(() => setFresh(false), 15_000);
           }
@@ -135,12 +166,12 @@ export function EiaReportWidget(_: { widget: Widget }) {
         .catch((e) => e.name !== "AbortError" && setError(e.message));
     };
     load();
-    const id = setInterval(load, windowOpen ? POLL_FAST_MS : POLL_SLOW_MS);
+    const id = setInterval(load, windowOpen && live ? POLL_FAST_MS : POLL_SLOW_MS);
     return () => {
       ctrl.abort();
       clearInterval(id);
     };
-  }, [report, forecastParam, windowOpen]);
+  }, [report, week, live, forecastParam, windowOpen]);
 
   const a = data?.analysis;
   const h = a?.headline;
@@ -153,12 +184,26 @@ export function EiaReportWidget(_: { widget: Widget }) {
             className={r === report ? "tf active" : "tf"}
             onClick={() => {
               seenWeek.current = undefined;
+              setWeek("");
+              setData(null);
               setReport(r);
             }}
           >
             {TITLE[r]}
           </button>
         ))}
+        <label className="er-week no-drag">
+          Week
+          <select aria-label="Week" value={week} onChange={(e) => (setData(null), setWeek(e.target.value))}>
+            <option value="">{weeks[0] ? `Latest (${weeks[0].weekEnding})` : "Latest"}</option>
+            {weeks.map((w) => (
+              <option key={w.weekEnding} value={w.weekEnding}>
+                {w.weekEnding}
+                {w.backfilled ? " · stored later" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="er-forecast">
           Forecast ({report === "WPSR" ? "MB" : "Bcf"})
           <input inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={data?.forecast ? `${data.forecast.value} (${data.forecast.source ?? "recorded"})` : "type the number"} aria-label="Forecast of the change" />
@@ -173,7 +218,7 @@ export function EiaReportWidget(_: { widget: Widget }) {
         </span>
         {windowOpen && <span className="er-live" title="A release is due: looking every 3 seconds">watching</span>}
       </div>
-      <EiaArticleView report={report} forecast={forecastParam} active={view === "article"} />
+      <EiaArticleView report={report} week={week || undefined} forecast={forecastParam} active={view === "article"} />
       {view === "analysis" && !data && <p className="empty muted">{error ?? "Loading the report…"}</p>}
       {view === "analysis" && data && h && a && (
         <div className="er-body" tabIndex={0} role="region" aria-label="EIA report analysis">
@@ -197,7 +242,7 @@ export function EiaReportWidget(_: { widget: Widget }) {
           <p className={`er-side ${h.side === "long" ? "up" : h.side === "short" ? "down" : "muted"}`}>{h.sideText}</p>
           <p className="muted er-meta">
             Week ending {data.weekEnding}
-            {data.officialReleaseAt && ` · released ${clock.time(data.officialReleaseAt)}`}
+            {data.officialReleaseAt && ` · released ${clock.stamp(data.officialReleaseAt)}`}
             {data.delayMs !== undefined && (data.backfilled ? " · stored later (catch-up)" : ` · stored ${(data.delayMs / 1000).toFixed(1)} s after the release`)}
           </p>
           {a.sections.map((s) => (

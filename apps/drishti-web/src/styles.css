@@ -703,3 +703,5 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .er-check.unverified { color: var(--muted); }
 .er-check.wrong { color: var(--down); }
 .er-art-foot { font-size: 10px; margin-top: 10px; }
+.er-week { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+.er-week select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; max-width: 170px; }
