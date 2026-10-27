@@ -46,3 +46,15 @@ test("withAlpha turns a hex colour into rgba and leaves anything else alone", ()
   expect(withAlpha("#ffa726", 0.5)).toBe("rgba(255, 167, 38, 0.5)");
   expect(withAlpha("red", 0.5)).toBe("red");
 });
+
+test("Power of 3 markers: a London sweep of the Asian high that closes back inside is a red arrow down on the confirming bar; switched off, none", () => {
+  const d = killzoneIndicator();
+  const bars = [];
+  for (let i = 0; i < 48; i++) bars.push(i % 2 ? { time: edt("2026-10-20", "20:00") + i * 300, open: 105, high: 110, low: 100, close: 105 } : bar(edt("2026-10-20", "20:00") + i * 300, 105));
+  for (let t = edt("2026-10-21", "00:00"); t < edt("2026-10-21", "04:00"); t += 300) bars.push(t === edt("2026-10-21", "03:00") ? { time: t, open: 108, high: 112, low: 107, close: 109 } : bar(t, 105));
+  const marks = d.markers!({ bars, values: {}, settings: settings() }) as unknown as { time: number; position: string; shape: string; text?: string }[];
+  expect(marks).toHaveLength(1);
+  expect(marks[0]).toMatchObject({ time: edt("2026-10-21", "03:00"), position: "aboveBar", shape: "arrowDown", text: "PO3 swept high" });
+  expect(d.markers!({ bars, values: {}, settings: settings({ show_po3: false }) })).toEqual([]);
+  expect(d.markerAnchor).toBe("price");
+});
