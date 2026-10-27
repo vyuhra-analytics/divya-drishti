@@ -58,3 +58,18 @@ test("Power of 3 markers: a London sweep of the Asian high that closes back insi
   expect(d.markers!({ bars, values: {}, settings: settings({ show_po3: false }) })).toEqual([]);
   expect(d.markerAnchor).toBe("price");
 });
+
+test("zone boxes name each killzone of the latest days with its high, low, range and average, and none when set to 0", () => {
+  const d = killzoneIndicator();
+  const bars = [];
+  for (const day of ["2026-10-20", "2026-10-21", "2026-10-22"]) for (let t = edt(day, "07:00"); t < edt(day, "10:00"); t += 60) bars.push({ time: t, open: 100, high: day === "2026-10-22" ? 104 : 101, low: day === "2026-10-22" ? 98 : 99, close: 100 });
+  const boxes = d.draws!({ bars, values: {}, settings: settings({ box_days: 2 }) }) as unknown as { kind: string; from: { time: number; price: number }; to: { time: number; price: number }; text: string }[];
+  expect(boxes).toHaveLength(2); // the latest two days only
+  const last = boxes[1];
+  expect(last.kind).toBe("box");
+  expect(last.from).toEqual({ time: edt("2026-10-22", "07:00"), price: 104 });
+  expect(last.to).toEqual({ time: edt("2026-10-22", "10:00"), price: 98 });
+  expect(last.text).toBe(["New York AM", "H 104  L 98", "Range 6  Avg 100"].join("\n"));
+  expect(d.draws!({ bars, values: {}, settings: settings({ box_days: 0 }) })).toEqual([]);
+  expect(d.draws!({ bars, values: {}, settings: settings({ box_days: 2, show_nyam: false }) })).toEqual([]);
+});

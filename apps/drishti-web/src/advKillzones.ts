@@ -1,5 +1,5 @@
 import type { Bar, IndicatorDescriptor, IndicatorInput, IndicatorSettings } from "openalgo-charts";
-import { po3Sweeps, sessionLevels, zoneAt, ZONES, type ZoneId } from "@drishti/shared";
+import { po3Sweeps, sessionLevels, zoneAt, zoneDays, ZONES, type ZoneId } from "@drishti/shared";
 
 // ICT killzones on the advanced chart: the five usual windows (New York time) shaded behind the candles, the New York day's midnight open, and the
 // range of the Asian window that just ended. A plain indicator of the library (no data of its own: it reads the chart's bars), so it works on every
@@ -31,6 +31,7 @@ const inputs: IndicatorInput[] = [
   { key: "show_midnight", type: "boolean", label: "Midnight open (00:00 NY)", default: true, group: "Levels" },
   { key: "show_asia", type: "boolean", label: "Asian range (needs bars covering 20:00-24:00 NY)", default: true, group: "Levels" },
   { key: "show_po3", type: "boolean", label: "Power of 3 sweep markers (London sweep of the Asian range, then a close back inside)", default: true, group: "Levels" },
+  { key: "box_days", type: "number", label: "Zone boxes for the latest days (high, low, range, average; 0 = none)", default: 2, min: 0, max: 10, step: 1, group: "Levels" },
 ];
 
 function hhmm(minutes: number): string {
@@ -58,6 +59,20 @@ export function killzoneIndicator(): IndicatorDescriptor {
         asiaHigh: on(settings, "show_asia") ? lv.asiaHigh : blank,
         asiaLow: on(settings, "show_asia") ? lv.asiaLow : blank,
       };
+    },
+    draws({ bars, settings }) {
+      const n = Math.max(0, Math.min(10, Math.floor(Number(settings.box_days ?? 2))));
+      if (!n) return [];
+      const only = enabled(settings);
+      const all = zoneDays(bars).filter((z) => z.killzone && only.includes(z.window as ZoneId));
+      const last = new Set([...new Set(all.map((z) => z.day))].slice(-n));
+      const f = (v: number) => String(Number(v.toFixed(2)));
+      return all
+        .filter((z) => last.has(z.day))
+        .map((z) => {
+          const color = String(settings[`color_${z.window}`] ?? COLORS[z.window as ZoneId]);
+          return { kind: "box", from: { time: z.start, price: z.high }, to: { time: z.end, price: z.low }, color, fillColor: color, opacity: 0.05, lineWidth: 1, text: [z.label, `H ${f(z.high)}  L ${f(z.low)}`, `Range ${f(z.range)}  Avg ${f(z.average)}`].join("\n"), fontSize: 10, verticalAlign: "top", align: "left" } as const;
+        }) as never;
     },
     markerAnchor: "price",
     markers({ bars, settings }) {

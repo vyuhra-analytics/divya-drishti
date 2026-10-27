@@ -22,6 +22,7 @@ import {
 import { apiUrl, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import { EiaReplayView } from "./EiaReplayView";
+import { TimeProfileView } from "./TimeProfileView";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
 const TFS = ["5m", "15m", "1h", "1d"] as const;
@@ -39,9 +40,9 @@ interface Outcome {
   verdict: Verdict;
 }
 
-/** The strategy tester: price strategies on the provider history, or the EIA report-day strategy replayed over the one-minute candles we hold. */
+/** The strategy tester: price strategies on the provider history, the EIA report-day strategy replayed over the one-minute candles we hold, or the time-of-day profile of when the market is busy. */
 export function BacktestWidget({ widget }: { widget: Widget }) {
-  const [mode, setMode] = useState<"price" | "eia">("price");
+  const [mode, setMode] = useState<"price" | "eia" | "time">("price");
   return (
     <div className="bt-modes">
       <div className="toolbar no-drag" role="group" aria-label="Test type">
@@ -51,8 +52,11 @@ export function BacktestWidget({ widget }: { widget: Widget }) {
         <button className={mode === "eia" ? "tf active" : "tf"} onClick={() => setMode("eia")}>
           EIA report day
         </button>
+        <button className={mode === "time" ? "tf active" : "tf"} onClick={() => setMode("time")}>
+          Time of day
+        </button>
       </div>
-      {mode === "eia" ? <EiaReplayView /> : <PriceTester widget={widget} />}
+      {mode === "eia" ? <EiaReplayView /> : mode === "time" ? <TimeProfileView /> : <PriceTester widget={widget} />}
     </div>
   );
 }

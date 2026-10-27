@@ -393,3 +393,5 @@ export * from "./eiaStrategy";
 export * from "./sessionZones";
 
 export * from "./po3";
+
+export * from "./zoneStats";
