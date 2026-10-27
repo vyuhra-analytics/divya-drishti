@@ -34,7 +34,7 @@ export interface Preset {
 }
 
 /**
- * Ready-made desks, F1…F7; saved workspaces follow them (F8…F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
+ * Ready-made desks, F1…F8; saved workspaces follow them (F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
  * comfortable), so 28 rows fit a 1080p monitor without scrolling in compact, and every desk's first screen is built to that height (the Report prep desk scrolls for its last row).
  * `docs/redesign/RESEARCH_DESK.md` says what question each desk answers. The Evening desk here is an interim of today's panels for the
  * evening session; the purpose-built evening screen (`EIA_SCREENS.md`) replaces it when it is built.
@@ -121,8 +121,18 @@ export const PRESETS: Preset[] = [
     hint: "The EIA print: the chart on the left; on the right the forecast and the surprise, the range of the last hour, each 5-minute candle after the print, the entry levels and the option to buy",
     build: () =>
       snapshot("reportday", [
-        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 8, 28],
-        ["reportday-1", "reportday", null, "MCX:CRUDEOIL", "5m", 8, 0, 4, 28],
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 7, 28],
+        ["reportday-1", "reportday", null, "MCX:CRUDEOIL", "5m", 7, 0, 5, 28],
+      ]),
+  },
+  {
+    key: "usib",
+    name: "USIB",
+    hint: "Non-report days: the chart on the left; on the right the range of the hour before the US open, each 5-minute candle with its volume and VWAP side, the one signal, the levels, the option to buy and your trade",
+    build: () =>
+      snapshot("usib", [
+        ["chart-1", "advchart", "amber", "MCX:CRUDEOIL", "5m", 0, 0, 7, 28],
+        ["usib-1", "usib", null, "MCX:CRUDEOIL", "5m", 7, 0, 5, 28],
       ]),
   },
 ];

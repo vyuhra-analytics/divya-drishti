@@ -37,3 +37,7 @@ Checked against `USER_AND_JOBS.md` (the owner's jobs and decisions), `EIA_SCREEN
 5. Widen Report day and collapse blocks during a trade.
 
 Each is a day-sized piece except the Levels study, which starts with a spike.
+
+## Status (2026-10-27, later the same day)
+
+Done from the suggested order: 1 (USIB panel and desk F8, with its defaults named), 2 (the next-event strip in the top bar), 3 (the Strategy levels study fed by the panels; the clean chart mode is NOT done), 4 (the strike block with live premiums and the OI walls), 5 (the panels widened to 5 columns and folded once a trade is recorded). Still open from the review: the chart's "Saved chart settings could not be read" message (check in the owner's own browser), one journal for paper and real trades, the compact option chain on the Evening desk itself, the Quote panel's clipping, and the Evening desk (F1) itself, which is unchanged.

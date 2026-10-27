@@ -92,6 +92,42 @@ describe("trackTrade", () => {
   });
 });
 
+describe("USIB: trailing after TP2 and its own time stop", () => {
+  const usib: ManualTrade = { ...long, trail: 1.5, timeStop: { fromMin: 150, toMin: 180 } };
+  const c = (n: number, high: number, low: number, close: number): DayBar => ({ ...candle(n, high, low), close });
+
+  it("TP2 does not close the trade: the stop then trails under the best close, and the trade ends when it is touched", () => {
+    const v = trackTrade(usib, [c(1, 102.5, 100.5, 102), c(2, 104.5, 103, 104), c(3, 106, 103, 105.5), c(4, 105.9, 103.9, 104)], 104.5, undefined, NOW);
+    expect(v.events.map((e) => [e.kind, e.price])).toEqual([["tp1", 102], ["tp2", 104], ["stop", 104]]); // best close 105.5 minus 1.5 = 104; the low 103.9 touches it
+    expect(v.status).toBe("stopped");
+    expect(v.trailing).toBe(true);
+  });
+
+  it("the trail is never loosened: a worse close does not lower it", () => {
+    const v = trackTrade(usib, [c(1, 102.5, 100.5, 102), c(2, 104.5, 103, 104), c(3, 106, 103, 105.5), c(4, 105, 104.4, 104.6)], 104.8, undefined, NOW);
+    expect(v.status).toBe("open");
+    expect(v.stop).toBeCloseTo(104, 9); // 105.5 - 1.5, not 104.6 - 1.5
+    expect(v.trailing).toBe(true);
+  });
+
+  it("without a trail TP2 still ends the follow-up (the report-day trade)", () => {
+    expect(trackTrade(long, [c(1, 104.5, 100.5, 104)], 104, undefined, NOW).status).toBe("tp2");
+  });
+
+  it("the time stop window follows the trade's own offsets", () => {
+    expect(trackTrade(usib, [], 100, undefined, REL + 100 * 60_000).timeStop.state).toBe("before");
+    expect(trackTrade(usib, [], 100, undefined, REL + 160 * 60_000).timeStop).toEqual({ opensAt: REL + 150 * 60_000, hardAt: REL + 180 * 60_000, state: "window" });
+  });
+
+  it("a short trails above the best close", () => {
+    const sh: ManualTrade = { ...short, trail: 1.5 };
+    const v = trackTrade(sh, [c(1, 99.5, 97.5, 98), c(2, 97, 95.5, 96), c(3, 96.5, 94, 94.5)], 94.6, undefined, NOW);
+    expect(v.events.map((e) => e.kind)).toEqual(["tp1", "tp2"]);
+    expect(v.stop).toBeCloseTo(96, 9); // best close 94.5 + 1.5
+    expect(v.status).toBe("open");
+  });
+});
+
 describe("review", () => {
   const closed = (over: Partial<ClosedTrade> = {}): ClosedTrade => ({ ...long, events: [{ kind: "tp1", at: ENTER + 60_000 }], exitedAt: ENTER + 25 * 60_000, exitPremium: 230, reason: "tp1", note: "", ...over });
 

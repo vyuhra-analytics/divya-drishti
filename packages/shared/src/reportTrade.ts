@@ -26,6 +26,10 @@ export interface ManualTrade {
   delta?: number;
   /** what the trade has done so far (kept so a reload does not forget it) */
   events: TradeEvent[];
+  /** USIB: the time stop window in minutes after `releaseAt` (the anchor), when it is not the report day's 90 to 120 */
+  timeStop?: { fromMin: number; toMin: number };
+  /** USIB: after TP2 the trade is NOT closed; the stop trails this many points under the best close (a long) or over it (a short), updated at each candle close, never loosened */
+  trail?: number;
 }
 
 export type TradeEventKind = "tp1" | "tp2" | "stop" | "cap" | "timestop-open" | "timestop";
@@ -47,6 +51,8 @@ export interface TradeView {
   /** the stop in force: the entry once TP1 has been reached */
   stop: number;
   stopAtEntry: boolean;
+  /** the stop is trailing the best close (USIB, after TP2) */
+  trailing: boolean;
   /** the option marked at its bid, and the rupee result against the premium paid; undefined without a quote */
   optionBid?: number;
   pnl?: number;
@@ -80,48 +86,61 @@ export function trackTrade(trade: ManualTrade, bars: readonly DayBar[], price: n
 
   const entryCandle = Math.floor(trade.enteredAt / 1000 / DAY_RULES.candleSec) * DAY_RULES.candleSec;
   // the candles after the entry one with their whole range, then the live price as a point
-  const steps: { at: number; high: number; low: number }[] = [...bars]
+  const steps: { at: number; high: number; low: number; close: number }[] = [...bars]
     .filter((b) => b.time > entryCandle)
     .sort((a, b) => a.time - b.time)
-    .map((b) => ({ at: (b.time + DAY_RULES.candleSec) * 1000, high: b.high, low: b.low }));
-  if (price !== undefined) steps.push({ at: now, high: price, low: price });
+    .map((b) => ({ at: (b.time + DAY_RULES.candleSec) * 1000, high: b.high, low: b.low, close: b.close }));
+  if (price !== undefined) steps.push({ at: now, high: price, low: price, close: price });
 
-  let tp1Before = has(events, "tp1"); // the stop sits at the entry from the candle AFTER the one that reached TP1
-  let status: TradeStatus = has(events, "stop") ? "stopped" : has(events, "tp2") ? "tp2" : "open";
+  // the stop in force for the NEXT candle: the original, then the entry after TP1, then (USIB) trailing under the best close after TP2
+  let stopNow = has(events, "tp1") ? trade.futureEntry : trade.stop;
+  let bestClose: number | undefined;
+  let trailing = false;
+  let status: TradeStatus = has(events, "stop") ? "stopped" : !trade.trail && has(events, "tp2") ? "tp2" : "open";
   for (const s of status === "open" ? steps : []) {
-    const stopLevel = tp1Before ? trade.futureEntry : trade.stop;
     const best = dir === 1 ? s.high : s.low;
     const worst = dir === 1 ? s.low : s.high;
-    if (dir === 1 ? worst <= stopLevel : worst >= stopLevel) {
-      add("stop", s.at, stopLevel);
+    if (dir === 1 ? worst <= stopNow : worst >= stopNow) {
+      add("stop", s.at, stopNow);
       status = "stopped";
       break;
     }
     const reached = (level: number) => (dir === 1 ? best >= level : best <= level);
-    if (reached(trade.tp1)) add("tp1", s.at, trade.tp1);
+    const tp1Now = reached(trade.tp1);
+    if (tp1Now) add("tp1", s.at, trade.tp1);
     if (reached(trade.tp2)) {
       add("tp2", s.at, trade.tp2);
-      status = "tp2";
-      break;
+      if (!trade.trail) {
+        status = "tp2";
+        break;
+      }
     }
-    tp1Before = has(events, "tp1");
+    // the levels move at the candle's close and apply from the next candle
+    if (has(events, "tp1") || tp1Now) stopNow = dir === 1 ? Math.max(stopNow, trade.futureEntry) : Math.min(stopNow, trade.futureEntry);
+    if (trade.trail && has(events, "tp2")) {
+      bestClose = bestClose === undefined ? s.close : dir === 1 ? Math.max(bestClose, s.close) : Math.min(bestClose, s.close);
+      const trail = bestClose - dir * trade.trail;
+      stopNow = dir === 1 ? Math.max(stopNow, trail) : Math.min(stopNow, trail);
+      trailing = true;
+    }
   }
 
   const stopAtEntry = has(events, "tp1");
-  const stop = stopAtEntry ? trade.futureEntry : trade.stop;
+  const stop = stopNow;
   const move = price === undefined ? 0 : dir * (price - trade.futureEntry);
   const rupeeR = trade.delta === undefined ? undefined : trade.rPoints * Math.abs(trade.delta) * trade.units * trade.lots;
   const pnl = optionBid === undefined ? undefined : (optionBid - trade.premium) * trade.units * trade.lots;
   const capHit = (pnl !== undefined && pnl <= -DAY_RULES.lossCap) || has(events, "cap");
   if (pnl !== undefined && pnl <= -DAY_RULES.lossCap) add("cap", now);
 
-  const opensAt = trade.releaseAt + TIME_STOP.fromMin * 60_000;
-  const hardAt = trade.releaseAt + TIME_STOP.toMin * 60_000;
+  const ts = trade.timeStop ?? TIME_STOP;
+  const opensAt = trade.releaseAt + ts.fromMin * 60_000;
+  const hardAt = trade.releaseAt + ts.toMin * 60_000;
   const state = now >= hardAt ? "past" : now >= opensAt ? "window" : "before";
   if (now >= opensAt) add("timestop-open", opensAt);
   if (now >= hardAt) add("timestop", hardAt);
 
-  return { status, move, rMultiple: trade.rPoints > 0 ? move / trade.rPoints : 0, stop, stopAtEntry, optionBid, pnl, rupeeR, capHit, timeStop: { opensAt, hardAt, state }, events, fresh };
+  return { status, move, rMultiple: trade.rPoints > 0 ? move / trade.rPoints : 0, stop, stopAtEntry, trailing, optionBid, pnl, rupeeR, capHit, timeStop: { opensAt, hardAt, state }, events, fresh };
 }
 
 export type TradeExitReason = "stop" | "tp1" | "tp2" | "cap" | "time" | "manual";

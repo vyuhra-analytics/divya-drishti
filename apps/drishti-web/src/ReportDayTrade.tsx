@@ -3,6 +3,7 @@ import { DAY_RULES, gaugePosition, reviewTrade, suggestedReason, trackTrade, typ
 import { sendWatch, useStore } from "./store";
 import { useClock } from "./settings";
 import { loadRecord, saveRecord, type DayRecord } from "./reportDayStore";
+import { usePublishLevels } from "./strategyLevels";
 
 // The in-trade and done stages of the report-day screen: the trader says when they entered and exited (by hand: no order is ever placed here), and the
 // screen follows the trade in between: the future against entry / stop / TP1 / TP2, the result in R, the option's rupee result against the loss cap, the
@@ -14,18 +15,26 @@ const REASONS: Record<TradeExitReason, string> = { stop: "Stopped out", tp1: "To
 
 const EVENT_TEXT: Record<TradeEvent["kind"], string> = {
   tp1: "TP1 reached: move the stop to your entry",
-  tp2: "TP2 reached: take the rest",
+  tp2: "TP2 reached: take the rest (USIB: the stop now trails)",
   stop: "STOP level reached: get out",
   cap: `The loss has reached the ₹${DAY_RULES.lossCap.toLocaleString("en-IN")} cap: get out`,
   "timestop-open": "The time stop window has opened: exit by the end of it",
   timestop: "TIME STOP: exit now",
 };
 
+/** what the entry form needs of a signal: the report-day's or USIB's */
+export type TradeSignal = Pick<DaySignal, "side" | "candleTime" | "entry" | "rPoints"> & { tp2?: number; trail?: number };
+
 interface Props {
+  /** the moment the day's clocks run from: the print (report day) or the US open (USIB) */
   releaseAt: number;
+  /** where the record is kept; the print's time for the report day, "usib:" + the open's time for USIB */
+  recordKey?: number | string;
+  /** USIB: the time stop window in minutes after `releaseAt` */
+  timeStop?: { fromMin: number; toMin: number };
   symbol: string;
   /** the signal and the strike suggested for it, to prefill the entry */
-  signal?: DaySignal;
+  signal?: TradeSignal;
   pick?: StrikePick;
   /** units per lot of the option */
   units: number;
@@ -37,15 +46,17 @@ interface Props {
   onEvent: (message: string) => void;
 }
 
-export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, now, chainBid, onEvent }: Props) {
+export function ReportDayTrade({ releaseAt, recordKey, timeStop, symbol, signal, pick, units, bars, now, chainBid, onEvent }: Props) {
+  const key = recordKey ?? releaseAt;
   const clock = useClock();
-  const [rec, setRec] = useState<DayRecord>(() => loadRecord(releaseAt));
+  const [rec, setRec] = useState<DayRecord>(() => loadRecord(key));
   const [entering, setEntering] = useState(false);
   const [exiting, setExiting] = useState(false);
-  useEffect(() => setRec(loadRecord(releaseAt)), [releaseAt]);
-  const update = (patch: Partial<DayRecord>) => setRec(saveRecord(releaseAt, patch));
+  useEffect(() => setRec(loadRecord(key)), [key]);
+  const update = (patch: Partial<DayRecord>) => setRec(saveRecord(key, patch));
 
   const trade = rec.trade;
+  const releaseLabel = typeof key === "string" && key.startsWith("usib") ? "USIB" : "Report day";
   const price = useStore((s) => s.quotes[symbol]?.price);
   const liveOption = useStore((s) => (trade?.optionKey ? s.options[trade.optionKey] : undefined));
   // follow the option's own live quote while the trade is open (the stream drops a contract nobody asked for in 60 s)
@@ -59,11 +70,24 @@ export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, n
   const optionBid = trade ? (liveOption?.bid && liveOption.bid > 0 ? liveOption.bid : (chainBid?.(trade.strike, trade.side) ?? liveOption?.price)) : undefined;
   const view = useMemo(() => (trade && !rec.closed ? trackTrade(trade, bars, price, optionBid, now) : undefined), [trade, rec.closed, bars, price, optionBid, Math.floor(now / 1000)]);
 
+  // the trade's own levels on the chart while it is open: the entry, the stop in force (it moves to the entry and then trails), TP1 and TP2
+  usePublishLevels(
+    `trade:${key}`,
+    trade && !rec.closed
+      ? [
+          { price: trade.futureEntry, title: "Your entry", color: "#e0e0e0", style: "solid" },
+          { price: view?.stop ?? trade.stop, title: view?.trailing ? "Stop (trailing)" : view?.stopAtEntry ? "Stop (at entry)" : "Stop 1R", color: "#ef5350", style: "solid" },
+          { price: trade.tp1, title: "TP1", color: "#66bb6a", style: "solid" },
+          { price: trade.tp2, title: "TP2", color: "#43a047", style: "solid" },
+        ]
+      : [],
+  );
+
   // a new milestone is saved with the trade (so a reload does not repeat it) and announced once
   useEffect(() => {
     if (!trade || !view || view.fresh.length === 0) return;
     update({ trade: { ...trade, events: view.events } });
-    for (const e of view.fresh) onEvent(`Report day: ${EVENT_TEXT[e.kind]}`);
+    for (const e of view.fresh) onEvent(`${releaseLabel}: ${EVENT_TEXT[e.kind]}`);
   }, [view?.fresh.length, view?.events.length]);
 
   // ---- done: the review
@@ -122,12 +146,12 @@ export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, n
           <span className="rd-tick" style={{ left: "0%" }}>stop −1R</span>
           <span className="rd-tick" style={{ left: "33.3%" }}>entry</span>
           <span className="rd-tick" style={{ left: "66.7%" }}>TP1 +1R</span>
-          <span className="rd-tick" style={{ left: "100%" }}>TP2 +2R</span>
+          <span className="rd-tick" style={{ left: "100%" }}>TP2</span>
           <i className="rd-mark" style={{ left: `${gaugePosition(view.rMultiple) * 100}%` }} />
         </div>
         <table className="bt-num rd-table">
           <tbody>
-            <tr><td>Stop</td><td>{level(view.stop)}</td><td className="muted">{view.stopAtEntry ? "moved to your entry" : `${dir === 1 ? "below" : "above"} your entry`}</td></tr>
+            <tr><td>Stop</td><td>{level(view.stop)}</td><td className="muted">{view.trailing ? `trailing ${trade.trail !== undefined ? num(trade.trail, 1) : ""} points under the best close` : view.stopAtEntry ? "moved to your entry" : `${dir === 1 ? "below" : "above"} your entry`}</td></tr>
             <tr><td>Entry (future)</td><td>{level(trade.futureEntry)}</td><td className="muted">R = {num(trade.rPoints, 1)} points</td></tr>
             <tr className={view.events.some((e) => e.kind === "tp1") ? "up" : ""}><td>TP1</td><td>{level(trade.tp1)}</td><td className="muted">{view.events.some((e) => e.kind === "tp1") ? "reached" : `${num(Math.abs(trade.tp1 - (price ?? trade.futureEntry)), 1)} away`}</td></tr>
             <tr className={view.events.some((e) => e.kind === "tp2") ? "up" : ""}><td>TP2</td><td>{level(trade.tp2)}</td><td className="muted">{view.events.some((e) => e.kind === "tp2") ? "reached" : `${num(Math.abs(trade.tp2 - (price ?? trade.futureEntry)), 1)} away`}</td></tr>
@@ -176,6 +200,7 @@ export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, n
           pick={pick}
           units={units}
           price={price}
+          timeStop={timeStop}
           onCancel={() => setEntering(false)}
           onSubmit={(t) => {
             update({ trade: { ...t, releaseAt, events: [] } });
@@ -192,7 +217,7 @@ export function ReportDayTrade({ releaseAt, symbol, signal, pick, units, bars, n
   );
 }
 
-function EnterForm({ signal, pick, units, price, onSubmit, onCancel }: { signal: DaySignal; pick?: StrikePick; units: number; price?: number; onSubmit: (t: Omit<ManualTrade, "releaseAt" | "events">) => void; onCancel: () => void }) {
+function EnterForm({ signal, pick, units, price, timeStop, onSubmit, onCancel }: { signal: TradeSignal; pick?: StrikePick; units: number; price?: number; timeStop?: { fromMin: number; toMin: number }; onSubmit: (t: Omit<ManualTrade, "releaseAt" | "events">) => void; onCancel: () => void }) {
   const [future, setFuture] = useState(String(signal.entry ?? price ?? ""));
   const [strike, setStrike] = useState(String(pick?.strike ?? ""));
   const [premium, setPremium] = useState(String(pick?.premium ?? ""));
@@ -216,7 +241,9 @@ function EnterForm({ signal, pick, units, price, onSubmit, onCancel }: { signal:
         e.preventDefault();
         if (!ok || r === undefined) return;
         const dir = signal.side === "long" ? 1 : -1;
-        onSubmit({ enteredAt: Date.now(), side: signal.side, futureEntry: f, rPoints: r, stop: f - dir * r, tp1: f + dir * r, tp2: f + dir * 2 * r, strike: s, optionKey: pick && pick.strike === s ? pick.key : undefined, premium: p, units, lots: l, delta: pick && pick.strike === s ? pick.delta : undefined });
+        const tp1 = f + dir * r;
+        const tp2 = signal.tp2 !== undefined && dir * (signal.tp2 - tp1) > 0 ? signal.tp2 : f + dir * 2 * r; // USIB brings a chain level; otherwise 2R
+        onSubmit({ enteredAt: Date.now(), side: signal.side, futureEntry: f, rPoints: r, stop: f - dir * r, tp1, tp2, trail: signal.trail, timeStop, strike: s, optionKey: pick && pick.strike === s ? pick.key : undefined, premium: p, units, lots: l, delta: pick && pick.strike === s ? pick.delta : undefined });
       }}
     >
       <label>Future entry price<input inputMode="decimal" value={future} onChange={(e) => setFuture(e.target.value)} /></label>

@@ -5,6 +5,8 @@ import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
 import { notify } from "./alertEngine";
 import { ReportDayTrade } from "./ReportDayTrade";
+import { StrikeBlock } from "./StrikeBlock";
+import { usePublishLevels } from "./strategyLevels";
 import { loadRecord, saveRecord } from "./reportDayStore";
 import { useStore } from "./store";
 import { useNow } from "./market";
@@ -179,6 +181,19 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const signal = watch?.signal;
   const strike = useMemo(() => suggestStrike(chain, signal?.side ?? side, signal?.rPoints), [chain, signal?.side, signal?.rPoints, side]);
 
+  // the range and the signal's levels on the chart (the trade's own levels are published by the trade block)
+  const tradingNow = release ? !!loadRecord(release.at).trade : false;
+  usePublishLevels("reportday:range", range ? [{ price: range.high, title: "Range high", color: "#42a5f5", style: "solid" }, { price: range.low, title: "Range low", color: "#42a5f5", style: "solid" }] : []);
+  usePublishLevels(
+    "reportday:signal",
+    signal && !tradingNow ? [
+      { price: signal.entry ?? NaN, title: "Entry (next open)", color: "#e0e0e0" },
+      { price: signal.stop ?? NaN, title: "Stop 1R", color: "#ef5350" },
+      { price: signal.tp1 ?? NaN, title: "TP1 +1R", color: "#66bb6a" },
+      { price: signal.tp2 ?? NaN, title: "TP2 +2R", color: "#43a047" },
+    ] : [],
+  );
+
   // announcements: a toast, a beep and a desktop notice, once each per release, and only while it is live (never for a print that came out hours ago)
   const announced = useRef<Set<string>>(new Set());
   const say = (key: string, message: string) => {
@@ -211,6 +226,7 @@ export function ReportDayWidget(_: { widget: Widget }) {
   // the trader's own stages follow the clock's: once they say they entered, the strip says "In trade", and "Done" after the exit
   const rec = loadRecord(release.at);
   const phase = rec.closed ? "Done" : rec.trade ? "In trade" : STAGE_NAME[stage];
+  const trading = !!rec.trade; // in trade or done: the trade block leads and the rest folds to what still matters
   const strip =
     rec.closed ? "Review below; no new entries today" : rec.trade ? `Following your ${rec.trade.side} · time stop from ${clock.time(release.at + 90 * 60_000)}` :
     stage === "prep" ? `Print in ${countdown(untilPrint)}` : stage === "range" ? `Range hour: print in ${countdown(untilPrint)}` : stage === "print" ? "The number is out" : stage === "window" ? `New entries until ${clock.time(release.at + DAY_RULES.cutoffMin * 60_000)} (${countdown(untilCutoff)})` : "No new entries";
@@ -259,6 +275,11 @@ export function ReportDayWidget(_: { widget: Widget }) {
         </section>
       )}
 
+      {trading ? (
+        <p className="muted rd-compact">
+          The number: {print ? signed(print.change, report === "WPSR" ? 3 : 0) : "—"} {cfg.unit} against a forecast of {forecast ? signed(forecast.value, 2) : "—"}: surprise {signed(surprise, 2)} ({side ?? "no side"}).
+        </p>
+      ) : (
       <section>
         <h2>The number</h2>
         <div className="rd-grid">
@@ -292,6 +313,7 @@ export function ReportDayWidget(_: { widget: Widget }) {
                 : "Under the threshold: no side from the number; a range break alone is enough."}
         </p>
       </section>
+      )}
 
       <section>
         <h2>Range: the hour before the print</h2>
@@ -316,7 +338,7 @@ export function ReportDayWidget(_: { widget: Widget }) {
       {watch && range && (
         <section>
           <h2>Window: each 5-minute candle after the print</h2>
-          {watch.candles.length === 0 ? (
+          {trading ? null : watch.candles.length === 0 ? (
             <p className="muted">The first candle closes at {clock.time(release.at + DAY_RULES.candleSec * 1000)}.</p>
           ) : (
             <table className="bt-num rd-table">
@@ -359,61 +381,7 @@ export function ReportDayWidget(_: { widget: Widget }) {
         </section>
       )}
 
-      <section>
-        <h2>Option to buy {signal?.side ?? side ? `(${signal?.side ?? side})` : ""}</h2>
-        {strike.rows.length === 0 ? (
-          <p className="muted">{strike.note}</p>
-        ) : (
-          <>
-            <table className="bt-num rd-table">
-              <thead>
-                <tr>
-                  <th>Strike</th>
-                  <th>Premium</th>
-                  <th>Delta</th>
-                  <th>Theta</th>
-                  <th>IV</th>
-                  <th>OI</th>
-                  <th>Vol</th>
-                </tr>
-              </thead>
-              <tbody>
-                {strike.rows.map((r) => {
-                  const l = r.leg;
-                  const p = l?.ask && l.ask > 0 ? l.ask : l?.ltp;
-                  return (
-                    <tr key={r.strike} className={strike.pick?.strike === r.strike ? "next" : ""}>
-                      <td>
-                        {r.strike} {r.atm && <small className="muted">ATM</small>}
-                      </td>
-                      <td>{num(p, 1)}</td>
-                      <td>{num(l?.delta, 2)}</td>
-                      <td>{num(l?.theta, 1)}</td>
-                      <td>{num(l?.iv, 1)}</td>
-                      <td>{l?.oi?.toLocaleString("en-IN") ?? "—"}</td>
-                      <td>{l?.volume?.toLocaleString("en-IN") ?? "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className={strike.pick ? "" : "down"}>
-              {strike.pick ? (
-                <>
-                  <b>
-                    {strike.pick.strike} {strike.pick.side === "long" ? "CE" : "PE"}
-                  </b>{" "}
-                  at {num(strike.pick.premium, 1)} = {rs(strike.pick.cost)} for one lot (capital {rs(DAY_RULES.capital)})
-                  {strike.pick.rupeeR !== undefined && <> · 1R ≈ {rs(strike.pick.rupeeR)} (cap {rs(DAY_RULES.lossCap)})</>}
-                </>
-              ) : (
-                strike.note
-              )}
-            </p>
-            {strike.pick && <p className="muted">{strike.note}</p>}
-          </>
-        )}
-      </section>
+      {!trading && <StrikeBlock strike={strike} chain={chain} side={signal?.side ?? side} price={livePrice} />}
 
       <p className="muted rd-foot">
         Rules: surprise {cfg.threshold.toFixed(1)} {cfg.unit}; range = the last hour before the print; entry on a 5-minute close beyond it, within {DAY_RULES.cutoffMin} minutes of the print, at the next open; R = 1.5 × ATR(14); stop 1R, TP1 +1R then the stop to entry, TP2 +2R. A break against the surprise is skipped. No order is placed here: you enter and manage the trade by hand.

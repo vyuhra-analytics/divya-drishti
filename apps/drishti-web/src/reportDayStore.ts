@@ -26,14 +26,16 @@ function read(): Store {
   }
 }
 
-export const loadRecord = (releaseAt: number): DayRecord => read()[String(releaseAt)] ?? {};
+export const loadRecord = (key: number | string): DayRecord => read()[String(key)] ?? {};
 
-/** Merge `patch` into the release's record; the newest KEEP releases are kept. */
-export function saveRecord(releaseAt: number, patch: Partial<DayRecord>): DayRecord {
+/** Merge `patch` into the record of a release (epoch ms) or a USIB day ("usib:" + epoch ms); the newest KEEP are kept. */
+export function saveRecord(key: number | string, patch: Partial<DayRecord>): DayRecord {
   const all = read();
-  const next = { ...(all[String(releaseAt)] ?? {}), ...patch };
-  all[String(releaseAt)] = next;
-  const keys = Object.keys(all).sort((a, b) => Number(b) - Number(a)).slice(0, KEEP);
+  const next = { ...(all[String(key)] ?? {}), ...patch };
+  all[String(key)] = next;
+  // newest first: the keys are epoch ms or "usib:" followed by one
+  const stamp = (k: string) => Number(k.replace(/^\D+/, ""));
+  const keys = Object.keys(all).sort((a, b) => stamp(b) - stamp(a)).slice(0, KEEP);
   const kept: Store = {};
   for (const k of keys) kept[k] = all[k];
   try {

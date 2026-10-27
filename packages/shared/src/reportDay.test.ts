@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { dayStage, preReleaseRange, readiness, suggestStrike, watchWindow, type DayBar } from "./reportDay";
+import { dayStage, nearestWalls, preReleaseRange, readiness, suggestStrike, watchWindow, type DayBar } from "./reportDay";
 import type { Chain, OptionLeg } from "./options";
 
 const REL = 1_793_000_000 - (1_793_000_000 % 300); // a 5-minute boundary, epoch seconds
@@ -169,5 +169,23 @@ describe("readiness", () => {
     expect(readiness({ ...good, reportReachable: false })[4].ok).toBe(false);
     expect(readiness({ ...good, reportReachable: undefined })[4].detail).toBe("checking");
     expect(readiness({ ...good, releaseAt: undefined })[0].ok).toBe(false);
+  });
+});
+
+describe("nearestWalls", () => {
+  const leg = (oi: number): OptionLeg => ({ key: "k", oi });
+  const ch = (rows: [number, number, number][]): Chain => ({ underlying: "CRUDEOIL", expiry: "x", expiries: [], spot: 9620, updatedAt: 0, rows: rows.map(([strike, ce, pe]) => ({ strike, ce: leg(ce), pe: leg(pe) })) });
+
+  it("the biggest call open interest at or above the price and the biggest put open interest at or below it", () => {
+    const w = nearestWalls(ch([[9500, 10, 7000], [9550, 20, 3000], [9600, 30, 5000], [9650, 4000, 40], [9700, 9000, 50], [9750, 100, 60]]), 9620);
+    expect(w.call).toEqual({ strike: 9700, oi: 9000 }); // 9650 has 4,000 but 9700 has more, and 9600 is below the price
+    expect(w.put).toEqual({ strike: 9500, oi: 7000 });
+  });
+
+  it("falls back to the chain's spot, and says nothing without a price or open interest", () => {
+    expect(nearestWalls(ch([[9650, 5, 0], [9600, 0, 9]]), undefined).call?.strike).toBe(9650);
+    expect(nearestWalls(null, 100)).toEqual({});
+    expect(nearestWalls({ ...ch([[9650, 0, 0]]), spot: undefined }, undefined)).toEqual({});
+    expect(nearestWalls(ch([[9650, 0, 0]]), 9620).call).toBeUndefined();
   });
 });

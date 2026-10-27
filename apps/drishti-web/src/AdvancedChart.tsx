@@ -8,6 +8,7 @@ import { advStorage } from "./advStorage";
 import { registerFlowStudies } from "./advFlow";
 import { registerKillzones } from "./advKillzones";
 import { registerSessionBreaks } from "./advSessionBreaks";
+import { ensureStrategyLevels, registerStrategyLevels } from "./advStrategyLevels";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -82,6 +83,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           registerFlowStudies(lib.registerIndicator, indicators.createTier2Indicator, lib.hasIndicator);
           registerKillzones(lib.registerIndicator, lib.hasIndicator);
           registerSessionBreaks(lib.registerIndicator, lib.hasIndicator);
+          registerStrategyLevels(lib.registerIndicator, lib.hasIndicator);
         } catch (e) {
           console.warn("order flow studies unavailable:", (e as Error).message);
         }
@@ -102,6 +104,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
         });
         oa.current = created;
+        if (/^(reportday|usib)-/.test(widget.id)) ensureStrategyLevels(created); // the strategy desks draw their levels on their chart
         settleUntil.current = Date.now() + SETTLE_MS;
         if (import.meta.env.DEV) ((window as unknown as { __adv?: Record<string, OaWidget> }).__adv ??= {})[widget.id] = created; // dev-only handle for debugging in the console
       })

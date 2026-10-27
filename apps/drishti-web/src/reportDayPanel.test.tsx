@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReportDayWidget } from "./ReportDayPanel";
+import { useLevels } from "./strategyLevels";
 import type { Widget } from "./workspace";
 
 const REL = Date.UTC(2026, 9, 28, 14, 30); // Wed 28 Oct 2026, 10:30 New York = 20:00 IST
@@ -168,4 +169,15 @@ test("gas options are read on the NEXT expiry, crude options on the nearest", as
   setSystemTime(new Date(REL - 5 * 3600_000));
   render(<ReportDayWidget widget={widget} />);
   await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+});
+
+test("the range and the signal's levels are published for the chart, and leave with the panel", async () => {
+  setSystemTime(new Date(REL + 12 * 60_000));
+  const window = [bar(RELS, 105, 106, 104, 105), bar(RELS + 300, 105, 112, 104, 111), bar(RELS + 600, 111.5, 112, 110, 111.8)];
+  serve({ bars: [...hour, ...window], consensus: -0.3, report: { officialReleaseAt: REL + 20_000, scheduledAt: REL, analysis: { headline: { change: -8.557, unit: "MB" } } } });
+  const { unmount } = render(<ReportDayWidget widget={widget} />);
+  await waitFor(() => expect(useLevels.getState().sources["reportday:range"]?.map((l) => [l.title, l.price])).toEqual([["Range high", 110], ["Range low", 100]]));
+  await waitFor(() => expect(useLevels.getState().sources["reportday:signal"]?.map((l) => l.title)).toEqual(["Entry (next open)", "Stop 1R", "TP1 +1R", "TP2 +2R"]));
+  unmount();
+  expect(useLevels.getState().sources["reportday:range"]).toBeUndefined();
 });

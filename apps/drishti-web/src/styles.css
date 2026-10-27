@@ -752,3 +752,8 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .rd-form-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
 .rd-note-box { display: flex; flex-direction: column; margin: 6px 0; }
 .rd-note-box textarea { width: 100%; box-sizing: border-box; }
+
+/* the next-event strip in the top bar (DayStrip.tsx) */
+.daystrip { flex: 1; min-width: 0; margin: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+.daystrip b { color: var(--accent); font-weight: 600; }
+@media (max-width: 900px) { .daystrip { display: none; } }

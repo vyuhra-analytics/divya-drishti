@@ -97,7 +97,7 @@ export interface WindowWatch {
 }
 
 /** ATR over the last `period` true ranges ending at index `i` (a plain mean; at least a few candles are needed). */
-function atrAt(bars: readonly DayBar[], i: number, period: number): number | undefined {
+export function atrAt(bars: readonly DayBar[], i: number, period: number): number | undefined {
   const start = Math.max(1, i - period + 1);
   const tr: number[] = [];
   for (let k = start; k <= i; k++) tr.push(Math.max(bars[k].high - bars[k].low, Math.abs(bars[k].high - bars[k - 1].close), Math.abs(bars[k].low - bars[k - 1].close)));
@@ -241,4 +241,22 @@ export function readiness(i: ReadinessInput): ReadinessItem[] {
     { id: "chain", label: "Option chain", ok: i.chainAgeMs !== undefined && i.chainAgeMs < 20_000 && (i.chainPriced ?? 0) >= 3, detail: i.chainAgeMs === undefined ? "not loaded" : (i.chainPriced ?? 0) < 3 ? "too few strikes with a price and a delta" : i.chainAgeMs < 20_000 ? `${i.chainPriced} strikes with prices and greeks` : `last read ${Math.round(i.chainAgeMs / 1000)} s ago` },
     { id: "number", label: "Report source", ok: i.reportReachable === true, detail: i.reportReachable === undefined ? "checking" : i.reportReachable ? "answering" : "not answering: the number will not appear by itself" },
   ];
+}
+
+export interface OiWall {
+  strike: number;
+  oi: number;
+}
+
+/**
+ * The nearest open-interest walls around a price: the call strike at or above it holding the most open interest (resistance) and the put strike at or
+ * below it holding the most (support), from the strikes of the chain. Undefined when there is no price or no open interest on that side.
+ */
+export function nearestWalls(chain: Chain | null | undefined, price: number | undefined): { call?: OiWall; put?: OiWall } {
+  const p = price ?? chain?.spot;
+  if (!chain || p === undefined) return {};
+  const best = (rows: { strike: number; oi?: number }[]) => rows.filter((r) => (r.oi ?? 0) > 0).sort((a, b) => (b.oi ?? 0) - (a.oi ?? 0))[0];
+  const call = best(chain.rows.filter((r) => r.strike >= p).map((r) => ({ strike: r.strike, oi: r.ce?.oi })));
+  const put = best(chain.rows.filter((r) => r.strike <= p).map((r) => ({ strike: r.strike, oi: r.pe?.oi })));
+  return { call: call && { strike: call.strike, oi: call.oi! }, put: put && { strike: put.strike, oi: put.oi! } };
 }

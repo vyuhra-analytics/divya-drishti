@@ -10,6 +10,7 @@ import { StatusBar } from "./StatusBar";
 import { useSettings } from "./settings";
 import { useStore } from "./store";
 import { Workspace } from "./Grid";
+import { DayStrip } from "./DayStrip";
 import { PANEL_TYPES, Sidebar } from "./Sidebar";
 import { workspaceList } from "./presets";
 import { useWorkspace } from "./workspace";
@@ -70,6 +71,7 @@ export function App() {
         <button className="cmd" onClick={() => setPaletteOpen(true)}>
           <span className="muted">Command…</span> <kbd>Ctrl K</kbd>
         </button>
+        <DayStrip />
         <span className={`status ${status}`}>● {status}</span>
         <button className="gear" title="Help and shortcuts (?)" aria-label="Help" onClick={() => setHelpOpen(true)}>
           ?

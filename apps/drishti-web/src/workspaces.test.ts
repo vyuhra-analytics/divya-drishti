@@ -133,10 +133,10 @@ test("panels added in the same millisecond get different ids, so changing one ne
 const types = (key: string) => PRESETS.find((p) => p.key === key)!.build().widgets.map((w) => w.type);
 
 test("the built-in desks are the Evening desk, the five research workspaces and the Report day desk, in F-key order", () => {
-  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday"]);
-  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day"]);
-  // seven built-in desks leave F8 and F9 for two saved ones
-  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, true]);
+  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday", "usib"]);
+  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day", "USIB"]);
+  // eight built-in desks leave F9 for one saved one
+  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, false, true]);
 });
 
 test("each desk holds what its question needs", () => {
@@ -147,6 +147,7 @@ test("each desk holds what its question needs", () => {
   expect(types("study")).toEqual(expect.arrayContaining(["backtest", "advchart", "costs", "cot"]));
   expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));
   expect(types("reportday")).toEqual(expect.arrayContaining(["advchart", "reportday"]));
+  expect(types("usib")).toEqual(expect.arrayContaining(["advchart", "usib"]));
 });
 
 test("the first screen of every desk fits one monitor: 28 grid rows (34 px each in the default compact density, a 1080p monitor), the Report prep desk scrolling only for its last row", () => {
