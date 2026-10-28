@@ -3,6 +3,7 @@ import { instrument, isSafeUrl, matchesQuery, TOPIC_TAGS, type NewsItem, type Ne
 import { useStore } from "./store";
 import { apiUrl, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Input } from "./ui";
 
 type Filter = "linked" | "all" | NewsTag;
 const FILTERS: [Filter, string][] = [
@@ -132,11 +133,11 @@ export function NewsWidget({ widget }: { widget: Widget }) {
     <div className="news">
       <div className="toolbar no-drag">
         {FILTERS.map(([f, label]) => (
-          <button key={f} className={f === filter ? "tf active" : "tf"} onClick={() => setFilter(f)}>
+          <Button key={f} variant={f === filter ? "default" : "ghost"} size="sm" onClick={() => setFilter(f)}>
             {f === "linked" && topic ? `${label}: ${topic === "crude" ? "Crude + Oil" : "Nat Gas"}` : label}
-          </button>
+          </Button>
         ))}
-        <input className="news-search" type="search" placeholder="Search" aria-label="Search headlines" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Input className="news-search" type="search" placeholder="Search" aria-label="Search headlines" value={query} onChange={(e) => setQuery(e.target.value)} />
         <span className="news-count muted">{list.length}</span>
       </div>
       <div className="news-list" tabIndex={0} role="region" aria-label="Headlines">
@@ -149,9 +150,9 @@ export function NewsWidget({ widget }: { widget: Widget }) {
           {paging === "end" ? (
             <span className="muted">No older stories in the archive</span>
           ) : (
-            <button className="btn" disabled={paging === "loading"} onClick={loadOlder}>
+            <Button size="sm" disabled={paging === "loading"} onClick={loadOlder}>
               {paging === "loading" ? "Loading…" : paging === "error" ? "Archive unavailable, retry" : "Load older"}
-            </button>
+            </Button>
           )}
         </div>
       </div>

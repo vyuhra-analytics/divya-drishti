@@ -4,6 +4,7 @@ import { apiUrl, useClock } from "./settings";
 import { EiaArticleView } from "./EiaArticleView";
 import { EiaForecastsView } from "./EiaForecastsView";
 import type { Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 interface Loaded {
   weekEnding: string;
@@ -57,9 +58,9 @@ function Tables({ rows, report }: { rows: EiaReportRow[]; report: EiaReportCode 
       {tables.length > 1 && (
         <div className="toolbar no-drag" role="group" aria-label="EIA table">
           {tables.map((t) => (
-            <button key={t} className={t === current ? "tf active" : "tf"} onClick={() => setTable(t)}>
+            <Button key={t} variant={t === current ? "default" : "ghost"} size="sm" onClick={() => setTable(t)}>
               {t}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -183,9 +184,8 @@ export function EiaReportWidget(_: { widget: Widget }) {
     <div className="eia-report">
       <div className="toolbar no-drag">
         {(Object.keys(TITLE) as EiaReportCode[]).map((r) => (
-          <button
-            key={r}
-            className={r === report ? "tf active" : "tf"}
+          <Button
+            key={r} variant={r === report ? "default" : "ghost"} size="sm"
             onClick={() => {
               seenWeek.current = undefined;
               setWeek("");
@@ -194,11 +194,11 @@ export function EiaReportWidget(_: { widget: Widget }) {
             }}
           >
             {TITLE[r]}
-          </button>
+          </Button>
         ))}
         <label className="er-week no-drag">
           Week
-          <select aria-label="Week" value={week} onChange={(e) => (setData(null), setWeek(e.target.value))}>
+          <Select aria-label="Week" value={week} onChange={(e) => (setData(null), setWeek(e.target.value))}>
             <option value="">{weeks[0] ? `Latest (${weeks[0].weekEnding})` : "Latest"}</option>
             {weeks.map((w) => (
               <option key={w.weekEnding} value={w.weekEnding}>
@@ -206,22 +206,22 @@ export function EiaReportWidget(_: { widget: Widget }) {
                 {w.backfilled ? " · stored later" : ""}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="er-forecast">
           Forecast ({report === "WPSR" ? "MB" : "Bcf"})
-          <input inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={data?.forecast ? `${data.forecast.value} (${data.forecast.source ?? "recorded"})` : "type the number"} aria-label="Forecast of the change" />
+          <Input inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={data?.forecast ? `${data.forecast.value} (${data.forecast.source ?? "recorded"})` : "type the number"} aria-label="Forecast of the change" />
         </label>
         <span className="er-views" role="group" aria-label="View">
-          <button className={view === "analysis" ? "tf active" : "tf"} aria-pressed={view === "analysis"} onClick={() => setView("analysis")}>
+          <Button variant={view === "analysis" ? "default" : "ghost"} size="sm" aria-pressed={view === "analysis"} onClick={() => setView("analysis")}>
             Analysis
-          </button>
-          <button className={view === "article" ? "tf active" : "tf"} aria-pressed={view === "article"} onClick={() => setView("article")} title="A written article for this release: headline, context from history, what moved it, the market reaction">
+          </Button>
+          <Button variant={view === "article" ? "default" : "ghost"} size="sm" aria-pressed={view === "article"} onClick={() => setView("article")} title="A written article for this release: headline, context from history, what moved it, the market reaction">
             Article
-          </button>
-          <button className={view === "forecasts" ? "tf active" : "tf"} aria-pressed={view === "forecasts"} onClick={() => setView("forecasts")} title="The forecasts against what came out, week by week, and how often the report-day rule's threshold was reached">
+          </Button>
+          <Button variant={view === "forecasts" ? "default" : "ghost"} size="sm" aria-pressed={view === "forecasts"} onClick={() => setView("forecasts")} title="The forecasts against what came out, week by week, and how often the report-day rule's threshold was reached">
             Forecasts
-          </button>
+          </Button>
         </span>
         {windowOpen && <span className="er-live" title="A release is due: looking every 3 seconds">watching</span>}
       </div>

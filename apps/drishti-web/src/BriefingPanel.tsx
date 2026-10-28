@@ -21,6 +21,7 @@ import { apiUrl, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
 import { symbolFreshness, useNow } from "./market";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button } from "./ui";
 
 interface Entry {
   id: string;
@@ -211,9 +212,9 @@ export function BriefingWidget({ widget }: { widget: Widget }) {
   return (
     <div className="brief">
       <div className="toolbar no-drag">
-        <button className="btn" onClick={generate} disabled={busy}>
+        <Button size="sm" onClick={generate} disabled={busy}>
           {busy ? "Writing…" : `Brief me on ${symbol.split(":")[1]}`}
-        </button>
+        </Button>
         <span className="muted brief-note">One AI call, or two if a citation has to be corrected (about US$0.05 each). Research aid, not advice.</span>
         {instrument(symbol)?.exchange === "MCX" && (
           <label className="brief-share" title="Sends your net quantity, average price and P&L in this contract to the AI service with the briefing">

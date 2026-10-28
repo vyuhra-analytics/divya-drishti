@@ -7,6 +7,7 @@ import { useFreshness } from "./market";
 import { useClock, useSettings } from "./settings";
 import { sendWatch, useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 const REASON = { manual: "Closed by hand", stop: "Stop hit", target: "Target hit", expired: "Expired, settled at the last premium" } as const;
 const ACCOUNT_KEY = "drishti-paper-account";
@@ -132,11 +133,11 @@ export function PaperWidget({ widget }: { widget: Widget }) {
         <div className="paper-top no-drag">
           <label>
             Account
-            <select value={accountId} onChange={(ev) => pick(ev.target.value)}>
+            <Select value={accountId} onChange={(ev) => pick(ev.target.value)}>
               {[...new Set([accountId, ...accounts.map((a) => a.id)])].map((id) => (
                 <option key={id}>{id}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <span className="muted paper-state">Server account: also moved by Claude over MCP and by stops. Simulated, nothing reaches a broker.</span>
         </div>
@@ -166,12 +167,12 @@ export function PaperWidget({ widget }: { widget: Widget }) {
 
             <h2>Order ticket</h2>
             <div className="toolbar no-drag" role="group" aria-label="Ticket type">
-              <button className={ticket === "futures" ? "tf active" : "tf"} onClick={() => setTicket("futures")}>
+              <Button variant={ticket === "futures" ? "default" : "ghost"} size="sm" onClick={() => setTicket("futures")}>
                 Futures
-              </button>
-              <button className={ticket === "options" ? "tf active" : "tf"} onClick={() => setTicket("options")}>
+              </Button>
+              <Button variant={ticket === "options" ? "default" : "ghost"} size="sm" onClick={() => setTicket("options")}>
                 Options (buy)
-              </button>
+              </Button>
             </div>
             {ticket === "options" ? (
               <PaperOptionTicket onOrder={(body) => run(() => paperCall(`/accounts/${accountId}/orders`, "POST", body))} />
@@ -182,18 +183,18 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                 <div className="costs-form no-drag">
                   <label>
                     Side
-                    <select value={side} onChange={(ev) => setSide(ev.target.value as Side)}>
+                    <Select value={side} onChange={(ev) => setSide(ev.target.value as Side)}>
                       <option value="buy">Buy (long)</option>
                       <option value="sell">Sell (short)</option>
-                    </select>
+                    </Select>
                   </label>
                   <label>
                     Lots
-                    <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
+                    <Input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
                   </label>
                   <label title="Leave it empty to trade at the current price. Type a price to place a limit order: it waits until the market reaches that price (a buy when the ask is at or under it, a sell when the bid is at or over it), for up to 24 hours.">
                     Entry (empty = current price)
-                    <input type="number" step="any" value={entry} placeholder={last === undefined ? "current price" : px(symbol, side === "buy" ? (quotes[symbol]?.ask ?? last) : (quotes[symbol]?.bid ?? last))} onChange={(ev) => setEntry(ev.target.value)} />
+                    <Input type="number" step="any" value={entry} placeholder={last === undefined ? "current price" : px(symbol, side === "buy" ? (quotes[symbol]?.ask ?? last) : (quotes[symbol]?.bid ?? last))} onChange={(ev) => setEntry(ev.target.value)} />
                   </label>
                   {entry !== "" && (
                     <label title="Tick this when you already took the trade at this price: it opens at once at exactly that price, so you can follow its profit and loss. Leave it off for a limit order that waits for the market.">
@@ -202,16 +203,16 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                   )}
                   <label>
                     Stop (optional)
-                    <input type="number" step="any" value={stop} placeholder={last === undefined ? "" : px(symbol, last * (side === "buy" ? 0.995 : 1.005))} onChange={(ev) => setStop(ev.target.value)} />
+                    <Input type="number" step="any" value={stop} placeholder={last === undefined ? "" : px(symbol, last * (side === "buy" ? 0.995 : 1.005))} onChange={(ev) => setStop(ev.target.value)} />
                   </label>
                   <label>
                     Target (optional)
-                    <input type="number" step="any" value={target} placeholder={last === undefined ? "" : px(symbol, last * (side === "buy" ? 1.01 : 0.99))} onChange={(ev) => setTarget(ev.target.value)} />
+                    <Input type="number" step="any" value={target} placeholder={last === undefined ? "" : px(symbol, last * (side === "buy" ? 1.01 : 0.99))} onChange={(ev) => setTarget(ev.target.value)} />
                   </label>
                 </div>
-                <button className="tf active" onClick={submit}>
+                <Button variant="default" size="sm" onClick={submit}>
                   {entry !== "" ? `${taken ? "Record" : "Place limit"} ${side === "buy" ? "buy" : "sell"} ${lots} lot${lots === 1 ? "" : "s"} ${inst!.name} at ${entry}` : `${side === "buy" ? "Buy" : "Sell"} ${lots} lot${lots === 1 ? "" : "s"} ${inst!.name} at market${last === undefined ? "" : ` (${px(symbol, last)})`}`}
-                </button>
+                </Button>
                 {fresh !== "live" && <span className="muted paper-state"> · market {fresh}: orders wait for a live price</span>}
               </>
             )}
@@ -251,9 +252,9 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                           </td>
                           <td className="muted">{clock.stamp(o.createdAt)}</td>
                           <td>
-                            <button className="tf" onClick={() => run(() => paperCall(`/accounts/${accountId}/orders/${o.id}`, "DELETE"))}>
+                            <Button size="sm" onClick={() => run(() => paperCall(`/accounts/${accountId}/orders/${o.id}`, "DELETE"))}>
                               Cancel
-                            </button>
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -298,9 +299,9 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                         {labels(p) && <small className="muted paper-labels"> {labels(p)}</small>}
                       </td>
                       <td>
-                        <button className="tf" onClick={() => run(() => paperCall(`/accounts/${accountId}/positions/${p.id}/close`, "POST"))}>
+                        <Button size="sm" onClick={() => run(() => paperCall(`/accounts/${accountId}/positions/${p.id}/close`, "POST"))}>
                           Close
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -341,19 +342,18 @@ export function PaperWidget({ widget }: { widget: Widget }) {
               <div className="costs-form no-drag">
                 <label>
                   Starting capital (₹)
-                  <input key={`c${state.account.capital}`} type="number" min={0} step={10000} defaultValue={state.account.capital} onBlur={(ev) => Number(ev.target.value) !== state.account.capital && run(() => paperCall(`/accounts/${accountId}`, "PATCH", { capital: Number(ev.target.value) }))} />
+                  <Input key={`c${state.account.capital}`} type="number" min={0} step={10000} defaultValue={state.account.capital} onBlur={(ev) => Number(ev.target.value) !== state.account.capital && run(() => paperCall(`/accounts/${accountId}`, "PATCH", { capital: Number(ev.target.value) }))} />
                 </label>
                 <label title="Ticks paid against you on every fill: one tick is ₹1 on crude and ₹0.1 on natural gas">
                   Slippage (ticks)
-                  <input key={`s${state.account.slippage}`} type="number" min={0} step="any" defaultValue={state.account.slippage} onBlur={(ev) => Number(ev.target.value) !== state.account.slippage && run(() => paperCall(`/accounts/${accountId}`, "PATCH", { slippage: Number(ev.target.value) }))} />
+                  <Input key={`s${state.account.slippage}`} type="number" min={0} step="any" defaultValue={state.account.slippage} onBlur={(ev) => Number(ev.target.value) !== state.account.slippage && run(() => paperCall(`/accounts/${accountId}`, "PATCH", { slippage: Number(ev.target.value) }))} />
                 </label>
                 <label>
                   New account
-                  <input value={newId} placeholder="e.g. claude" onChange={(ev) => setNewId(ev.target.value.toLowerCase())} />
+                  <Input value={newId} placeholder="e.g. claude" onChange={(ev) => setNewId(ev.target.value.toLowerCase())} />
                 </label>
               </div>
-              <button
-                className="tf"
+              <Button size="sm"
                 disabled={!ACCOUNT_ID.test(newId)}
                 onClick={async () => {
                   if (await run(() => paperCall("/accounts", "POST", { id: newId, capital: state.account.capital, slippage: state.account.slippage }))) {
@@ -363,26 +363,24 @@ export function PaperWidget({ widget }: { widget: Widget }) {
                 }}
               >
                 Create account
-              </button>{" "}
-              <button
-                className="tf"
+              </Button>{" "}
+              <Button size="sm"
                 onClick={() => {
                   if (window.confirm(`Clear every open position and the whole journal of account "${accountId}"?`)) void run(() => paperCall(`/accounts/${accountId}/reset`, "POST"));
                 }}
               >
                 Reset account
-              </button>
+              </Button>
               {accountId !== "main" && (
                 <>
                   {" "}
-                  <button
-                    className="tf"
+                  <Button size="sm"
                     onClick={async () => {
                       if (window.confirm(`Delete account "${accountId}" with everything in it?`) && (await run(() => paperCall(`/accounts/${accountId}`, "DELETE")))) pick("main");
                     }}
                   >
                     Delete account
-                  </button>
+                  </Button>
                 </>
               )}
               <p className="muted paper-note-text">
@@ -417,7 +415,7 @@ function TradeRow({ t, px, rs, stamp, onNote }: { t: PaperTrade; px: (s: string,
       <td className="muted">{rs(t.costs)}</td>
       <td className={t.net >= 0 ? "up" : "down"}>{rs(t.net)}</td>
       <td>
-        <input className="paper-note no-drag" aria-label={`Note for the ${t.option?.label ?? t.symbol} trade`} value={note} maxLength={500} placeholder="Why / what I learned" onChange={(ev) => setNote(ev.target.value)} onBlur={() => note !== t.note && onNote(note)} />
+        <Input className="paper-note no-drag" aria-label={`Note for the ${t.option?.label ?? t.symbol} trade`} value={note} maxLength={500} placeholder="Why / what I learned" onChange={(ev) => setNote(ev.target.value)} onBlur={() => note !== t.note && onNote(note)} />
       </td>
     </tr>
   );

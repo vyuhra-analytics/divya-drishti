@@ -24,6 +24,7 @@ import { sparkPoints } from "./spark";
 import { EiaReplayView } from "./EiaReplayView";
 import { TimeProfileView } from "./TimeProfileView";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 const TFS = ["5m", "15m", "1h", "1d"] as const;
 const CAPITAL = 500_000;
@@ -46,15 +47,15 @@ export function BacktestWidget({ widget }: { widget: Widget }) {
   return (
     <div className="bt-modes">
       <div className="toolbar no-drag" role="group" aria-label="Test type">
-        <button className={mode === "price" ? "tf active" : "tf"} onClick={() => setMode("price")}>
+        <Button variant={mode === "price" ? "default" : "ghost"} size="sm" onClick={() => setMode("price")}>
           Price strategies
-        </button>
-        <button className={mode === "eia" ? "tf active" : "tf"} onClick={() => setMode("eia")}>
+        </Button>
+        <Button variant={mode === "eia" ? "default" : "ghost"} size="sm" onClick={() => setMode("eia")}>
           EIA report day
-        </button>
-        <button className={mode === "time" ? "tf active" : "tf"} onClick={() => setMode("time")}>
+        </Button>
+        <Button variant={mode === "time" ? "default" : "ghost"} size="sm" onClick={() => setMode("time")}>
           Time of day
-        </button>
+        </Button>
       </div>
       {mode === "eia" ? <EiaReplayView /> : mode === "time" ? <TimeProfileView /> : <PriceTester widget={widget} />}
     </div>
@@ -121,40 +122,40 @@ function PriceTester({ widget }: { widget: Widget }) {
         <div className="costs-form no-drag">
           <label>
             Strategy
-            <select value={strategyId} onChange={(ev) => pick(ev.target.value)}>
+            <Select value={strategyId} onChange={(ev) => pick(ev.target.value)}>
               {STRATEGIES.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Timeframe
-            <select value={tf} onChange={(ev) => setTf(ev.target.value as (typeof TFS)[number])}>
+            <Select value={tf} onChange={(ev) => setTf(ev.target.value as (typeof TFS)[number])}>
               {TFS.map((t) => (
                 <option key={t}>{t}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Lots
-            <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
+            <Input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
           </label>
           <label title="Price points paid against you on every fill">
             Slippage (points)
-            <input type="number" min={0} step="any" value={slippage} onChange={(ev) => setSlippage(Math.max(0, Number(ev.target.value) || 0))} />
+            <Input type="number" min={0} step="any" value={slippage} onChange={(ev) => setSlippage(Math.max(0, Number(ev.target.value) || 0))} />
           </label>
           {def.params.map((p) => (
             <label key={p.key}>
               {p.label}
-              <input type="number" min={p.min} max={p.max} step={p.step} value={params[p.key]} onChange={(ev) => setParams({ ...params, [p.key]: Number(ev.target.value) })} />
+              <Input type="number" min={p.min} max={p.max} step={p.step} value={params[p.key]} onChange={(ev) => setParams({ ...params, [p.key]: Number(ev.target.value) })} />
             </label>
           ))}
         </div>
-        <button className="tf active" onClick={run} disabled={state === "running"}>
+        <Button variant="default" size="sm" onClick={run} disabled={state === "running"}>
           {state === "running" ? "Running…" : "Run test"}
-        </button>
+        </Button>
         {typeof state === "object" && <p className="empty muted">{state.error}</p>}
 
         {out && m && (

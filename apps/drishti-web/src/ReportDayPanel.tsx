@@ -11,6 +11,7 @@ import { loadRecord, saveRecord } from "./reportDayStore";
 import { useStore } from "./store";
 import { useNow } from "./market";
 import type { Widget } from "./workspace";
+import { Button, Input } from "./ui";
 
 // The EIA report-day screen, stages prep, range, print and window (docs/redesign/EIA_SCREENS.md and EIA_STRATEGY.md). One column that changes with the
 // time: the forecast and threshold before the print, the live range of the last hour, the number and its surprise the second it is stored, then each
@@ -243,9 +244,9 @@ export function ReportDayWidget(_: { widget: Widget }) {
 
       <div className="toolbar no-drag" role="group" aria-label="Report">
         {(["WPSR", "WNGSR"] as const).map((r) => (
-          <button key={r} className={r === report ? "tf active" : "tf"} onClick={() => setForce(r)}>
+          <Button key={r} variant={r === report ? "default" : "ghost"} size="sm" onClick={() => setForce(r)}>
             {r === "WPSR" ? "Crude (WPSR)" : "Gas (WNGSR)"}
-          </button>
+          </Button>
         ))}
         <span className="muted rd-note">trades {cfg.underlying} options</span>
       </div>
@@ -285,7 +286,7 @@ export function ReportDayWidget(_: { widget: Widget }) {
         <div className="rd-grid">
           <div>
             <div className="muted">Forecast ({cfg.unit})</div>
-            <input className="rd-input" inputMode="decimal" value={typed} onChange={(e) => {
+            <Input className="rd-input" inputMode="decimal" value={typed} onChange={(e) => {
                 setTyped(e.target.value);
                 if (release) saveRecord(release.at, { forecast: e.target.value });
               }} placeholder={forecast ? `${signed(forecast.value, 2)} ${forecast.source !== "typed in" ? `(${forecast.source})` : ""}` : "type the number"} aria-label="Forecast of the change" />

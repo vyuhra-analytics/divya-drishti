@@ -4,6 +4,7 @@ import { useChain, useRecordedChain, type ChainFeed } from "./chainClient";
 import { useLiveChain } from "./optionFeed";
 import { makeFormat, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 const COLUMN_KEY = "drishti-ocx-columns";
 const STEP = 6; // strikes added per side by "Load more"
@@ -194,9 +195,9 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
     return (
       <div className="empty muted">
         <p>{error ?? "Reading the recorded chain…"}</p>
-        <button className="tf no-drag" onClick={() => setAsOf(null)}>
+        <Button size="sm" className="no-drag" onClick={() => setAsOf(null)}>
           Back to live
-        </button>
+        </Button>
       </div>
     );
   if (!chain) return <p className="empty muted">{error ?? "Loading option chain…"}</p>;
@@ -210,9 +211,9 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
         </span>
         <div className="ocx-expiries" role="tablist" aria-label="Expiry">
           {chain.expiries.slice(0, 6).map((x) => (
-            <button key={x} role="tab" aria-selected={x === chain.expiry} className={x === chain.expiry ? "tf active" : "tf"} onClick={() => setExpiry(x)}>
+            <Button key={x} role="tab" aria-selected={x === chain.expiry} variant={x === chain.expiry ? "default" : "ghost"} size="sm" onClick={() => setExpiry(x)}>
               {new Date(`${x}T00:00:00Z`).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}
-            </button>
+            </Button>
           ))}
         </div>
         <span className="ocx-stats">
@@ -227,14 +228,14 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
           </span>
         </span>
         {asOf === null && (
-          <select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as ChainFeed)} title="Where the chain comes from">
+          <Select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as ChainFeed)} title="Where the chain comes from">
             <option value="auto">Feed: TradingView + Upstox</option>
             <option value="upstox">Upstox</option>
             <option value="tradingview">TradingView</option>
-          </select>
+          </Select>
         )}
         <span className="ocx-history" title="Look at the chain as we recorded it: a snapshot of every contract is kept every 15 minutes while MCX is open">
-          <input
+          <Input
             type="datetime-local"
             aria-label="Show the chain as recorded at"
             value={asOf === null ? "" : inputValue(asOf)}
@@ -245,15 +246,15 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
           />
           {asOf !== null && (
             <>
-              <button className="tf" aria-label="Previous snapshot" disabled={!chain.prevAt} onClick={() => chain.prevAt && setAsOf(chain.prevAt)}>
+              <Button size="sm" aria-label="Previous snapshot" disabled={!chain.prevAt} onClick={() => chain.prevAt && setAsOf(chain.prevAt)}>
                 ◀
-              </button>
-              <button className="tf" aria-label="Next snapshot" disabled={!chain.nextAt} onClick={() => chain.nextAt && setAsOf(chain.nextAt)}>
+              </Button>
+              <Button size="sm" aria-label="Next snapshot" disabled={!chain.nextAt} onClick={() => chain.nextAt && setAsOf(chain.nextAt)}>
                 ▶
-              </button>
-              <button className="tf" onClick={() => setAsOf(null)}>
+              </Button>
+              <Button size="sm" onClick={() => setAsOf(null)}>
                 Live
-              </button>
+              </Button>
             </>
           )}
         </span>
@@ -269,15 +270,15 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
           </span>
         )}
         <span className="ocx-tools">
-          <button className="tf" aria-label="Show open interest bars" aria-pressed={metric === "oi"} onClick={() => setMetric("oi")}>
+          <Button size="sm" aria-label="Show open interest bars" aria-pressed={metric === "oi"} onClick={() => setMetric("oi")}>
             OI
-          </button>
-          <button className="tf" aria-label="Show volume bars" aria-pressed={metric === "volume"} onClick={() => setMetric("volume")}>
+          </Button>
+          <Button size="sm" aria-label="Show volume bars" aria-pressed={metric === "volume"} onClick={() => setMetric("volume")}>
             Volume
-          </button>
-          <button className="tf" aria-label="Refresh" onClick={reload}>
+          </Button>
+          <Button size="sm" aria-label="Refresh" onClick={reload}>
             ↻
-          </button>
+          </Button>
           <details className="ocx-cols">
             <summary aria-label="Columns">⚙ Columns</summary>
             <div>
@@ -286,9 +287,9 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
                   <input type="checkbox" checked={cols.includes(c.id)} disabled={cols.length === 1 && cols.includes(c.id)} onChange={() => toggleCol(c.id)} /> {c.label}
                 </label>
               ))}
-              <button className="tf" onClick={() => (setCols(ALL), localStorage.removeItem(COLUMN_KEY))}>
+              <Button size="sm" onClick={() => (setCols(ALL), localStorage.removeItem(COLUMN_KEY))}>
                 Show all
-              </button>
+              </Button>
             </div>
           </details>
         </span>
@@ -319,9 +320,9 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
           <tbody>
             <tr className="ocx-more">
               <td colSpan={span}>
-                <button className="tf" disabled={strikes >= MAX_STRIKES} onClick={() => setStrikes((n) => Math.min(MAX_STRIKES, n + STEP))}>
+                <Button size="sm" disabled={strikes >= MAX_STRIKES} onClick={() => setStrikes((n) => Math.min(MAX_STRIKES, n + STEP))}>
                   ⌃ Load more strikes
-                </button>
+                </Button>
                 <span className="muted"> {rows.length} strikes shown</span>
                 <span
                   className="muted"

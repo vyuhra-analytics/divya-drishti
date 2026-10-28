@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PROFILE_UNDERLYINGS, type ChainRow, type ProfileUnderlying } from "@drishti/shared";
 import { useChain } from "./chainClient";
 import { sendWatch, useStore } from "./store";
+import { Button, Input, Select } from "./ui";
 
 // The order ticket for paper OPTIONS (buy only, as the strategies buy calls and puts): pick the underlying, expiry, call or put and strike from the live chain,
 // see the premium (the live option quote when the stream is watching it), set optional stop and target in PREMIUM, and buy at the ask plus slippage. The server
@@ -55,30 +56,30 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
       <div className="costs-form no-drag">
         <label>
           Underlying
-          <select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ProfileUnderlying)}>
+          <Select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ProfileUnderlying)}>
             {PROFILE_UNDERLYINGS.map((u) => (
               <option key={u}>{u}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label>
           Expiry
-          <select value={expiry || chain?.expiry || ""} onChange={(ev) => setExpiry(ev.target.value)}>
+          <Select value={expiry || chain?.expiry || ""} onChange={(ev) => setExpiry(ev.target.value)}>
             {(chain?.expiries ?? []).map((e) => (
               <option key={e}>{e}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label>
           Call or put
-          <select value={type} onChange={(ev) => setType(ev.target.value as "CE" | "PE")}>
+          <Select value={type} onChange={(ev) => setType(ev.target.value as "CE" | "PE")}>
             <option value="CE">Call (CE)</option>
             <option value="PE">Put (PE)</option>
-          </select>
+          </Select>
         </label>
         <label>
           Strike
-          <select value={row?.strike ?? ""} onChange={(ev) => setStrike(Number(ev.target.value))}>
+          <Select value={row?.strike ?? ""} onChange={(ev) => setStrike(Number(ev.target.value))}>
             {rows.map((r) => {
               const l = type === "CE" ? r.ce : r.pe;
               return (
@@ -88,15 +89,15 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
                 </option>
               );
             })}
-          </select>
+          </Select>
         </label>
         <label>
           Lots
-          <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
+          <Input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
         </label>
         <label title="Leave it empty to buy at the current ask. Type a premium to place a limit order: it waits until the option's ask falls to it, for up to 24 hours.">
           Entry (premium, empty = current ask)
-          <input type="number" step="any" value={entry} placeholder={ask === undefined ? "current ask" : num(ask)} onChange={(ev) => setEntry(ev.target.value)} />
+          <Input type="number" step="any" value={entry} placeholder={ask === undefined ? "current ask" : num(ask)} onChange={(ev) => setEntry(ev.target.value)} />
         </label>
         {entry !== "" && (
           <label title="Tick this when you already bought at this premium: it opens at once at exactly that price, so you can follow its profit and loss. Leave it off for a limit order that waits for the market.">
@@ -105,17 +106,16 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
         )}
         <label title="A premium: the position closes when the option's price falls to it">
           Stop (premium, optional)
-          <input type="number" step="any" value={stop} placeholder={ask === undefined ? "" : num(ask * 0.7)} onChange={(ev) => setStop(ev.target.value)} />
+          <Input type="number" step="any" value={stop} placeholder={ask === undefined ? "" : num(ask * 0.7)} onChange={(ev) => setStop(ev.target.value)} />
         </label>
         <label title="A premium: the position closes when the option's price rises to it">
           Target (premium, optional)
-          <input type="number" step="any" value={target} placeholder={ask === undefined ? "" : num(ask * 1.5)} onChange={(ev) => setTarget(ev.target.value)} />
+          <Input type="number" step="any" value={target} placeholder={ask === undefined ? "" : num(ask * 1.5)} onChange={(ev) => setTarget(ev.target.value)} />
         </label>
       </div>
       {error && <p className="down">{error}</p>}
       {!chain && !error && <p className="muted">Loading the option chain…</p>}
-      <button
-        className="tf active"
+      <Button variant="default" size="sm"
         disabled={!key || busy}
         onClick={async () => {
           const ok = await onOrder({ option: { key }, side: "buy", lots, ...(entry !== "" ? { entry: Number(entry), ...(taken ? { filled: true } : {}) } : {}), ...(stop !== "" ? { stop: Number(stop) } : {}), ...(target !== "" ? { target: Number(target) } : {}) });
@@ -128,7 +128,7 @@ export function PaperOptionTicket({ onOrder, busy }: { onOrder: (body: object) =
         }}
       >
         {entry !== "" ? `${taken ? "Record" : "Place limit"} buy ${lots} lot${lots === 1 ? "" : "s"} ${name} at ${entry}` : `Buy ${lots} lot${lots === 1 ? "" : "s"} ${name} at the ask${ask === undefined ? "" : ` (${num(ask)})`}`}
-      </button>
+      </Button>
       {ask !== undefined && leg && (
         <span className="muted paper-state">
           {" "}

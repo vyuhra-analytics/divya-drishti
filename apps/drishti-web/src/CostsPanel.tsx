@@ -4,6 +4,7 @@ import { paperCall } from "./paperClient";
 import { apiUrl, useSettings } from "./settings";
 import { useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 const KEY = "drishti-costs";
 interface Saved {
@@ -125,7 +126,7 @@ export function CostsWidget({ widget }: { widget: Widget }) {
         <div className="costs-form no-drag">
           <label>
             Broker
-            <select
+            <Select
               aria-label="Broker"
               value={broker?.id ?? "custom"}
               onChange={(ev) => {
@@ -139,7 +140,7 @@ export function CostsWidget({ widget }: { widget: Widget }) {
                 </option>
               ))}
               {!broker && <option value="custom">Custom (edited)</option>}
-            </select>
+            </Select>
           </label>
         </div>
         <p className={broker?.verification === "unverified" ? "costs-note down" : "muted costs-note"} title={broker?.source}>
@@ -148,22 +149,22 @@ export function CostsWidget({ widget }: { widget: Widget }) {
         <div className="costs-form no-drag">
           <label>
             Side
-            <select value={side} onChange={(ev) => setSide(ev.target.value as Side)}>
+            <Select value={side} onChange={(ev) => setSide(ev.target.value as Side)}>
               <option value="buy">Long (buy, then sell)</option>
               <option value="sell">Short (sell, then buy)</option>
-            </select>
+            </Select>
           </label>
           <label>
             Lots
-            <input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
+            <Input type="number" min={1} step={1} value={lots} onChange={(ev) => setLots(Math.max(1, Math.floor(Number(ev.target.value) || 1)))} />
           </label>
           <label>
             Entry
-            <input type="number" step="any" value={e === undefined ? "" : e} onChange={num(entry, setEntry)} />
+            <Input type="number" step="any" value={e === undefined ? "" : e} onChange={num(entry, setEntry)} />
           </label>
           <label>
             Exit
-            <input type="number" step="any" value={x === undefined ? "" : Number(x.toFixed(inst.decimals))} onChange={num(exit, setExit)} />
+            <Input type="number" step="any" value={x === undefined ? "" : Number(x.toFixed(inst.decimals))} onChange={num(exit, setExit)} />
           </label>
         </div>
         {trip && (
@@ -207,10 +208,10 @@ export function CostsWidget({ widget }: { widget: Widget }) {
             <div className="costs-form no-drag">
               <label>
                 Treat Entry and Exit as
-                <select aria-label="Compare as" value={cmpKind} onChange={(ev) => setCmpKind(ev.target.value as Kind)}>
+                <Select aria-label="Compare as" value={cmpKind} onChange={(ev) => setCmpKind(ev.target.value as Kind)}>
                   <option value="future">a futures price</option>
                   <option value="option">an option premium</option>
-                </select>
+                </Select>
               </label>
             </div>
             <table aria-label="Costs by broker">
@@ -242,15 +243,15 @@ export function CostsWidget({ widget }: { widget: Widget }) {
         <div className="costs-form no-drag">
           <label>
             Equity (₹)
-            <input type="number" min={0} step={1000} value={saved.equity} onChange={(ev) => setSaved({ ...saved, equity: Number(ev.target.value) })} />
+            <Input type="number" min={0} step={1000} value={saved.equity} onChange={(ev) => setSaved({ ...saved, equity: Number(ev.target.value) })} />
           </label>
           <label>
             Risk per trade (%)
-            <input type="number" min={0} step={0.1} value={saved.riskPct} onChange={(ev) => setSaved({ ...saved, riskPct: Number(ev.target.value) })} />
+            <Input type="number" min={0} step={0.1} value={saved.riskPct} onChange={(ev) => setSaved({ ...saved, riskPct: Number(ev.target.value) })} />
           </label>
           <label>
             Stop
-            <input type="number" step="any" value={st === undefined ? "" : Number(st.toFixed(inst.decimals))} onChange={num(stop, setStop)} />
+            <Input type="number" step="any" value={st === undefined ? "" : Number(st.toFixed(inst.decimals))} onChange={num(stop, setStop)} />
           </label>
         </div>
         {sized ? (
@@ -268,26 +269,26 @@ export function CostsWidget({ widget }: { widget: Widget }) {
             {RATE_FIELDS.map(([k, label, step]) => (
               <label key={k}>
                 {label}
-                <input type="number" step={step} min={0} value={saved.rates[k]} onChange={(ev) => setSaved({ ...saved, rates: { ...saved.rates, [k]: Number(ev.target.value) } })} />
+                <Input type="number" step={step} min={0} value={saved.rates[k]} onChange={(ev) => setSaved({ ...saved, rates: { ...saved.rates, [k]: Number(ev.target.value) } })} />
               </label>
             ))}
           </div>
           <div className="no-drag" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "6px 0" }}>
             {(!broker || broker.id === "upstox") && (
-              <button className="tf" onClick={() => void checkUpstox()}>
+              <Button size="sm" onClick={() => void checkUpstox()}>
                 Check with Upstox
-              </button>
+              </Button>
             )}
             {upCheck && <span className="muted">{upCheck.text}</span>}
             {upCheck?.differs && (
-              <button className="tf" onClick={() => setSaved({ ...saved, rates: { ...saved.rates, brokerageFlat: upCheck.brokerage! } })}>
+              <Button size="sm" onClick={() => setSaved({ ...saved, rates: { ...saved.rates, brokerageFlat: upCheck.brokerage! } })}>
                 Use ₹{upCheck.brokerage} brokerage
-              </button>
+              </Button>
             )}
           </div>
-          <button className="tf" onClick={() => setSaved({ ...saved, rates: UPSTOX_MCX_RATES })}>
+          <Button size="sm" onClick={() => setSaved({ ...saved, rates: UPSTOX_MCX_RATES })}>
             Reset rates
-          </button>
+          </Button>
         </details>
         <p className="muted costs-note">A calculator only: it never places an order. Margin is not included.</p>
       </div>

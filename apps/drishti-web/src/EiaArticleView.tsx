@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Article, ArticleCheck, EiaReportCode } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
+import { Button } from "./ui";
 
 interface Version {
   article: Article;
@@ -91,23 +92,23 @@ export function EiaArticleView({ report, week, forecast, active }: { report: Eia
   return (
     <div className="er-article">
       <div className="toolbar no-drag" role="group" aria-label="Article version">
-        <button className={which === "rules" ? "tf active" : "tf"} onClick={() => setWhich("rules")} title="Written by the app's own rules from the report's tables">
+        <Button variant={which === "rules" ? "default" : "ghost"} size="sm" onClick={() => setWhich("rules")} title="Written by the app's own rules from the report's tables">
           App
-        </button>
-        <button className={which === "claude" ? "tf active" : "tf"} disabled={!claude} onClick={() => setWhich("claude")} title={claude ? `Written by Claude over MCP, ${clock.stamp(claude.at)}` : "No article from Claude yet: ask Claude to write one with the get_eia_release_context and submit_eia_article tools"}>
+        </Button>
+        <Button variant={which === "claude" ? "default" : "ghost"} size="sm" disabled={!claude} onClick={() => setWhich("claude")} title={claude ? `Written by Claude over MCP, ${clock.stamp(claude.at)}` : "No article from Claude yet: ask Claude to write one with the get_eia_release_context and submit_eia_article tools"}>
           Claude{claude ? "" : " (none yet)"}
-        </button>
+        </Button>
         {shown.check && (
           <span className={shown.check.wrong ? "down" : "muted"} title="Each paragraph's figures are compared with the report's data by code">
             {shown.check.verified} of {shown.check.total} paragraphs checked{shown.check.wrong ? `, ${shown.check.wrong} contradict the data` : ""}
           </span>
         )}
-        <button className="tf" onClick={copy}>
+        <Button size="sm" onClick={copy}>
           {copied ? "Copied" : "Copy markdown"}
-        </button>
-        <button className="tf" onClick={download}>
+        </Button>
+        <Button size="sm" onClick={download}>
           Download .md
-        </button>
+        </Button>
       </div>
       <div className="er-body" tabIndex={0} role="region" aria-label="Release article">
         <h2 className="er-art-title">{shown.article.title}</h2>

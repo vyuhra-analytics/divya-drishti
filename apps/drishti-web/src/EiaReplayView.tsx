@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { REPLAY_UNDERLYINGS, type ReplayEntry, type ReplayParams, type ReplayReport, type ReplayRow, type ReplaySummary } from "@drishti/shared";
 import { apiUrl, useSettings } from "./settings";
+import { Button, Input, Select } from "./ui";
 
 const DEFAULTS: Record<ReplayParams["report"], Pick<ReplayParams, "underlying" | "slip" | "threshold">> = {
   WPSR: { underlying: "CRUDEOILM", slip: 1, threshold: 3 },
@@ -64,51 +65,51 @@ export function EiaReplayView() {
         <div className="costs-form no-drag">
           <label>
             Report
-            <select value={report} onChange={(ev) => pickReport(ev.target.value as ReplayParams["report"])}>
+            <Select value={report} onChange={(ev) => pickReport(ev.target.value as ReplayParams["report"])}>
               <option value="WPSR">Petroleum (Wed)</option>
               <option value="WNGSR">Natural gas (Thu)</option>
-            </select>
+            </Select>
           </label>
           <label>
             Contract
-            <select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ReplayParams["underlying"])}>
+            <Select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ReplayParams["underlying"])}>
               {REPLAY_UNDERLYINGS.filter((u) => (report === "WPSR" ? CRUDE : GAS).includes(u)).map((u) => (
                 <option key={u}>{u}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label title="How the trade is entered. At the open: right after the release, in the surprise's direction. AMD: wait for the first spike to sweep the pre-release range, then for a strong move that leaves a gap, and enter when price retraces into the gap (limit order; no retrace, no trade). The exits are the same.">
             Entry
-            <select value={entry} onChange={(ev) => setEntry(ev.target.value as ReplayEntry)}>
+            <Select value={entry} onChange={(ev) => setEntry(ev.target.value as ReplayEntry)}>
               <option value="release">At the open after the release</option>
               <option value="amd-sweep">AMD: against the sweep, on the retrace</option>
               <option value="amd-surprise">AMD: with the surprise, on the retrace</option>
-            </select>
+            </Select>
           </label>
           <label title="R, the risk per trade, as a percentage of the entry price. The stop is 1R, the targets +1R and +2R.">
             R (% of price)
-            <input type="number" min={0.05} max={5} step="any" value={rPct} onChange={(ev) => setRPct(Number(ev.target.value) || 0.5)} />
+            <Input type="number" min={0.05} max={5} step="any" value={rPct} onChange={(ev) => setRPct(Number(ev.target.value) || 0.5)} />
           </label>
           <label title={`The surprise (actual minus forecast) that allows a side, in ${report === "WPSR" ? "million barrels" : "Bcf"}`}>
             Surprise at least
-            <input type="number" min={0} step="any" value={threshold} onChange={(ev) => setThreshold(Math.max(0, Number(ev.target.value) || 0))} />
+            <Input type="number" min={0} step="any" value={threshold} onChange={(ev) => setThreshold(Math.max(0, Number(ev.target.value) || 0))} />
           </label>
           <label title="Minutes after the release before entering (the open of the first traded minute from then)">
             Entry after (min)
-            <input type="number" min={0} max={30} step={1} value={delay} onChange={(ev) => setDelay(Math.max(0, Math.min(30, Math.floor(Number(ev.target.value) || 0))))} />
+            <Input type="number" min={0} max={30} step={1} value={delay} onChange={(ev) => setDelay(Math.max(0, Math.min(30, Math.floor(Number(ev.target.value) || 0))))} />
           </label>
           <label title="Minutes the trade is held at most; what is left then closes at the last price">
             Hold (min)
-            <input type="number" min={5} max={240} step={5} value={hold} onChange={(ev) => setHold(Math.max(5, Math.min(240, Math.floor(Number(ev.target.value) || 60))))} />
+            <Input type="number" min={5} max={240} step={5} value={hold} onChange={(ev) => setHold(Math.max(5, Math.min(240, Math.floor(Number(ev.target.value) || 60))))} />
           </label>
           <label title="Price points paid against you on every market fill">
             Slippage (points)
-            <input type="number" min={0} step="any" value={slip} onChange={(ev) => setSlip(Math.max(0, Number(ev.target.value) || 0))} />
+            <Input type="number" min={0} step="any" value={slip} onChange={(ev) => setSlip(Math.max(0, Number(ev.target.value) || 0))} />
           </label>
         </div>
-        <button className="tf active" onClick={run} disabled={state === "running"}>
+        <Button variant="default" size="sm" onClick={run} disabled={state === "running"}>
           {state === "running" ? "Running…" : "Run replay"}
-        </button>
+        </Button>
         {typeof state === "object" && <p className="empty muted">{state.error}</p>}
 
         {out && s && (

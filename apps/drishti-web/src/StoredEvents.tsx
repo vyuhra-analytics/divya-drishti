@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { believed, disagreements, FINANCE_CALENDAR_ATTRIBUTION } from "@drishti/shared";
 import { apiUrl, useClock, useSettings } from "./settings";
+import { Input } from "./ui";
 
 interface Obs {
   kind: "forecast" | "previous" | "actual" | "revised" | "release_time";
@@ -100,8 +101,8 @@ function TypedForecast({ id, onSaved }: { id: string; onSaved: () => void }) {
   };
   return (
     <div className="st-typed no-drag">
-      <input value={text} onChange={(e) => setText(e.target.value)} placeholder="forecast, e.g. -1.2M" aria-label="Typed-in forecast" size={14} />
-      <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="read on (optional)" aria-label="Where you read it" size={16} />
+      <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="forecast, e.g. -1.2M" aria-label="Typed-in forecast" size={14} />
+      <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="read on (optional)" aria-label="Where you read it" size={16} />
       <button onClick={save} disabled={text.trim() === ""}>
         Add forecast
       </button>

@@ -4,6 +4,7 @@ import { useAlerts } from "./alertsStore";
 import { useServerAlerts } from "./serverAlertsClient";
 import { useClock, useSettings } from "./settings";
 import type { Widget } from "./workspace";
+import { Button, Input, Select } from "./ui";
 
 const RELEASES = ["EIA crude", "EIA natural gas", "API crude", "Baker Hughes"];
 const LEADS = [5, 15, 30, 60];
@@ -53,30 +54,30 @@ export function AlertsWidget(_: { widget: Widget }) {
   return (
     <div className="alerts">
       <form className="alert-form no-drag" onSubmit={submit}>
-        <select aria-label="Alert type" value={kind} onChange={(e) => setKind(e.target.value as AlertKind)}>
+        <Select aria-label="Alert type" value={kind} onChange={(e) => setKind(e.target.value as AlertKind)}>
           {KINDS.map(([k, label]) => (
             <option key={k} value={k}>
               {label}
             </option>
           ))}
-        </select>
+        </Select>
         {(kind === "price" || kind === "change") && (
-          <select aria-label="Instrument" value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+          <Select aria-label="Instrument" value={symbol} onChange={(e) => setSymbol(e.target.value)}>
             {SYMBOLS.map((s) => (
               <option key={s} value={s}>
                 {s.split(":")[1]}
               </option>
             ))}
-          </select>
+          </Select>
         )}
         {kind === "price" && (
-          <select aria-label="Direction" value={op} onChange={(e) => setOp(e.target.value as AlertOp)}>
+          <Select aria-label="Direction" value={op} onChange={(e) => setOp(e.target.value as AlertOp)}>
             <option value="above">above</option>
             <option value="below">below</option>
-          </select>
+          </Select>
         )}
         {(kind === "price" || kind === "change") && (
-          <input
+          <Input
             aria-label={kind === "price" ? "Price level" : "Percent move (negative for a fall)"}
             placeholder={kind === "price" ? "price" : "% (-2 = down 2%)"}
             inputMode="decimal"
@@ -84,29 +85,29 @@ export function AlertsWidget(_: { widget: Widget }) {
             onChange={(e) => setValue(e.target.value)}
           />
         )}
-        {kind === "news" && <input aria-label="Keyword" placeholder="keyword, e.g. OPEC" value={text} onChange={(e) => setText(e.target.value)} />}
+        {kind === "news" && <Input aria-label="Keyword" placeholder="keyword, e.g. OPEC" value={text} onChange={(e) => setText(e.target.value)} />}
         {kind === "release" && (
           <>
-            <select aria-label="Release" value={release} onChange={(e) => setRelease(e.target.value)}>
+            <Select aria-label="Release" value={release} onChange={(e) => setRelease(e.target.value)}>
               {RELEASES.map((r) => (
                 <option key={r}>{r}</option>
               ))}
-            </select>
-            <select aria-label="Lead time" value={lead} onChange={(e) => setLead(Number(e.target.value))}>
+            </Select>
+            <Select aria-label="Lead time" value={lead} onChange={(e) => setLead(Number(e.target.value))}>
               {LEADS.map((m) => (
                 <option key={m} value={m}>
                   {m} min before
                 </option>
               ))}
-            </select>
+            </Select>
           </>
         )}
         <label className="alert-server muted" title="Kept on the server: fires with this window closed and is sent to Telegram or your webhook">
           <input type="checkbox" checked={onServer} onChange={(e) => setOnServer(e.target.checked)} /> From the server
         </label>
-        <button className="btn" type="submit" disabled={!valid}>
+        <Button size="sm" type="submit" disabled={!valid}>
           Add alert
-        </button>
+        </Button>
       </form>
       {note && <p className="down alert-note">{note}</p>}
 
@@ -115,9 +116,9 @@ export function AlertsWidget(_: { widget: Widget }) {
           <input type="checkbox" checked={sound} onChange={(e) => set({ alertSound: e.target.checked })} /> Sound
         </label>
         {perm === "default" && (
-          <button className="btn" onClick={() => Notification.requestPermission().then(setPerm)}>
+          <Button size="sm" onClick={() => Notification.requestPermission().then(setPerm)}>
             Enable desktop notifications
-          </button>
+          </Button>
         )}
         {perm === "granted" && <span>Desktop notifications on</span>}
         {perm === "denied" && <span title="Allow notifications for this site in the browser settings">Notifications blocked</span>}
@@ -133,14 +134,14 @@ export function AlertsWidget(_: { widget: Widget }) {
               {server.channels.webhook ? " · webhook set" : ""}
             </span>
             {server.channels.telegram && !server.channels.telegramLinked && (
-              <button className="btn" title="First send your bot any message in Telegram" onClick={async () => setNote(await server.link())}>
+              <Button size="sm" title="First send your bot any message in Telegram" onClick={async () => setNote(await server.link())}>
                 Link Telegram
-              </button>
+              </Button>
             )}
             {(server.channels.telegramLinked || server.channels.webhook) && (
-              <button className="btn" title="Sends one real message to your chat / webhook" onClick={async () => setNote(await server.test())}>
+              <Button size="sm" title="Sends one real message to your chat / webhook" onClick={async () => setNote(await server.test())}>
                 Send test message
-              </button>
+              </Button>
             )}
           </>
         ) : null}
@@ -155,9 +156,9 @@ export function AlertsWidget(_: { widget: Widget }) {
             </span>
             <span className="muted alert-state">{a.armed ? "watching" : `fired ${clock.time(a.firedAt ?? 0)}`}</span>
             {!a.armed && (
-              <button className="btn" onClick={() => server.rearm(a.id)}>
+              <Button size="sm" onClick={() => server.rearm(a.id)}>
                 Re-arm
-              </button>
+              </Button>
             )}
             <button aria-label={`Delete server alert ${describe(a)}`} className="alert-del" onClick={() => server.remove(a.id)}>
               ×
@@ -169,9 +170,9 @@ export function AlertsWidget(_: { widget: Widget }) {
             <span className="alert-text">{describe(a)}</span>
             <span className="muted alert-state">{a.armed ? "watching" : `fired ${clock.time(a.firedAt ?? 0)}`}</span>
             {!a.armed && (
-              <button className="btn" onClick={() => rearm(a.id)}>
+              <Button size="sm" onClick={() => rearm(a.id)}>
                 Re-arm
-              </button>
+              </Button>
             )}
             <button aria-label={`Delete alert ${describe(a)}`} className="alert-del" onClick={() => remove(a.id)}>
               ×

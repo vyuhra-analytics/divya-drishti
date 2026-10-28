@@ -34,6 +34,7 @@
   --text: #131722;
   --muted: #5b5f6b;
   --accent: #9a6000;
+  --warn: #8a5600; /* amber text that reads on white (the dark theme falls back to #d9a441) */
   --accent-fill: #c98512;
   --on-accent: #131722;
   --shadow: 0 1px 2px rgb(19 23 34 / 0.06);
@@ -482,7 +483,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .costs-head, .costs-note { margin: 0 0 8px; font-size: 11px; }
 .costs-form { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
 .costs-form label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); min-width: 110px; }
-.costs-form input, .costs-form select { font: inherit; font-size: 12px; padding: 3px 6px; background: var(--panel-2, transparent); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+.costs-form input, .costs-form select { font-size: 12px; }
 .costs table { width: 100%; border-collapse: collapse; }
 .costs td { padding: 3px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .costs td:last-child { text-align: right; }
@@ -547,7 +548,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .row-sub .badges.mini { margin-left: 2px; }
 .paper-top { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .paper-top label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
-.paper-top select { font: inherit; font-size: 12px; padding: 3px 6px; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+.paper-top select { font-size: 12px; }
 .paper-agent { color: var(--accent); }
 .paper td { white-space: nowrap; }
 .paper td:nth-child(2) { white-space: normal; }
@@ -667,7 +668,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .lb-rule { font-size: 10px; line-height: 1.5; }
 .labeller kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin-right: 4px; font-size: 11px; text-align: center; border: 1px solid var(--line); border-radius: 3px; }
 .ocx-history { display: inline-flex; align-items: center; gap: 4px; }
-.ocx-history input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; color-scheme: dark light; }
+.ocx-history input { font-size: 11px; color-scheme: dark light; }
 .badge.src-recorded { color: var(--accent); border-color: color-mix(in srgb, var(--accent-fill) 50%, transparent); }
 
 .quote-depth { width: 100%; border-collapse: collapse; margin: 2px 0 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -680,7 +681,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 
 .ch { padding: 6px 10px; display: flex; flex-direction: column; gap: 6px; height: 100%; }
 .ch-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.ch-bar select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; }
+.ch-bar select { font-size: 11px; }
 .ch-read { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-variant-numeric: tabular-nums; }
 .ch-svg { width: 100%; flex: 1; min-height: 120px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
 .ch-price { fill: none; stroke: var(--text); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
@@ -713,7 +714,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .er-check.wrong { color: var(--down); }
 .er-art-foot { font-size: 10px; margin-top: 10px; }
 .er-week { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
-.er-week select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 11px; max-width: 170px; }
+.er-week select { font-size: 11px; max-width: 170px; }
 
 .ef { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .ef-src { font-size: 10px; margin-left: auto; }

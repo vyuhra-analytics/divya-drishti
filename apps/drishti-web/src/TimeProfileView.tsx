@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { PROFILE_UNDERLYINGS, type ProfileUnderlying, type TimeProfile, type WindowProfile, type ZoneDay } from "@drishti/shared";
 import { apiUrl } from "./settings";
+import { Select } from "./ui";
 
 const DAYS = [30, 60, 90] as const;
 const pct = (v: number | undefined, d = 3) => (v === undefined ? "—" : `${v.toFixed(d)}%`);
@@ -46,19 +47,19 @@ export function TimeProfileView() {
         <div className="costs-form no-drag">
           <label>
             Contract
-            <select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ProfileUnderlying)}>
+            <Select value={underlying} onChange={(ev) => setUnderlying(ev.target.value as ProfileUnderlying)}>
               {PROFILE_UNDERLYINGS.map((u) => (
                 <option key={u}>{u}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Last (days)
-            <select value={days} onChange={(ev) => setDays(Number(ev.target.value) as (typeof DAYS)[number])}>
+            <Select value={days} onChange={(ev) => setDays(Number(ev.target.value) as (typeof DAYS)[number])}>
               {DAYS.map((d) => (
                 <option key={d}>{d}</option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         {!data ? (

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import type { Cell, EiaKey, EiaReportCode, ForecastRelease, ForecastTable, GasForecastTable, RuleStats, SeriesStats } from "@drishti/shared";
 import { apiUrl } from "./settings";
+import { Button } from "./ui";
 
 type Loaded = ForecastTable & { threshold: number };
 
@@ -92,9 +93,9 @@ export function EiaForecastsView({ report, active }: { report: EiaReportCode; ac
     <div className="ef">
       <div className="toolbar no-drag" role="group" aria-label="Weeks shown">
         {RANGES.map((r) => (
-          <button key={r} className={r === weeks ? "tf active" : "tf"} onClick={() => setWeeks(r)}>
+          <Button key={r} variant={r === weeks ? "default" : "ghost"} size="sm" onClick={() => setWeeks(r)}>
             {RANGE_NAME[r] ?? `${r} weeks`}
-          </button>
+          </Button>
         ))}
         <span className="muted ef-src">Forecasts: Investing.com consensus (third-party). Actuals: EIA's published reports. Million barrels; surprise = actual minus forecast.</span>
       </div>
@@ -160,9 +161,9 @@ function GasView({ gas, error, weeks, setWeeks }: { gas: (GasForecastTable & { t
     <div className="ef">
       <div className="toolbar no-drag" role="group" aria-label="Weeks shown">
         {RANGES.map((r) => (
-          <button key={r} className={r === weeks ? "tf active" : "tf"} onClick={() => setWeeks(r)}>
+          <Button key={r} variant={r === weeks ? "default" : "ghost"} size="sm" onClick={() => setWeeks(r)}>
             {RANGE_NAME[r] ?? `${r} weeks`}
-          </button>
+          </Button>
         ))}
         <span className="muted ef-src">Forecasts and actuals: Investing.com (third-party; EIA keeps no archive of past gas reports). Bcf; surprise = actual minus forecast.</span>
       </div>

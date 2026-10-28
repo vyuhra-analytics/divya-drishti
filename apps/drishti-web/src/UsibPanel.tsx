@@ -11,6 +11,7 @@ import { loadRecord } from "./reportDayStore";
 import { useNow } from "./market";
 import { useStore } from "./store";
 import type { Widget } from "./workspace";
+import { Button } from "./ui";
 
 // USIB, the non-report-day strategy (docs/redesign/USER_AND_JOBS.md; logic in shared usib.ts): the range of the hour before the US cash open, each 5-minute
 // candle after it with its volume against the ten before and its side of session VWAP, the one signal a day, the entry, R, stop, TP1, TP2 (a chain level) and
@@ -157,9 +158,9 @@ export function UsibWidget(_: { widget: Widget }) {
 
       <div className="toolbar no-drag" role="group" aria-label="Contract">
         {(Object.keys(NAMES) as Underlying[]).map((u) => (
-          <button key={u} className={u === underlying ? "tf active" : "tf"} onClick={() => setUnderlying(u)}>
+          <Button key={u} variant={u === underlying ? "default" : "ghost"} size="sm" onClick={() => setUnderlying(u)}>
             {NAMES[u]}
-          </button>
+          </Button>
         ))}
         <span className="muted rd-note">non-report days</span>
       </div>

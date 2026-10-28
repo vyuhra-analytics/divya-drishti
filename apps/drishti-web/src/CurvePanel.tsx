@@ -3,6 +3,7 @@ import { INSTRUMENTS, instrument, type CurvePoint, type CurveSummary } from "@dr
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button } from "./ui";
 
 interface Reply {
   points: CurvePoint[];
@@ -58,9 +59,9 @@ export function CurveWidget({ widget }: { widget: Widget }) {
     <div className="curve">
       <div className="toolbar no-drag">
         {INSTRUMENTS.filter((i) => i.exchange !== "FX").map((i) => (
-          <button key={i.symbol} className={i.symbol === active ? "tf active" : "tf"} title={i.name} onClick={() => setSymbol(i.symbol)}>
+          <Button key={i.symbol} variant={i.symbol === active ? "default" : "ghost"} size="sm" title={i.name} onClick={() => setSymbol(i.symbol)}>
             {i.symbol.split(":")[1]}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="curve-body" tabIndex={0} role="region" aria-label="Futures curve">

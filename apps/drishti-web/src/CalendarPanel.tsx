@@ -6,6 +6,7 @@ import { useNow } from "./market";
 import { StoredEvents } from "./StoredEvents";
 import type { EiaScheduleException } from "@drishti/shared";
 import type { Widget } from "./workspace";
+import { Button } from "./ui";
 
 type Tab = CalKind | "today" | "recorded";
 const TABS: [Tab, string][] = [
@@ -80,21 +81,21 @@ export function CalendarWidget(_: { widget: Widget }) {
     <div className="calendar">
       <div className="toolbar no-drag">
         {TABS.map(([k, label]) => (
-          <button key={k} className={k === tab ? "tf active" : "tf"} onClick={() => setTab(k)} title={k === "recorded" ? "Releases saved by the recorder, with every forecast and actual as it was seen" : undefined}>
+          <Button key={k} variant={k === tab ? "default" : "ghost"} size="sm" onClick={() => setTab(k)} title={k === "recorded" ? "Releases saved by the recorder, with every forecast and actual as it was seen" : undefined}>
             {label}
-          </button>
+          </Button>
         ))}
         {tab !== "recorded" && tab !== "holiday" && (
-          <button className={bigOnly ? "tf active" : "tf"} aria-pressed={bigOnly} onClick={() => setBig({ ...big, [tab]: !bigOnly })} title="Hide low-impact events">
+          <Button variant={bigOnly ? "default" : "ghost"} size="sm" aria-pressed={bigOnly} onClick={() => setBig({ ...big, [tab]: !bigOnly })} title="Hide low-impact events">
             High + Med
-          </button>
+          </Button>
         )}
         {tab === "today" && (
           <span className="cal-focus" role="group" aria-label="What to show Today">
             {([["crude", "Crude"], ["gas", "Gas"], ["all", "All"]] as const).map(([f, label]) => (
-              <button key={f} className={f === focus ? "tf active" : "tf"} onClick={() => pickFocus(f)} title={f === "all" ? "Every event" : `Events that move ${label.toLowerCase()}, the rupee and MCX itself`}>
+              <Button key={f} variant={f === focus ? "default" : "ghost"} size="sm" onClick={() => pickFocus(f)} title={f === "all" ? "Every event" : `Events that move ${label.toLowerCase()}, the rupee and MCX itself`}>
                 {label}
-              </button>
+              </Button>
             ))}
           </span>
         )}

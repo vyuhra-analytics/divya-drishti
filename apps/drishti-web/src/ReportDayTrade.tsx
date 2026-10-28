@@ -5,6 +5,7 @@ import { useClock } from "./settings";
 import { loadRecord, saveRecord, type DayRecord } from "./reportDayStore";
 import { usePublishLevels } from "./strategyLevels";
 import { paperCall } from "./paperClient";
+import { Button, Input, Select } from "./ui";
 
 // The in-trade and done stages of the report-day screen: the trader says when they entered and exited (by hand: no order is ever placed here), and the
 // screen follows the trade in between: the future against entry / stop / TP1 / TP2, the result in R, the option's rupee result against the loss cap, the
@@ -216,7 +217,7 @@ export function ReportDayTrade({ releaseAt, recordKey, timeStop, symbol, signal,
             }}
           />
         ) : (
-          <button className="tf active" onClick={() => setExiting(true)}>I exited the trade</button>
+          <Button variant="default" size="sm" onClick={() => setExiting(true)}>I exited the trade</Button>
         )}
         <p className="muted">This only follows the trade. The order is placed and closed by you.</p>
       </section>
@@ -243,7 +244,7 @@ export function ReportDayTrade({ releaseAt, recordKey, timeStop, symbol, signal,
         />
       ) : (
         <>
-          <button className="tf active" onClick={() => setEntering(true)}>I entered this trade</button>
+          <Button variant="default" size="sm" onClick={() => setEntering(true)}>I entered this trade</Button>
           <p className="muted">Press it after you have placed the order, with the price you got: the screen then follows the stop, the targets, the cap and the time stop.</p>
         </>
       )}
@@ -280,13 +281,13 @@ function EnterForm({ signal, pick, units, price, timeStop, onSubmit, onCancel }:
         onSubmit({ enteredAt: Date.now(), side: signal.side, futureEntry: f, rPoints: r, stop: f - dir * r, tp1, tp2, trail: signal.trail, timeStop, strike: s, optionKey: pick && pick.strike === s ? pick.key : undefined, premium: p, units, lots: l, delta: pick && pick.strike === s ? pick.delta : undefined });
       }}
     >
-      <label>Future entry price<input inputMode="decimal" value={future} onChange={(e) => setFuture(e.target.value)} /></label>
-      <label>Option strike<input inputMode="decimal" value={strike} onChange={(e) => setStrike(e.target.value)} /></label>
-      <label>Premium paid<input inputMode="decimal" value={premium} onChange={(e) => setPremium(e.target.value)} /></label>
-      <label>Lots<input inputMode="numeric" value={lots} onChange={(e) => setLots(e.target.value)} /></label>
+      <label>Future entry price<Input inputMode="decimal" value={future} onChange={(e) => setFuture(e.target.value)} /></label>
+      <label>Option strike<Input inputMode="decimal" value={strike} onChange={(e) => setStrike(e.target.value)} /></label>
+      <label>Premium paid<Input inputMode="decimal" value={premium} onChange={(e) => setPremium(e.target.value)} /></label>
+      <label>Lots<Input inputMode="numeric" value={lots} onChange={(e) => setLots(e.target.value)} /></label>
       <div className="rd-form-actions">
-        <button type="submit" className="tf active" disabled={!ok}>Follow this trade</button>
-        <button type="button" className="tf" onClick={onCancel}>Cancel</button>
+        <Button type="submit" variant="default" size="sm" disabled={!ok}>Follow this trade</Button>
+        <Button type="button" size="sm" onClick={onCancel}>Cancel</Button>
       </div>
       {r === undefined && <p className="muted">R is not known yet (the candles before the signal are too few).</p>}
     </form>
@@ -307,14 +308,14 @@ function ExitForm({ defaultPremium, defaultReason, canLog, onSubmit, onCancel }:
         if (ok) onSubmit(p, reason, canLog && log);
       }}
     >
-      <label>Premium you sold at<input inputMode="decimal" value={premium} onChange={(e) => setPremium(e.target.value)} /></label>
+      <label>Premium you sold at<Input inputMode="decimal" value={premium} onChange={(e) => setPremium(e.target.value)} /></label>
       <label>
         Why
-        <select value={reason} onChange={(e) => setReason(e.target.value as TradeExitReason)}>
+        <Select value={reason} onChange={(e) => setReason(e.target.value as TradeExitReason)}>
           {(Object.keys(REASONS) as TradeExitReason[]).map((k) => (
             <option key={k} value={k}>{REASONS[k]}</option>
           ))}
-        </select>
+        </Select>
       </label>
       {canLog && (
         <label className="rd-check">
@@ -332,8 +333,8 @@ function ExitForm({ defaultPremium, defaultReason, canLog, onSubmit, onCancel }:
         </label>
       )}
       <div className="rd-form-actions">
-        <button type="submit" className="tf active" disabled={!ok}>Close the record</button>
-        <button type="button" className="tf" onClick={onCancel}>Cancel</button>
+        <Button type="submit" variant="default" size="sm" disabled={!ok}>Close the record</Button>
+        <Button type="button" size="sm" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
   );

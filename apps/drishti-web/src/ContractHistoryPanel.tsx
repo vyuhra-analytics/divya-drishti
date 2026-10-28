@@ -4,6 +4,7 @@ import { usePoll } from "./Feeds";
 import { apiUrl, makeFormat, useClock, useSettings } from "./settings";
 import { useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button, Select } from "./ui";
 
 interface Contract {
   key: string;
@@ -157,39 +158,39 @@ export function ContractHistoryWidget({ widget }: { widget: Widget }) {
     <div className="ch">
       <div className="ch-bar no-drag">
         {(["FUT", "CE", "PE"] as const).map((s) => (
-          <button key={s} className="tf" aria-pressed={side === s} onClick={() => setSide(s)}>
+          <Button key={s} size="sm" aria-pressed={side === s} onClick={() => setSide(s)}>
             {SIDE_LABEL[s]}
-          </button>
+          </Button>
         ))}
-        <select aria-label="Expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
+        <Select aria-label="Expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
           {expiries.map((e) => (
             <option key={e} value={e}>
               {e}
               {e < istDay(Date.now()) ? " (expired)" : ""}
             </option>
           ))}
-        </select>
+        </Select>
         {side !== "FUT" && (
-          <select aria-label="Strike" value={strike ?? ""} onChange={(e) => setStrike(Number(e.target.value))}>
+          <Select aria-label="Strike" value={strike ?? ""} onChange={(e) => setStrike(Number(e.target.value))}>
             {strikes.map((k) => (
               <option key={k} value={k}>
                 {k}
               </option>
             ))}
-          </select>
+          </Select>
         )}
-        <select aria-label="Resolution" value={tf} onChange={(e) => setTf(e.target.value as Tf)}>
+        <Select aria-label="Resolution" value={tf} onChange={(e) => setTf(e.target.value as Tf)}>
           {Object.keys(TFS).map((t) => (
             <option key={t}>{t}</option>
           ))}
-        </select>
-        <select aria-label="Sessions" value={sessions} onChange={(e) => setSessions(Number(e.target.value) as (typeof SESSIONS)[number])}>
+        </Select>
+        <Select aria-label="Sessions" value={sessions} onChange={(e) => setSessions(Number(e.target.value) as (typeof SESSIONS)[number])}>
           {SESSIONS.map((d) => (
             <option key={d} value={d}>
               last {d} session{d === 1 ? "" : "s"}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {!underlying && <p className="empty muted">Candle history is recorded for the MCX contracts only. Link this panel to a crude or natural gas contract.</p>}

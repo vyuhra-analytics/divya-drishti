@@ -4,6 +4,7 @@ import { Outdated } from "./Outdated";
 import { apiUrl, formatStamp, useSettings } from "./settings";
 import { sparkPoints } from "./spark";
 import { useWidgetSymbol, type Widget } from "./workspace";
+import { Button } from "./ui";
 
 const RANGES = [
   ["1y", 52],
@@ -63,14 +64,14 @@ export function CotWidget({ widget }: { widget: Widget }) {
     <div className="cot">
       <div className="toolbar no-drag">
         {COT_MARKETS.map((m) => (
-          <button key={m.id} className={m.id === active ? "tf active" : "tf"} title={m.name} onClick={() => setMarket(m.id)}>
+          <Button key={m.id} variant={m.id === active ? "default" : "ghost"} size="sm" title={m.name} onClick={() => setMarket(m.id)}>
             {m.id === "natgas" ? "Nat gas" : m.id === "wti" ? "WTI" : m.id === "brent" ? "Brent" : "RBOB"}
-          </button>
+          </Button>
         ))}
         {RANGES.map(([label, w]) => (
-          <button key={label} className={w === weeks ? "tf active" : "tf"} onClick={() => setWeeks(w)}>
+          <Button key={label} variant={w === weeks ? "default" : "ghost"} size="sm" onClick={() => setWeeks(w)}>
             {label}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="cot-body" tabIndex={0} role="region" aria-label="Commitments of Traders">
