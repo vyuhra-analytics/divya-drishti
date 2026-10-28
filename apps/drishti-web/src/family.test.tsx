@@ -41,22 +41,23 @@ const report = {
     withoutTradebook: [{ importId: 1, fileName: "pnl-AB1234.xlsx", periodFrom: "2024-04-01", periodTo: "2025-03-31" }],
     unplaced: { contracts: 0, realized: 0 },
   },
-  contracts: [contract("c1", "NIFTY24JUN23000CE", 1000), contract("c2", "NIFTY24JUN23100PE", -3000), contract("c3", "CRUDEOIL 15NOV24 CE 5900", 2500, { segment: "commodity", memberId: 2, charges: 40, net: 2460 })],
-  contractsTotal: 3,
   insights,
   yearBySegment: { rows: [{ key: "2024-25", label: "2024-25" }], cols: [{ key: "commodity", label: "Commodity" }, { key: "fno", label: "Futures & Options (Derivatives)" }], cells: { "2024-25": { commodity: { realized: 2000, charges: 50, net: 1950 }, fno: { realized: -5000, charges: 150, net: -5150 } } } },
   memberByYear: { rows: [{ key: "1", label: "Dad" }], cols: [{ key: "2024-25", label: "2024-25" }], cells: { "1": { "2024-25": { realized: -4000, charges: 100, net: -4100 } } } },
 };
+const contractRowsMock = [contract("c1", "NIFTY24JUN23000CE", 1000), contract("c2", "NIFTY24JUN23100PE", -3000), contract("c3", "CRUDEOIL 15NOV24 CE 5900", 2500, { segment: "commodity", memberId: 2, charges: 40, net: 2460 })];
 let requests: string[] = [];
 
 beforeEach(() => {
   requests = [];
   try {
     localStorage.setItem("drishti-family-hide", "0");
+    localStorage.removeItem("drishti-family-view");
   } catch {}
   globalThis.fetch = mock(async (url: string) => {
     const u = String(url);
     requests.push(u);
+    if (u.includes("/family/contracts")) return { ok: true, json: async () => ({ contracts: contractRowsMock, total: contractRowsMock.length }) };
     if (u.includes("/family/statement")) return { ok: true, json: async () => ({ memberId: 1, fy: "2024-25", accounts: [], segments: [], totals: { contracts: 0, realized: 0, chargesTotal: 0, net: 0, turnoverAtLeast: 0 }, contracts: [], notCut: false }) };
     return { ok: true, json: async () => (u.includes("/family/summary") ? report : overview) };
   }) as never;
@@ -64,6 +65,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const widget = { id: "fam-1", type: "family" } as never;
+const topBar = () => within(document.querySelector(".fam-top") as HTMLElement); // the year in the statement card has the same label
 const open = async () => {
   const view = render(<FamilyWidget widget={widget} />);
   await waitFor(() => expect(screen.getByText("Net after charges")).toBeTruthy());
@@ -117,7 +119,7 @@ test("the break-down tabs switch what is shown, including the year and member ta
 test("the contracts tab lists every contract, searches it, sorts by a column and marks charges the statement does not give", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
-  expect(screen.getByText("3 of 3 contracts")).toBeTruthy();
+  await waitFor(() => expect(screen.getByText("3 of 3 contracts")).toBeTruthy()); // fetched when the tab opens
   const body = () => [...document.querySelectorAll(".fam-table tbody tr")].map((r) => r.querySelector("td")!.textContent);
   expect(body()).toEqual(["NIFTY24JUN23100PE", "NIFTY24JUN23000CE", "CRUDEOIL 15NOV24 CE 5900"]); // worst realised first
   fireEvent.click(screen.getByRole("button", { name: /Realised/ }));
@@ -174,15 +176,16 @@ test("with amounts hidden no figure, name or verdict is on screen, not even in t
 test("an API that has not been restarted since the update still shows the screen, without the newer parts", async () => {
   globalThis.fetch = mock(async (url: string) => {
     const { coverage, statementPeriods, ...old } = overview;
-    const { contracts, contractsTotal, insights: _i, yearBySegment, memberByYear, ...oldReport } = report;
-    void coverage, statementPeriods, contracts, contractsTotal, _i, yearBySegment, memberByYear;
+    const { insights: _i, yearBySegment, memberByYear, ...oldReport } = report;
+    void coverage, statementPeriods, _i, yearBySegment, memberByYear;
+    if (String(url).includes("/family/contracts")) return { ok: false, status: 404, json: async () => ({ message: "Cannot GET /family/contracts" }) };
     return { ok: true, json: async () => (String(url).includes("/family/summary") ? oldReport : old) };
   }) as never;
   await open();
   expect(screen.getByText("Net after charges")).toBeTruthy();
   expect(screen.queryByText("Why the result is what it is")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
-  expect(screen.getByText("No contracts in this selection.")).toBeTruthy();
+  await waitFor(() => expect(screen.getAllByRole("alert").some((a) => /Cannot GET \/family\/contracts/.test(a.textContent ?? ""))).toBe(true)); // said plainly, the rest of the screen still works
 });
 
 test("the months tab separates what a tradebook proves from what is placed by contract expiry, and says which is which", async () => {
@@ -199,4 +202,78 @@ test("the months tab separates what a tradebook proves from what is placed by co
   const jun = screen.getByText("2024-06").closest("tr")!;
   expect(within(jun).getAllByText("—").length).toBe(1); // no estimate in June
   expect(screen.getByText(/The months add up to the totals/)).toBeTruthy();
+});
+
+test("the contracts are fetched only when their tab is open, and the files and people are not read again when a filter changes", async () => {
+  await open();
+  const count = (needle: string) => requests.filter((r) => r.includes(needle)).length;
+  expect(count("/family/contracts")).toBe(0); // the overview does not need them
+  expect(count("/family/summary")).toBe(1);
+  const overviewReads = requests.filter((r) => r.endsWith("/family")).length;
+  fireEvent.change(topBar().getByLabelText("Year"), { target: { value: "2024-25" } });
+  await waitFor(() => expect(count("/family/summary")).toBe(2));
+  expect(requests.filter((r) => r.endsWith("/family")).length).toBe(overviewReads); // members and files did not change, so they are not asked again
+  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  await waitFor(() => expect(count("/family/contracts")).toBe(1));
+  expect(requests.some((r) => r.includes("/family/contracts?period=2024-25"))).toBe(true); // with the filter that is on
+  fireEvent.change(topBar().getByLabelText("Year"), { target: { value: "" } });
+  await waitFor(() => expect(count("/family/contracts")).toBe(2)); // the open tab follows the filter
+});
+
+test("a slow answer for an earlier selection never replaces the answer for the one on screen", async () => {
+  const slow: { release?: () => void } = {};
+  const earlier = { ...report, summary: { ...report.summary, totals: totals(111, 0) } };
+  const later = { ...report, summary: { ...report.summary, totals: totals(222, 0) } };
+  globalThis.fetch = mock(async (url: string) => {
+    const u = String(url);
+    if (u.includes("/family/summary?member=1")) {
+      await new Promise<void>((r) => (slow.release = r)); // the first selection answers last
+      return { ok: true, json: async () => earlier };
+    }
+    if (u.includes("/family/summary?member=2")) return { ok: true, json: async () => later };
+    return { ok: true, json: async () => (u.includes("/family/summary") ? report : overview) };
+  }) as never;
+  await open();
+  fireEvent.change(topBar().getByLabelText("Member"), { target: { value: "1" } });
+  fireEvent.change(topBar().getByLabelText("Member"), { target: { value: "2" } });
+  await waitFor(() => expect(screen.getAllByText("222.00").length).toBeGreaterThan(0));
+  slow.release?.();
+  await new Promise((r) => setTimeout(r, 30));
+  expect(screen.queryAllByText("111.00")).toHaveLength(0);
+  expect(screen.getAllByText("222.00").length).toBeGreaterThan(0);
+});
+
+test("the view the owner left is remembered: the tab, the year, the member and the break-down come back after a reload", async () => {
+  localStorage.setItem("drishti-family-view", JSON.stringify({ tab: "contracts", period: "2024-25", memberId: "1", segment: "fno", cut: "underlying" }));
+  render(<FamilyWidget widget={widget} />);
+  await waitFor(() => expect(screen.getByText("3 of 3 contracts")).toBeTruthy());
+  expect((topBar().getByLabelText("Year") as HTMLSelectElement).value).toBe("2024-25");
+  expect((topBar().getByLabelText("Member") as HTMLSelectElement).value).toBe("1");
+  expect(requests.some((r) => r.includes("/family/contracts?period=2024-25&member=1&segment=fno"))).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  expect(JSON.parse(localStorage.getItem("drishti-family-view")!)).toMatchObject({ tab: "months", period: "2024-25", memberId: "1" });
+  cleanup();
+  // a remembered member that no longer exists is dropped instead of leaving an empty screen
+  localStorage.setItem("drishti-family-view", JSON.stringify({ tab: "overview", period: "", memberId: "99", segment: "", cut: "account" }));
+  await open();
+  await waitFor(() => expect((topBar().getByLabelText("Member") as HTMLSelectElement).value).toBe(""));
+});
+
+test("a long list of contracts is drawn in pieces, with the rest one press away, and a search narrows it", async () => {
+  const many = Array.from({ length: 450 }, (_, i) => contract(`m${i}`, `NIFTY24JUN${20000 + i}CE`, i - 200));
+  globalThis.fetch = mock(async (url: string) => {
+    const u = String(url);
+    if (u.includes("/family/contracts")) return { ok: true, json: async () => ({ contracts: many, total: 450 }) };
+    return { ok: true, json: async () => (u.includes("/family/summary") ? report : overview) };
+  }) as never;
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  await waitFor(() => expect(screen.getByText("450 of 450 contracts")).toBeTruthy());
+  const rowsShown = () => document.querySelectorAll(".fam-contracts tbody tr").length;
+  expect(rowsShown()).toBe(100);
+  fireEvent.click(screen.getByRole("button", { name: /Show 200 more \(350 not shown\)/ }));
+  expect(rowsShown()).toBe(300);
+  fireEvent.change(screen.getByLabelText("Search contracts"), { target: { value: "20449" } });
+  expect(rowsShown()).toBe(1);
+  expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
 });

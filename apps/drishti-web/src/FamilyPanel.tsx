@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import type { Widget } from "./workspace";
@@ -31,8 +31,6 @@ interface Overview {
 interface Report {
   summary: Summary;
   monthly: MonthlyView;
-  contracts: ContractRow[];
-  contractsTotal: number;
   insights: Insights | null;
   yearBySegment: CrossTab;
   memberByYear: CrossTab;
@@ -51,6 +49,29 @@ type Cut = "account" | "segment" | "underlying" | "charges" | "yearseg" | "membe
 type SortKey = "symbol" | "segment" | "member" | "fy" | "quantity" | "realized" | "charges" | "net";
 
 const HIDE_KEY = "drishti-family-hide";
+const VIEW_KEY = "drishti-family-view";
+const TABS: Tab[] = ["overview", "contracts", "months", "setup"];
+const CUTS: Cut[] = ["account", "segment", "underlying", "charges", "yearseg", "memberyear"];
+/** how many contract rows are drawn at first and each time "Show more" is pressed: the list can be thousands long, so it is drawn in pieces */
+const FIRST_ROWS = 100;
+const MORE_ROWS = 200;
+
+interface ViewState {
+  tab?: Tab;
+  period: string;
+  memberId: string;
+  segment: string;
+  cut: Cut;
+}
+/** The view the owner left: tab, year, member, segment and break-down, so a reload comes back to the same screen. A damaged or blocked store gives the defaults. */
+function loadView(): ViewState {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}");
+    return { tab: TABS.includes(v.tab) ? v.tab : undefined, period: typeof v.period === "string" ? v.period : "", memberId: typeof v.memberId === "string" ? v.memberId : "", segment: typeof v.segment === "string" ? v.segment : "", cut: CUTS.includes(v.cut) ? v.cut : "account" };
+  } catch {
+    return { period: "", memberId: "", segment: "", cut: "account" };
+  }
+}
 const inr = (n: number, dp = 2) => n.toLocaleString("en-IN", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -61,6 +82,24 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = <T,>(path: string, body: unknown) => call<T>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const patch = <T,>(path: string, body: unknown) => call<T>(path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+/** One row of the contracts table. Memoised: a keystroke in the search box or a change elsewhere on the screen redraws only the rows whose contract, name or masking changed. */
+const ContractLine = memo(function ContractLine({ c, member, hide }: { c: ContractRow; member: string; hide: boolean }) {
+  const money = (n: number) => (hide ? "••••" : inr(n));
+  const signed = (n: number) => <span className={n > 0 ? "up" : n < 0 ? "down" : ""}>{money(n)}</span>;
+  return (
+    <tr>
+      <td title={c.file}>{c.symbol}</td>
+      <td>{SEGMENT_LABELS[c.segment]}</td>
+      <td>{member}</td>
+      <td>{c.fy}</td>
+      <td className="num">{c.quantity}</td>
+      <td className="num">{signed(c.realized)}</td>
+      <td className="num">{c.charges === undefined ? <span className="muted" title="This statement gives charges for the whole period, not per contract">—</span> : money(c.charges)}</td>
+      <td className="num">{c.net === undefined ? <span className="muted">—</span> : signed(c.net)}</td>
+    </tr>
+  );
+});
 
 /** A diverging bar for a profit or loss, scaled to the largest in its table. */
 function Bar({ value, max }: { value: number; max: number }) {
@@ -171,20 +210,28 @@ export function FamilyWidget(_: { widget: Widget }) {
       return true;
     }
   });
-  const [period, setPeriod] = useState("");
-  const [memberId, setMemberId] = useState("");
-  const [segment, setSegment] = useState("");
+  const [initial] = useState(loadView);
+  const [period, setPeriod] = useState(initial.period);
+  const [memberId, setMemberId] = useState(initial.memberId);
+  const [segment, setSegment] = useState(initial.segment);
   const [reveal, setReveal] = useState<Set<number>>(new Set());
   const [newMember, setNewMember] = useState("");
-  const [tab, setTab] = useState<Tab | null>(null);
-  const [cut, setCut] = useState<Cut>("account");
+  const [tab, setTab] = useState<Tab | null>(initial.tab ?? null);
+  const [cut, setCut] = useState<Cut>(initial.cut);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "realized", dir: 1 });
-  const [shown, setShown] = useState(200);
+  const [shown, setShown] = useState(FIRST_ROWS);
   const [stMember, setStMember] = useState("");
   const [stYear, setStYear] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [contractsData, setContractsData] = useState<{ rows: ContractRow[]; total: number; query: string } | null>(null);
+  const [contractsError, setContractsError] = useState<string | null>(null);
+  /** report requests in flight: while any is, the numbers on screen are the previous selection's and are dimmed */
+  const [pending, setPending] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const seq = useRef({ overview: 0, report: 0, contracts: 0 });
+  const aborts = useRef<{ report?: AbortController; contracts?: AbortController }>({});
 
   const query = useMemo(() => {
     const q = new URLSearchParams();
@@ -195,21 +242,100 @@ export function FamilyWidget(_: { widget: Widget }) {
     return s ? `?${s}` : "";
   }, [period, memberId, segment]);
 
-  const reload = useCallback(async () => {
+  // the view is remembered, so a reload (or the next visit) comes back to the same tab, year, member and break-down
+  useEffect(() => {
     try {
-      const [o, r] = await Promise.all([call<Overview>(""), call<Report>(`/summary${query}`)]);
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ tab, period, memberId, segment, cut }));
+    } catch {
+      /* not remembered */
+    }
+  }, [tab, period, memberId, segment, cut]);
+
+  // Three requests, each answering only its own question and each ignoring an answer that has been overtaken by a newer one: the members and files change only when
+  // something is added or removed; the summary follows the filters; the contracts are fetched only while the Contracts tab is open.
+  const loadOverview = useCallback(async () => {
+    const mine = ++seq.current.overview;
+    try {
+      const o = await call<Overview>("");
+      if (mine !== seq.current.overview) return;
       // an API that has not been restarted since an update answers without the newer fields: the screen shows what it has instead of failing
       setData({ ...o, coverage: o.coverage ?? { years: [], rows: [] }, statementPeriods: o.statementPeriods ?? [] });
-      const monthly = { ...r.monthly, months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
-      setReport({ ...r, monthly, contracts: r.contracts ?? [], contractsTotal: r.contractsTotal ?? 0, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
       setError(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (mine === seq.current.overview) setError((e as Error).message);
+    }
+  }, []);
+
+  const loadReport = useCallback(async () => {
+    const mine = ++seq.current.report;
+    aborts.current.report?.abort();
+    const ac = new AbortController();
+    aborts.current.report = ac;
+    setPending((n) => n + 1);
+    try {
+      const r = await call<Report>(`/summary${query}`, { signal: ac.signal });
+      if (mine !== seq.current.report) return;
+      const monthly = { ...r.monthly, months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
+      setReport({ ...r, monthly, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
+      setError(null);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError" && mine === seq.current.report) setError((e as Error).message);
+    } finally {
+      setPending((n) => n - 1);
     }
   }, [query]);
+
+  const loadContracts = useCallback(async () => {
+    const mine = ++seq.current.contracts;
+    aborts.current.contracts?.abort();
+    const ac = new AbortController();
+    aborts.current.contracts = ac;
+    try {
+      const r = await call<{ contracts: ContractRow[]; total: number }>(`/contracts${query}`, { signal: ac.signal });
+      if (mine !== seq.current.contracts) return;
+      setContractsData({ rows: r.contracts ?? [], total: r.total ?? 0, query });
+      setContractsError(null);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError" && mine === seq.current.contracts) setContractsError((e as Error).message);
+    }
+  }, [query]);
+
+  /** after something was added, moved or removed: everything that depends on the files is read again */
+  const reload = useCallback(async () => {
+    setContractsData(null);
+    await Promise.all([loadOverview(), loadReport(), tab === "contracts" ? loadContracts() : Promise.resolve()]);
+  }, [loadOverview, loadReport, loadContracts, tab]);
+
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void loadOverview();
+  }, [loadOverview]);
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+  useEffect(() => {
+    if (tab === "contracts" && contractsData?.query !== query) void loadContracts();
+    setShown(FIRST_ROWS);
+  }, [tab, query, contractsData?.query, loadContracts]);
+  // a remembered member or year that no longer exists would show an empty screen with nothing to explain it
+  useEffect(() => {
+    if (!data) return;
+    if (memberId && !data.members.some((m) => String(m.id) === memberId)) setMemberId("");
+    if (period && data.statementPeriods.length > 0 && !data.statementPeriods.includes(period)) setPeriod("");
+  }, [data, memberId, period]);
+
+  // every contract of the open selection, searched and sorted; recomputed only when what it depends on changes, never on an unrelated redraw
+  const contractList = useMemo(() => {
+    const rows = contractsData?.rows ?? [];
+    const needle = q.trim().toLowerCase();
+    const mname = (id: number) => (data?.members.find((m) => m.id === id)?.nickname ?? "").toLowerCase();
+    const list = rows.filter((c) => !needle || c.symbol.toLowerCase().includes(needle) || c.underlying.toLowerCase().includes(needle) || (!hide && mname(c.memberId).includes(needle)));
+    const val = (c: ContractRow): number | string => (sort.key === "member" ? mname(c.memberId) : sort.key === "segment" ? c.segment : sort.key === "symbol" ? c.symbol : sort.key === "fy" ? c.fy : (c[sort.key] ?? Number.POSITIVE_INFINITY));
+    return [...list].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * sort.dir;
+    });
+  }, [contractsData, q, sort, hide, data?.members]);
 
   const toggleHide = () => {
     const next = !hide;
@@ -233,7 +359,8 @@ export function FamilyWidget(_: { widget: Widget }) {
     if (!list.length) return;
     setBusy(true);
     const out: Outcome[] = [];
-    for (const f of list) {
+    for (const [i, f] of list.entries()) {
+      setProgress(`Reading ${i + 1} of ${list.length}${hide ? "" : `: ${f.name}`}`);
       try {
         const r = await call<{ kind: string; segment: Segment; segments?: Segment[]; periodFrom: string; periodTo: string; rows: number; newAccount: boolean; client: string; filedUnder?: string }>(`/import?name=${encodeURIComponent(f.name)}${accept ? "&accept=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: f.buf });
         out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${(r.segments ?? [r.segment]).map((x) => SEGMENT_LABELS[x]).join(" + ")} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? (r.filedUnder ? `, new account for client ${r.client}, filed under ${hide ? "the member of that name" : r.filedUnder}` : `, new account for client ${r.client} (name the person below)`) : ""}` });
@@ -244,6 +371,7 @@ export function FamilyWidget(_: { widget: Widget }) {
       }
     }
     setOutcomes((prev) => [...out, ...prev.filter((p) => !out.some((o) => o.file === p.file))].slice(0, 12));
+    setProgress(null);
     setBusy(false);
     if (input.current) input.current.value = "";
     await reload();
@@ -384,18 +512,7 @@ export function FamilyWidget(_: { widget: Widget }) {
     });
   };
 
-  // ---- every contract: searched, sorted, and saved as CSV
-  const contractList = (() => {
-    const needle = q.trim().toLowerCase();
-    const mname = (id: number) => (data.members.find((m) => m.id === id)?.nickname ?? "").toLowerCase();
-    const list = report.contracts.filter((c) => !needle || c.symbol.toLowerCase().includes(needle) || c.underlying.toLowerCase().includes(needle) || (!hide && mname(c.memberId).includes(needle)));
-    const val = (c: ContractRow): number | string => (sort.key === "member" ? mname(c.memberId) : sort.key === "segment" ? c.segment : sort.key === "symbol" ? c.symbol : sort.key === "fy" ? c.fy : (c[sort.key] ?? Number.POSITIVE_INFINITY));
-    return [...list].sort((a, b) => {
-      const x = val(a);
-      const y = val(b);
-      return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * sort.dir;
-    });
-  })();
+  // ---- sorting and saving the contracts
   const sortBy = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, dir: (cur.dir * -1) as 1 | -1 } : { key, dir: key === "realized" || key === "net" || key === "charges" ? 1 : -1 }));
   const sortHead = (key: SortKey, text: string, num = false) => (
     <th className={num ? "num" : undefined} aria-sort={sort.key === key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
@@ -418,7 +535,7 @@ export function FamilyWidget(_: { widget: Widget }) {
   );
 
   return (
-    <div className="family">
+    <div className={`family${pending > 0 ? " fam-updating" : ""}`} aria-busy={pending > 0}>
       <div className="fam-top no-drag">
         <span className="fam-tabs">
           {tabButton("overview", "Overview")}
@@ -430,8 +547,8 @@ export function FamilyWidget(_: { widget: Widget }) {
           Year
           <select value={period} onChange={(e) => setPeriod(e.target.value)}>
             <option value="">All years</option>
-            {s.byPeriod.map((p) => (
-              <option key={p.key} value={p.key}>{p.key}</option>
+            {(data.statementPeriods.length > 0 ? data.statementPeriods : s.byPeriod.map((p) => p.key)).map((y) => (
+              <option key={y} value={y}>{y}</option>
             ))}
           </select>
         </label>
@@ -725,17 +842,21 @@ export function FamilyWidget(_: { widget: Widget }) {
 
       {active === "contracts" && (
         <section className="fam-card no-drag">
-          {report.contracts.length === 0 ? (
+          {contractsError ? (
+            <p className="down" role="alert">{contractsError}</p>
+          ) : !contractsData || contractsData.query !== query ? (
+            <p className="muted" role="status">Loading contracts…</p>
+          ) : contractsData.rows.length === 0 ? (
             <p className="muted">No contracts in this selection.</p>
           ) : (
             <>
               <div className="fam-cuts">
-                <input className="fam-search" type="search" placeholder="Search contract or underlying" aria-label="Search contracts" value={q} onChange={(e) => { setQ(e.target.value); setShown(200); }} />
-                <span className="muted">{contractList.length} of {report.contractsTotal} contracts</span>
+                <input className="fam-search" type="search" placeholder="Search contract or underlying" aria-label="Search contracts" value={q} onChange={(e) => { setQ(e.target.value); setShown(FIRST_ROWS); }} />
+                <span className="muted">{contractList.length} of {contractsData.total} contracts</span>
                 <button className="tf" onClick={downloadContracts} disabled={hide} title={hide ? "Turn off Hide names and amounts to export" : "Download the contracts on screen as CSV"}>Download CSV</button>
               </div>
               <div className="fam-scroll">
-                <table className="fam-table">
+                <table className="fam-table fam-contracts">
                   <thead>
                     <tr>
                       {sortHead("symbol", "Contract")}
@@ -750,22 +871,13 @@ export function FamilyWidget(_: { widget: Widget }) {
                   </thead>
                   <tbody>
                     {contractList.slice(0, shown).map((c) => (
-                      <tr key={c.id}>
-                        <td title={c.file}>{c.symbol}</td>
-                        <td>{SEGMENT_LABELS[c.segment]}</td>
-                        <td>{memberName(c.memberId)}</td>
-                        <td>{c.fy}</td>
-                        <td className="num">{c.quantity}</td>
-                        <td className="num">{signed(c.realized)}</td>
-                        <td className="num">{c.charges === undefined ? <span className="muted" title="This statement gives charges for the whole period, not per contract">—</span> : money(c.charges)}</td>
-                        <td className="num">{c.net === undefined ? <span className="muted">—</span> : signed(c.net)}</td>
-                      </tr>
+                      <ContractLine key={c.id} c={c} member={memberName(c.memberId)} hide={hide} />
                     ))}
                   </tbody>
                 </table>
               </div>
-              {contractList.length > shown && <button className="tf" onClick={() => setShown((n) => n + 300)}>Show {Math.min(300, contractList.length - shown)} more</button>}
-              {report.contractsTotal > report.contracts.length && <p className="muted">Only the first {report.contracts.length} contracts are loaded; narrow the year, member or segment above to see the rest.</p>}
+              {contractList.length > shown && <button className="tf" onClick={() => setShown((n) => n + MORE_ROWS)}>Show {Math.min(MORE_ROWS, contractList.length - shown)} more ({contractList.length - shown} not shown)</button>}
+              {contractsData.total > contractsData.rows.length && <p className="muted">Only the first {contractsData.rows.length} contracts are loaded; narrow the year, member or segment above to see the rest.</p>}
               <p className="muted">Charges and net appear only where the statement gives charges per contract (Kotak's). Zerodha's statement gives one total for the period.</p>
             </>
           )}
@@ -844,7 +956,7 @@ export function FamilyWidget(_: { widget: Widget }) {
               if (!busy) void upload(e.dataTransfer.files);
             }}
           >
-            <p>{busy ? "Reading…" : "Drop Excel files here, or"}</p>
+            <p role="status">{busy ? (progress ?? "Reading…") : "Drop Excel files here, or"}</p>
             <input ref={input} type="file" accept=".xlsx" multiple disabled={busy} onChange={(e) => void upload(e.target.files)} aria-label="Choose statement or tradebook files" />
           </div>
           {outcomes.map((o) => (

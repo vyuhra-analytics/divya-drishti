@@ -21,7 +21,8 @@ const int = (v: string | undefined, name: string) => {
  *   POST   /family/import?name=FILE[&account=ID][&dry=1][&accept=1]   body: the .xlsx bytes; the file finds its account by client id (one is created, under an
  *          "Unassigned" member, when none exists); dry=1 only reads and reports
  *   DELETE /family/imports/:id
- *   GET    /family/summary?member=&account=&segment=&period=        totals and cuts by period, member, account, segment, underlying, the monthly view, every contract, the insights and two cross-tables
+ *   GET    /family/summary?member=&account=&segment=&period=        totals and cuts by period, member, account, segment, underlying, the monthly view, the insights and two cross-tables
+ *   GET    /family/contracts?member=&account=&segment=&period=      every contract of the selection (its own request: only the Contracts tab shows them)
  *   GET    /family/statement?member=ID&period=2024-25               one member's financial year as a statement for the accountant
  */
 @Controller("family")
@@ -69,11 +70,20 @@ export class FamilyController {
     return this.service.statement(int(member, "member"), period);
   }
 
-  @Get("summary")
-  summary(@Query("member") member?: string, @Query("account") account?: string, @Query("segment") segment?: string, @Query("period") period?: string) {
+  /** The filters of /summary and /contracts, validated: a bad one is a 400 before any work. */
+  private filterOf(member?: string, account?: string, segment?: string, period?: string): Filter {
     if (segment !== undefined && segment !== "" && !SEGMENTS.includes(segment as Segment)) throw new BadRequestException(`segment must be one of ${SEGMENTS.join(", ")}`);
     if (period !== undefined && period !== "" && !/^\d{4}-\d{2}$|^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/.test(period)) throw new BadRequestException("period must look like 2024-25");
-    const filter: Filter = { memberId: int(member, "member"), accountId: int(account, "account"), segment: (segment || undefined) as Segment | undefined, period: period || undefined };
-    return this.service.summary(filter);
+    return { memberId: int(member, "member"), accountId: int(account, "account"), segment: (segment || undefined) as Segment | undefined, period: period || undefined };
+  }
+
+  @Get("summary")
+  summary(@Query("member") member?: string, @Query("account") account?: string, @Query("segment") segment?: string, @Query("period") period?: string) {
+    return this.service.summary(this.filterOf(member, account, segment, period));
+  }
+
+  @Get("contracts")
+  contracts(@Query("member") member?: string, @Query("account") account?: string, @Query("segment") segment?: string, @Query("period") period?: string) {
+    return this.service.contracts(this.filterOf(member, account, segment, period));
   }
 }

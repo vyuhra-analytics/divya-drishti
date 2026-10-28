@@ -321,9 +321,10 @@ describe("what the screen reads beyond the totals", () => {
     const { svc, acc } = await setup();
     await svc.importFile(acc.id, "a.xlsx", statement());
     const s = await svc.summary({});
-    expect(s.contracts).toHaveLength(1);
-    expect(s.contractsTotal).toBe(1);
-    expect(s.contracts[0]).toMatchObject({ symbol: "NIFTY2462023600CE", underlying: "NIFTY", segment: "fno", realized: 700 });
+    expect((s as Record<string, unknown>).contracts).toBeUndefined(); // the summary stays lean: contracts are a request of their own
+    const c = await svc.contracts({});
+    expect(c.total).toBe(1);
+    expect(c.contracts[0]).toMatchObject({ symbol: "NIFTY2462023600CE", underlying: "NIFTY", segment: "fno", realized: 700 });
     expect(s.insights).toMatchObject({ contracts: 1, winners: 1, losers: 0 });
     expect(s.yearBySegment.cols.map((c) => c.key)).toEqual(["fno"]);
     expect(s.memberByYear.rows).toHaveLength(1);
@@ -337,7 +338,7 @@ describe("what the screen reads beyond the totals", () => {
     const { svc } = await setup();
     const s = await svc.summary({});
     expect(s.insights).toBeNull();
-    expect(s.contracts).toEqual([]);
+    expect(await svc.contracts({})).toEqual({ contracts: [], total: 0 });
   });
 
   test("the accountant's statement needs a member and a financial year, and says so when there is none", async () => {

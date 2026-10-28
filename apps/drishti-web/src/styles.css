@@ -864,3 +864,6 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .family .fam-chart .fam-up.fam-est { stroke: var(--up); }
 .family .fam-chart .fam-down.fam-est { stroke: var(--down); }
 .family .fam-legend i.fam-est { opacity: .5; outline: 1px dashed var(--up); }
+/* a new selection is loading: the numbers shown are the previous one's, so they are dimmed rather than blanked (no jump, no flash of "Loading") */
+.family.fam-updating > :not(.fam-top) { opacity: .55; transition: opacity .12s; pointer-events: none; }
+.family .fam-contracts tbody tr { content-visibility: auto; contain-intrinsic-size: auto 26px; }

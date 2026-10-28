@@ -339,13 +339,18 @@ export class FamilyService {
     return {
       summary: summarize(members, accounts, imports, filter),
       monthly: monthlyView(members, accounts, imports, filter),
-      // every contract of the selection (a household's statements are a few hundred to a few thousand), why the result is what it is, and the two cross-tables
-      contracts: contracts.slice(0, MAX_CONTRACTS_SENT),
-      contractsTotal: contracts.length,
+      // why the result is what it is, and the two cross-tables. The contracts themselves are a separate request (`contracts`): only one tab shows them
       insights: insights(contracts, parts) ?? null,
       yearBySegment: yearBySegment(parts),
       memberByYear: memberByYear(parts, members),
     };
+  }
+
+  /** Every contract of a selection, for the Contracts tab (a household's statements are a few hundred to a few thousand, capped so one answer cannot grow without limit). */
+  async contracts(filter: Filter) {
+    const [accounts, imports] = await Promise.all([this.store.accounts(), this.store.imports()]);
+    const rows = contractRows(selectParts(accounts, imports, filter));
+    return { contracts: rows.slice(0, MAX_CONTRACTS_SENT), total: rows.length };
   }
 
   /** One member's financial year as a statement for the accountant (the screen turns it into a page or a CSV). */
