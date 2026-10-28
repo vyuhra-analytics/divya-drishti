@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chargeGroup, fyOf, maskCode, monthlyView, overlaps, parseSymbol, periodFy, summarize, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
+import { chargeGroup, familyCsv, fyOf, maskCode, monthlyView, toCsv, overlaps, parseSymbol, periodFy, summarize, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
 import { matchFills, reconcileWithStatement, realizedByMonth } from "./fifo";
 import { readXlsx } from "./xlsx";
 import { parseZerodhaPnl } from "./zerodhaPnl";
@@ -162,6 +162,23 @@ describe("symbols, years and charge groups", () => {
     expect(chargeGroup("Exchange Transaction Charges - Z")).toBe("Exchange");
     expect(chargeGroup("SEBI Turnover Fees - Z")).toBe("SEBI");
     expect(chargeGroup("Mystery")).toBe("Other");
+  });
+});
+
+describe("CSV export", () => {
+  test("quotes, doubles quotes and defuses text that looks like a formula, numbers stay numbers", () => {
+    expect(toCsv([["a,b", 'say "hi"', "=SUM(A1)", "-x", -5, 1.5]])).toBe('"a,b","say ""hi""",\'=SUM(A1),\'-x,-5,1.5\r\n');
+  });
+  test("carries the names typed, the totals and the months, and never a client id", () => {
+    const members: FamilyMember[] = [{ id: 1, nickname: "Dad", relation: "", hidden: false, note: "" }];
+    const accounts: FamilyAccount[] = [{ id: 10, memberId: 1, broker: "zerodha", label: "main", clientCode: "SECRET99" }];
+    const imp: ImportRecord = { id: 1, accountId: 10, kind: "pnl", segment: "fno", periodFrom: "2024-04-01", periodTo: "2024-10-28", fileName: "x.xlsx", importedAt: "", summary: { charges: 30, otherCreditDebit: 0, realized: 700, unrealized: 0 }, lines: [{ symbol: "NIFTY2462023600CE", quantity: 25, buyValue: 0, sellValue: 700, realized: 700, openQuantity: 0, unrealized: 0 }], charges: [{ head: "Brokerage - Z", amount: 30 }], fills: [], problems: [] };
+    const csv = familyCsv({ summary: summarize(members, accounts, [imp]), monthly: monthlyView(members, accounts, [imp]) }, { member: () => "Dad", account: () => "Dad - Zerodha - main" });
+    expect(csv).toContain("Financial year,Realised,Charges,Net");
+    expect(csv).toContain("2024-25,700,30,670");
+    expect(csv).toContain("Dad,700,30,670");
+    expect(csv).toContain("Brokerage,30");
+    expect(csv).not.toContain("SECRET99");
   });
 });
 

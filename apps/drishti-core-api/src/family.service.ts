@@ -243,7 +243,7 @@ export class FamilyService {
       let n = 1;
       while (members.some((m) => m.nickname.toLowerCase() === `unassigned ${n}`)) n++;
       const member = await this.store.addMember({ nickname: `Unassigned ${n}`, relation: "", hidden: false, note: "Created from an imported file: rename it to the person, or move the account to an existing member." });
-      account = await this.store.addAccount({ memberId: member.id, broker: "zerodha", label: "Zerodha account", clientCode: code });
+      account = await this.store.addAccount({ memberId: member.id, broker: "zerodha", label: "Trading account", clientCode: code });
       result.account = { id: account.id, label: account.label };
     } else if (!account.clientCode) {
       await this.store.updateAccount(account.id, { clientCode: code });

@@ -299,3 +299,45 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
   const out = [...months.values()].sort((a, b) => (a.month < b.month ? -1 : 1)).map((m) => ({ ...m, realized: r2(m.realized), charges: r2(m.charges), net: r2(m.realized - m.charges) }));
   return { months: out, reconciliation, withoutTradebook };
 }
+
+const csvCell = (v: string | number): string => {
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
+  // a text cell that starts like a formula would be run by a spreadsheet: keep it text
+  const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+};
+
+/** Rows of values as CSV text (CRLF lines, quotes doubled, formula-looking text defused). */
+export const toCsv = (rows: (string | number)[][]) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+
+/**
+ * A statement-style export of what the screen shows: the totals, then the same numbers by financial year, member, account, segment and underlying, the charges
+ * by group and the months. `nameOf` turns a member or account key into text (so the export carries the names the owner typed, never the client id).
+ */
+export function familyCsv(report: { summary: Summary; monthly: MonthlyView }, nameOf: { member: (id: number) => string; account: (id: number) => string }): string {
+  const s = report.summary;
+  const head = ["Realised", "Charges", "Net", "Unrealised (reported)", "Winning symbols", "Losing symbols"];
+  const cells = (t: Totals) => [t.realized, t.charges, t.net, t.unrealized, t.winners, t.losers];
+  const rows: (string | number)[][] = [["Family broker statements: realised P&L, charges and taxes"], [], ["Total", ...head], ["All selected", ...cells(s.totals)], []];
+  const block = (title: string, list: GroupRow[], label: (r: GroupRow) => string) => {
+    if (!list.length) return;
+    rows.push([title, ...head]);
+    for (const r of list) rows.push([label(r), ...cells(r)]);
+    rows.push([]);
+  };
+  block("Financial year", s.byPeriod, (r) => r.label);
+  block("Member", s.byMember, (r) => nameOf.member(Number(r.key)));
+  block("Account", s.byAccount, (r) => nameOf.account(Number(r.key)));
+  block("Segment", s.bySegment, (r) => r.key);
+  block("Underlying (realised only: charges are not split by symbol)", s.byUnderlying.map((r) => ({ ...r, charges: 0, net: r.realized })), (r) => r.label);
+  if (s.chargesByGroup.length) {
+    rows.push(["Charges and taxes", "Amount"]);
+    for (const c of s.chargesByGroup) rows.push([c.group, c.amount]);
+    rows.push([]);
+  }
+  if (report.monthly.months.length) {
+    rows.push(["Month", "Realised (exact, from dated trades)", "Charges (estimated: the statement total spread by traded value)", "Net", "Closes"]);
+    for (const m of report.monthly.months) rows.push([m.month, m.realized, m.charges, m.net, m.closes]);
+  }
+  return toCsv(rows);
+}
