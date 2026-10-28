@@ -198,6 +198,26 @@ describe("summary and monthly view", () => {
     expect(s.byUnderlying[0].label).toBe("NIFTY");
     expect(summarize(members, accounts, [stmt(1, 10, -1000, 50), stmt(2, 20, 400, 30)], { memberId: 2 }).totals.net).toBe(370);
   });
+  test("a calendar-year statement is cut into financial years by its tradebook, and left whole without one", () => {
+    const fill = (date: string, side: "buy" | "sell", price: number, id: string) => ({ symbol: "NIFTY2462023600CE", date, time: null, side, quantity: 25, price, tradeId: id, exchange: "NSE" }) as const;
+    // +250 closed in Feb 2024 (FY 2023-24), -1000 closed in Jun 2024 (FY 2024-25); the statement covers Jan to Dec 2024
+    const book: ImportRecord = { ...stmt(3, 10, 0, 0, "2024-01-01", "2024-12-31"), kind: "tradebook", lines: [], charges: [], fills: [fill("2024-02-10", "buy", 40, "a"), fill("2024-02-10", "sell", 50, "b"), fill("2024-06-20", "buy", 100, "c"), fill("2024-06-20", "sell", 60, "d")] };
+    const st = stmt(1, 10, -750, 100, "2024-01-01", "2024-12-31");
+    const s = summarize(members, accounts, [st, book]);
+    expect(s.byPeriod.map((p) => [p.key, p.realized])).toEqual([["2023-24", 250], ["2024-25", -1000]]);
+    expect(s.totals).toMatchObject({ realized: -750, charges: 100, net: -850 });
+    expect(s.byPeriod.reduce((a, p) => a + p.charges, 0)).toBeCloseTo(100, 6);
+    expect(summarize(members, accounts, [st, book], { period: "2024-25" }).totals.realized).toBe(-1000);
+    expect(monthlyView(members, accounts, [st, book], { period: "2024-25" }).months.map((m) => m.month)).toEqual(["2024-06"]);
+    // a calendar-year statement whose trades all fall in one financial year takes that year's label
+    const oneYear: ImportRecord = { ...book, fills: book.fills.slice(2) };
+    expect(summarize(members, accounts, [stmt(1, 10, -1000, 100, "2024-01-01", "2024-12-31"), oneYear]).byPeriod.map((p) => [p.key, p.realized])).toEqual([["2024-25", -1000]]);
+    // no tradebook: the statement is not guessed at, it keeps its own period
+    expect(summarize(members, accounts, [st]).byPeriod.map((p) => p.key)).toEqual(["2024-01-01 to 2024-12-31"]);
+    // a tradebook that does not add up to the statement is not trusted to cut it either
+    const odd = stmt(2, 10, -700, 100, "2024-01-01", "2024-12-31");
+    expect(summarize(members, accounts, [odd, book]).byPeriod).toHaveLength(1);
+  });
   test("the month view takes realised from dated fills and spreads the charges by traded value", () => {
     const book: ImportRecord = { ...stmt(3, 10, 0, 0), kind: "tradebook", lines: [], charges: [], fills: [
       { symbol: "NIFTY2462023600CE", date: "2024-06-20", time: null, side: "buy", quantity: 25, price: 40, tradeId: "a", exchange: "NSE" },

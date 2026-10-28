@@ -61,6 +61,12 @@ export function periodFy(from: string, to: string): string {
   return fyOf(from) === fyOf(to) ? fyOf(from) : `${from} to ${to}`;
 }
 
+/** The first and last day of a financial year label ("2024-25"). */
+export function fyRange(fy: string): { from: string; to: string } {
+  const y = Number(fy.slice(0, 4));
+  return { from: `${y}-04-01`, to: `${y + 1}-03-31` };
+}
+
 /** Do two inclusive date ranges share a day? */
 export const overlaps = (a: { from: string; to: string }, b: { from: string; to: string }) => a.from <= b.to && b.from <= a.to;
 
@@ -170,6 +176,56 @@ export interface Filter {
   period?: string;
 }
 
+/**
+ * A statement that straddles two financial years (a calendar-year Console export is April-March on both sides of its year end) has no dates, so it cannot be cut by
+ * itself (and even one that never crosses a year end is labelled by its file period, not by the year its trades fall in). When a tradebook covering its period reconciles with it symbol by symbol, the dated closes decide which year each result belongs to: one part per year, the
+ * realised result per symbol from the closes of that year, the statement's charges shared by traded value (an estimate, exact in total), and any open position's
+ * unrealised figure on the last part. Without a covering tradebook that reconciles, the statement is returned whole, labelled with its own period.
+ */
+export function splitByFinancialYear(imp: ImportRecord, imports: ImportRecord[]): ImportRecord[] {
+  if (imp.kind !== "pnl" || fyOf(imp.periodFrom) === fyOf(imp.periodTo)) return [imp];
+  const fills = new Map<string, Fill>();
+  for (const b of imports) if (b.kind === "tradebook" && b.accountId === imp.accountId && b.segment === imp.segment && b.periodFrom <= imp.periodFrom && b.periodTo >= imp.periodTo) for (const f of b.fills) fills.set(f.tradeId, f);
+  if (fills.size === 0) return [imp];
+  const inPeriod = matchFills([...fills.values()]).closed.filter((c) => c.closeDate >= imp.periodFrom && c.closeDate <= imp.periodTo);
+  if (!reconcileWithStatement({ closed: inPeriod, open: [] }, imp.lines).every((d) => d.ok)) return [imp];
+  const weight = (c: (typeof inPeriod)[number]) => (c.openPrice + c.closePrice) * c.quantity;
+  const total = inPeriod.reduce((a, c) => a + weight(c), 0);
+  const years = [...new Set(inPeriod.map((c) => fyOf(c.closeDate)))].sort();
+  if (years.length === 0 || total <= 0) return [imp];
+  return years.map((fy, n) => {
+    const mine = inPeriod.filter((c) => fyOf(c.closeDate) === fy);
+    const share = mine.reduce((a, c) => a + weight(c), 0) / total;
+    const lines = new Map<string, PnlLine>();
+    for (const c of mine) {
+      const l = lines.get(c.symbol) ?? { symbol: c.symbol, quantity: 0, buyValue: 0, sellValue: 0, realized: 0, openQuantity: 0, unrealized: 0 };
+      l.quantity += c.quantity;
+      l.buyValue += (c.direction === "long" ? c.openPrice : c.closePrice) * c.quantity;
+      l.sellValue += (c.direction === "long" ? c.closePrice : c.openPrice) * c.quantity;
+      l.realized += c.pnl;
+      lines.set(c.symbol, l);
+    }
+    if (n === years.length - 1)
+      for (const o of imp.lines.filter((l) => l.unrealized !== 0 || l.openQuantity !== 0)) {
+        const l = lines.get(o.symbol) ?? { symbol: o.symbol, quantity: 0, buyValue: 0, sellValue: 0, realized: 0, openQuantity: 0, unrealized: 0 };
+        l.openQuantity += o.openQuantity;
+        l.unrealized += o.unrealized;
+        lines.set(o.symbol, l);
+      }
+    const range = fyRange(fy);
+    const charges = imp.charges.map((c) => ({ ...c, amount: c.amount * share }));
+    const realized = [...lines.values()].reduce((a, l) => a + l.realized, 0);
+    return {
+      ...imp,
+      periodFrom: imp.periodFrom > range.from ? imp.periodFrom : range.from,
+      periodTo: imp.periodTo < range.to ? imp.periodTo : range.to,
+      lines: [...lines.values()].map((l) => ({ ...l, realized: r2(l.realized) })),
+      charges,
+      summary: { ...imp.summary, realized: r2(realized), charges: r2(charges.reduce((a, c) => a + c.amount, 0)), unrealized: n === years.length - 1 ? imp.summary.unrealized : 0 },
+    };
+  });
+}
+
 /** The whole picture for a selection of statements: totals, and the same numbers cut by period, member, account, segment and underlying. */
 export function summarize(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): Summary {
   const acc = new Map(accounts.map((a) => [a.id, a]));
@@ -181,9 +237,9 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     if (filter.accountId !== undefined && a.id !== filter.accountId) return false;
     if (filter.memberId !== undefined && a.memberId !== filter.memberId) return false;
     if (filter.segment && i.segment !== filter.segment) return false;
-    if (filter.period && periodFy(i.periodFrom, i.periodTo) !== filter.period) return false;
     return true;
   });
+  const parts = used.flatMap((i) => splitByFinancialYear(i, imports)).filter((p) => !filter.period || periodFy(p.periodFrom, p.periodTo) === filter.period);
   const total = zero();
   const groups = {
     period: new Map<string, { label: string; t: Totals }>(),
@@ -198,7 +254,7 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     m.set(key, g);
   };
   const heads = new Map<string, number>();
-  for (const imp of used) {
+  for (const imp of parts) {
     const a = acc.get(imp.accountId)!;
     const m = mem.get(a.memberId);
     addImport(total, imp);
@@ -230,7 +286,7 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     bySegment: rows(groups.segment, byKey),
     byUnderlying: rows(groups.underlying, byNet),
     chargesByGroup: [...heads.entries()].map(([group, amount]) => ({ group, amount: r2(amount) })).sort((a, b) => b.amount - a.amount),
-    imports: used.map((i) => ({ id: i.id, accountId: i.accountId, segment: i.segment, periodFrom: i.periodFrom, periodTo: i.periodTo, fileName: i.fileName, problems: i.problems.length })),
+    imports: used.filter((i) => parts.some((p) => p.id === i.id)).map((i) => ({ id: i.id, accountId: i.accountId, segment: i.segment, periodFrom: i.periodFrom, periodTo: i.periodTo, fileName: i.fileName, problems: i.problems.length })),
   };
 }
 
@@ -271,7 +327,7 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
   for (const key of keys) {
     const group = sel.filter((i) => `${i.accountId}|${i.segment}` === key);
     const books = group.filter((i) => i.kind === "tradebook");
-    const stmts = group.filter((i) => i.kind === "pnl" && (!filter.period || periodFy(i.periodFrom, i.periodTo) === filter.period));
+    const stmts = group.filter((i) => i.kind === "pnl" && (!filter.period || overlaps({ from: i.periodFrom, to: i.periodTo }, fyRange(filter.period))));
     const fills = new Map<string, Fill>();
     for (const b of books) for (const f of b.fills) fills.set(f.tradeId, f);
     const matched = matchFills([...fills.values()]);
@@ -293,7 +349,7 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
       const weight = (c: (typeof inPeriod)[number]) => (c.openPrice + c.closePrice) * c.quantity;
       const total = inPeriod.reduce((a, c) => a + weight(c), 0);
       const charges = st.charges.reduce((a, c) => a + c.amount, 0);
-      if (total > 0) for (const c of inPeriod) row(c.closeDate.slice(0, 7)).charges += (charges * weight(c)) / total;
+      if (total > 0) for (const c of inPeriod) if (!filter.period || fyOf(c.closeDate) === filter.period) row(c.closeDate.slice(0, 7)).charges += (charges * weight(c)) / total;
     }
   }
   const out = [...months.values()].sort((a, b) => (a.month < b.month ? -1 : 1)).map((m) => ({ ...m, realized: r2(m.realized), charges: r2(m.charges), net: r2(m.realized - m.charges) }));
