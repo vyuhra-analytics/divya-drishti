@@ -1,4 +1,4 @@
-/* Standard trading themes (TradingView palettes). Dark: slate + amber accent. Light: grey canvas, white panels, blue accent. */
+/* Standard trading themes (TradingView palettes). Dark: slate canvas. Light: grey canvas, white panels. Both share the amber accent: the same fill (#c98512) in both, and the amber for text bright on dark panels (#f0a020) and darker on white (#9a6000, 5.2:1). */
 :root {
   --bg: #0e1117;
   --panel: #131722;
@@ -33,12 +33,12 @@
   --line: #e0e3eb;
   --text: #131722;
   --muted: #5b5f6b;
-  --accent: #1f55e6;
-  --accent-fill: #1f55e6;
-  --on-accent: #ffffff;
+  --accent: #9a6000;
+  --accent-fill: #c98512;
+  --on-accent: #131722;
   --shadow: 0 1px 2px rgb(19 23 34 / 0.06);
   --up: #067a68;
-  --down: #d41f2d;
+  --down: #c8182a; /* 4.7:1 even on the 12% tint behind the option chain's spot row */
   --g-amber: #a86400;
   --g-blue: #2962ff;
   --g-green: #089981;
@@ -279,8 +279,8 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .news-tag { padding: 0 4px; font-size: 9px; font-weight: 700; letter-spacing: 0.4px; border-radius: 3px; border: 1px solid var(--line); }
 .news-tag.tag-crude { color: var(--g-amber); }
 .news-tag.tag-natgas { color: var(--g-blue); }
-.news-tag.tag-oil { color: var(--g-red); }
-.news-tag.tag-india { color: var(--g-green); }
+.news-tag.tag-oil { color: var(--down); } /* the group colours are for marks; these are text, so they use the text-safe up and down colours */
+.news-tag.tag-india { color: var(--up); }
 .news-new { margin-right: 6px; padding: 0 4px; font-size: 9px; font-weight: 700; color: var(--on-accent); background: var(--accent-fill); border-radius: 3px; vertical-align: 1px; }
 .news-fresh { animation: news-in 1.2s ease-out; }
 @keyframes news-in { from { background: color-mix(in srgb, var(--accent-fill) 22%, transparent); } }
@@ -409,7 +409,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .cal-prev { color: var(--muted); }
 .cal-actual.fresh { animation: cal-fresh 1.2s ease-out 6; }
 @keyframes cal-fresh { from { background: color-mix(in srgb, var(--accent-fill) 40%, transparent); } }
-.cal-bell { padding: 0; font-size: 12px; opacity: .35; filter: grayscale(1); }
+.cal-bell { padding: 0; font-size: 12px; opacity: .7; filter: grayscale(1); }
 .cal-bell:hover, .cal-bell.on { opacity: 1; filter: none; }
 @container (max-width: 520px) {
   .cal-day, .cal-row { grid-template-columns: 56px 1fr 56px 56px 56px 22px; }
@@ -553,7 +553,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .ocx-stats { display: inline-flex; gap: 12px; }
 .ocx-stats b { font-variant-numeric: tabular-nums; }
 .ocx-tools { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; }
-.ocx-tools .tf[aria-pressed="true"] { background: var(--accent-fill); color: var(--bg, #000); }
+.ocx-tools .tf[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
 .ocx-cols { position: relative; }
 .ocx-cols summary { cursor: pointer; list-style: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; }
 .ocx-cols > div { position: absolute; right: 0; top: 24px; z-index: 5; display: grid; gap: 4px; padding: 8px 10px; background: var(--panel, #161a22); border: 1px solid var(--line); border-radius: 6px; min-width: 130px; }
@@ -799,7 +799,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .family .fam-chart .fam-down { fill: var(--down); }
 .family .fam-chart .fam-cum { stroke: var(--accent-fill); stroke-width: 1.5; }
 .family .fam-chart .fam-cumdot { fill: var(--accent-fill); }
-.family .fam-chart .fam-axis { fill: var(--muted); font-size: 10px; }
+.family .fam-axis { fill: var(--muted); font-size: 10px; }
 .family .fam-legend { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 .family .fam-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .family .fam-legend i.fam-up { background: var(--up); }
@@ -850,7 +850,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .family .fam-sort:hover, .family .fam-sort:focus-visible { color: var(--text); }
 .family .fam-search { min-width: 14em; }
 .family .fam-ok { color: var(--up); }
-.family .fam-part { color: #e0a030; }
+.family .fam-part { color: var(--accent); }
 .family .fam-cover td, .family .fam-cover th { white-space: nowrap; }
 @container (max-width: 760px) {
   .family .fam-two { grid-template-columns: minmax(0, 1fr); }
