@@ -116,7 +116,13 @@ test("refusals: no premium yet, a stale or closed market, an unknown or expired 
   const expired = await late.engine.place("main", order(), "ui");
   expect(expired).toMatchObject({ ok: false, status: 422 });
   expect(expired.ok === false && expired.error).toContain("expired");
-  expect(await setup().engine.place("main", order(), "mcp")).toMatchObject({ ok: false, status: 422 }); // browser only for now
+  expect(await setup().engine.place("main", order({ lots: 3 }), "mcp")).toMatchObject({ ok: false, status: 422 }); // an agent may buy an option, within its 2-lot cap
+  expect(await setup().engine.place("main", order({ lots: 2 }), "mcp")).toMatchObject({ ok: true });
+  let asked = "";
+  const engine = new PaperEngine({ store: new FakeStore(), quote: () => undefined, live: () => false, option: { info: async () => info, quote: () => undefined, live: () => false, watch: (k) => void (asked = k) }, rates: async () => UPSTOX_MCX_RATES, now: () => NOW, newId: () => "z", publish: () => undefined });
+  expect(await engine.place("main", order(), "mcp")).toMatchObject({ ok: false, status: 503 });
+  expect(asked).toBe(KEY); // with no premium yet the feed is asked to watch the contract, so a retry can fill
+
   const twice = setup();
   await twice.engine.place("main", order(), "ui");
   expect(await twice.engine.place("main", order(), "ui")).toMatchObject({ ok: false, status: 409 });
@@ -151,4 +157,39 @@ test("a futures order still works beside an option position, and the two never s
   const fut = await engine.place("main", { symbol: "MCX:CRUDEOIL", side: "buy", lots: 1 }, "ui");
   expect(fut.ok).toBe(true);
   expect((await store.positions("main")).map((p) => [p.symbol, !!p.option])).toEqual([[KEY, true], ["MCX:CRUDEOIL", false]]);
+});
+
+test("an option left open past its last minute settles at its last premium with no slippage, even when its quote is no longer live", async () => {
+  const { engine, opt, store, tick } = setup();
+  const r = await engine.place("main", order(), "ui");
+  if (!r.ok) throw new Error(r.error);
+  opt.quote = { price: 20, bid: 0, ask: 25 }; // it has run down to almost nothing
+  opt.live = false;
+  await engine.onQuotes();
+  expect(await store.positions("main")).toHaveLength(1); // before expiry a dead quote does nothing
+  tick(Date.parse("2026-11-17T18:01:00Z") - NOW); // 23:31 IST on the expiry day
+  await engine.onQuotes();
+  expect(await store.positions("main")).toHaveLength(0);
+  const t = (await store.trades("main", 1))[0];
+  expect(t).toMatchObject({ reason: "expired", closedBy: "engine" });
+  expect(t.exit).toBe(20);
+  expect(t.gross).toBeCloseTo((20 - 501.1) * 100, 6);
+});
+
+test("a trade taken and closed by hand is recorded at the trader's own premiums: no slippage, option costs, repeat-safe, browser only", async () => {
+  const { engine, store } = setup();
+  const body = { option: { key: KEY }, lots: 1, entry: 500, exit: 560, openedAt: NOW - 3_600_000, closedAt: NOW - 60_000, strategy: "report-day", client_order_id: "rd-1" };
+  const r = await engine.recordClosed("main", body, "ui");
+  if (!r.ok) throw new Error(r.error);
+  const rt = roundTrip("option", "buy", 500, 560, 100, 1);
+  expect(r.trade).toMatchObject({ entry: 500, exit: 560, strategy: "report-day", clientOrderId: "rd-1", closedBy: "ui" });
+  expect(r.trade.gross).toBeCloseTo(rt.gross, 6);
+  expect(r.trade.net).toBeCloseTo(rt.net, 6);
+  expect(await store.positions("main")).toHaveLength(0); // it was never open here
+  const again = await engine.recordClosed("main", body, "ui");
+  expect(again).toMatchObject({ ok: true, duplicate: true });
+  expect(await store.trades("main", 10)).toHaveLength(1);
+  expect(await engine.recordClosed("main", body, "mcp")).toMatchObject({ ok: false, status: 422 });
+  for (const bad of [{ ...body, client_order_id: "x2", exit: 0 }, { ...body, client_order_id: "x3", closedAt: NOW + 3_600_000 }, { ...body, client_order_id: "x4", option: { key: "nope" } }])
+    expect(await engine.recordClosed("main", bad, "ui")).toMatchObject({ ok: false, status: 400 });
 });

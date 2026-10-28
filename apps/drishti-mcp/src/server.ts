@@ -323,6 +323,36 @@ export function createServer(cfg: McpConfig) {
     );
 
     server.registerTool(
+      "place_paper_option_order",
+      {
+        description:
+          "BUY an MCX option on paper (simulated, never a real order; options are buy-only here). option_key is the leg's `ukey` from get_option_chain (e.g. MCX_FO|583810). Fills at the live ask plus slippage in premium ticks, with the option cost rates; stop and target are PREMIUMS (stop under the fill, target over it) and the server enforces them on the option's live quotes. Pass entry to place a LIMIT order that waits up to 24 hours. If the feed was not yet watching the contract the first call is refused with 'try again in a few seconds' (it has been asked to watch it): retry. The same agent caps as futures apply (lots, open positions, orders a day). Close it with close_paper_position; an option left open past its last minute is settled automatically at its last premium.",
+        inputSchema: {
+          option_key: z.string().regex(/^MCX_FO\|\d{1,12}$/),
+          lots: z.number().int().min(1),
+          entry: z.number().positive().optional().describe("limit price (premium); leave out for a market buy at the ask"),
+          stop: z.number().positive().optional().describe("stop on the premium, under the fill"),
+          target: z.number().positive().optional().describe("target on the premium, over the fill"),
+          client_order_id: z.string().regex(/^[A-Za-z0-9._:-]{1,64}$/).optional(),
+          tag: z.string().min(1).max(64).optional(),
+          strategy: z.string().min(1).max(64).optional(),
+          signal_time: z.string().optional().describe("ISO 8601 with offset"),
+          r_points: z.number().positive().optional().describe("the risk unit in premium points"),
+          account: z.string().optional(),
+        },
+      },
+      async ({ account: a, option_key, ...order }) => {
+        const r = await call(cfg.stream, `/paper/accounts/${account(a)}/orders`, "POST", { option: { key: option_key }, side: "buy", ...order }, true);
+        if (!r.ok) return err(r.error);
+        if (r.json.pending) return ok({ waiting: r.json.pending, note: "Simulated limit order is waiting for its price (up to 24 hours). Visible in the Paper panel." });
+        return ok({
+          filled: withIso(r.json.position),
+          ...(r.json.duplicate ? { duplicate: true, note: "This client_order_id was already placed: this is the original order, nothing new was filled." } : { note: "Simulated fill. Visible in the Paper panel." }),
+        });
+      },
+    );
+
+    server.registerTool(
       "close_paper_position",
       { description: "Close an open paper position at the live market (simulated). Use list_paper_positions for the id.", inputSchema: { position_id: z.string(), account: z.string().optional() } },
       async ({ position_id, account: a }) => {

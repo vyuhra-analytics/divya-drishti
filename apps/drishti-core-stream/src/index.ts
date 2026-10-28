@@ -288,6 +288,7 @@ paperEngine = new PaperEngine({
       if (!q || Date.now() - q.recvAt > 5 * 60_000) return false;
       return INSTRUMENTS.some((i) => i.exchange === "MCX" && symbolLive(i.symbol));
     },
+    watch: (key) => void optionWatch.request([key]),
   },
   rates: () => paperStore.rates().catch(() => UPSTOX_MCX_RATES),
   now: Date.now,

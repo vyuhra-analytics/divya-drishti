@@ -76,6 +76,11 @@ export function paperRoutes(opts: {
       set.status = r.duplicate ? 200 : 201; // a repeat of an order already filled is not a new order
       return reply(set, r);
     })
+    .post("/accounts/:id/trades", async ({ request, params, body, set }) => {
+      const r = await engine.recordClosed(params.id, body, actorOf(request));
+      if (r.ok) set.status = r.duplicate ? 200 : 201;
+      return reply(set, r);
+    })
     .delete("/accounts/:id/orders/:oid", async ({ request, params, set }) => reply(set, await engine.cancelOrder(params.id, params.oid, actorOf(request))))
     .post("/accounts/:id/positions/:pid/close", async ({ request, params, set }) => reply(set, await engine.close(params.id, params.pid, actorOf(request))))
     .patch("/accounts/:id/positions/:pid", async ({ request, params, body, set }) => reply(set, await engine.setStopTarget(params.id, params.pid, body, actorOf(request))))

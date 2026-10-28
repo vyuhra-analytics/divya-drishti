@@ -4,10 +4,27 @@ import { sendWatch, useStore } from "./store";
 import { useClock } from "./settings";
 import { loadRecord, saveRecord, type DayRecord } from "./reportDayStore";
 import { usePublishLevels } from "./strategyLevels";
+import { paperCall } from "./paperClient";
 
 // The in-trade and done stages of the report-day screen: the trader says when they entered and exited (by hand: no order is ever placed here), and the
 // screen follows the trade in between: the future against entry / stop / TP1 / TP2, the result in R, the option's rupee result against the loss cap, the
 // clock against the time stop, and alerts at each milestone. Afterwards a review with a note box; new entries stay locked until the next release.
+
+const JOURNAL_KEY = "drishti-rd-journal";
+const journalPref = () => {
+  try {
+    return localStorage.getItem(JOURNAL_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const paperAccount = () => {
+  try {
+    return localStorage.getItem("drishti-paper-account") || "main";
+  } catch {
+    return "main";
+  }
+};
 
 const num = (v: number | undefined, dp = 1) => (v === undefined ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
 const rs = (v: number) => `${v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
@@ -175,10 +192,27 @@ export function ReportDayTrade({ releaseAt, recordKey, timeStop, symbol, signal,
             defaultPremium={view.optionBid}
             defaultReason={reason}
             onCancel={() => setExiting(false)}
-            onSubmit={(exitPremium, why) => {
+            canLog={!!trade.optionKey}
+            onSubmit={(exitPremium, why, log) => {
               const closed: ClosedTrade = { ...trade, events: view.events, exitedAt: Date.now(), exitPremium, reason: why, note: "" };
               update({ closed });
               setExiting(false);
+              if (log && trade.optionKey) {
+                // the same trade, in the paper journal at the premiums the trader says (nothing is priced or filled there); the id makes a repeat harmless
+                const account = paperAccount();
+                void paperCall(`/accounts/${encodeURIComponent(account)}/trades`, "POST", {
+                  option: { key: trade.optionKey },
+                  lots: trade.lots,
+                  entry: trade.premium,
+                  exit: exitPremium,
+                  openedAt: trade.enteredAt,
+                  closedAt: closed.exitedAt,
+                  reason: why === "stop" ? "stop" : "manual",
+                  strategy: releaseLabel === "USIB" ? "usib" : "report-day",
+                  client_order_id: `${releaseLabel === "USIB" ? "usib" : "rd"}-${trade.enteredAt}`,
+                  note: REASONS[why],
+                }).then((r) => onEvent(r.ok ? `${releaseLabel}: recorded in the paper journal (${account})` : `${releaseLabel}: not recorded in the journal: ${r.error}`));
+              }
             }}
           />
         ) : (
@@ -259,7 +293,8 @@ function EnterForm({ signal, pick, units, price, timeStop, onSubmit, onCancel }:
   );
 }
 
-function ExitForm({ defaultPremium, defaultReason, onSubmit, onCancel }: { defaultPremium?: number; defaultReason: TradeExitReason; onSubmit: (premium: number, reason: TradeExitReason) => void; onCancel: () => void }) {
+function ExitForm({ defaultPremium, defaultReason, canLog, onSubmit, onCancel }: { defaultPremium?: number; defaultReason: TradeExitReason; canLog: boolean; onSubmit: (premium: number, reason: TradeExitReason, log: boolean) => void; onCancel: () => void }) {
+  const [log, setLog] = useState(journalPref);
   const [premium, setPremium] = useState(defaultPremium === undefined ? "" : String(defaultPremium));
   const [reason, setReason] = useState<TradeExitReason>(defaultReason);
   const p = Number(premium);
@@ -269,7 +304,7 @@ function ExitForm({ defaultPremium, defaultReason, onSubmit, onCancel }: { defau
       className="rd-form no-drag"
       onSubmit={(e) => {
         e.preventDefault();
-        if (ok) onSubmit(p, reason);
+        if (ok) onSubmit(p, reason, canLog && log);
       }}
     >
       <label>Premium you sold at<input inputMode="decimal" value={premium} onChange={(e) => setPremium(e.target.value)} /></label>
@@ -281,6 +316,21 @@ function ExitForm({ defaultPremium, defaultReason, onSubmit, onCancel }: { defau
           ))}
         </select>
       </label>
+      {canLog && (
+        <label className="rd-check">
+          <input
+            type="checkbox"
+            checked={log}
+            onChange={(e) => {
+              setLog(e.target.checked);
+              try {
+                localStorage.setItem(JOURNAL_KEY, e.target.checked ? "1" : "0");
+              } catch {}
+            }}
+          />
+          Also record it in the paper journal
+        </label>
+      )}
       <div className="rd-form-actions">
         <button type="submit" className="tf active" disabled={!ok}>Close the record</button>
         <button type="button" className="tf" onClick={onCancel}>Cancel</button>

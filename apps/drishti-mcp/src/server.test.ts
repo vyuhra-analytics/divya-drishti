@@ -42,8 +42,8 @@ test("by default agents can read but not trade: the write tools are not even off
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
-  expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(22);
+  expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "place_paper_option_order", "close_paper_position", "set_paper_stop_target"]));
+  expect((await names(client)).length).toBe(23);
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {
@@ -357,4 +357,15 @@ test("set_paper_stop_target passes the trailing flag and the reason, and returns
   const r = JSON.parse((await call("set_paper_stop_target", { position_id: "pp-1", stop: 9450, only_tighten: true, reason: "USIB trail" })).text);
   expect(calls[0]).toMatchObject({ method: "PATCH", body: { stop: 9450, only_tighten: true, reason: "USIB trail" } });
   expect(r.previous).toEqual({ stop: 9360 });
+});
+
+test("an option order is sent as a buy of that option key, a waiting limit order is reported as waiting, and a bad key is refused before any request", async () => {
+  const { call, calls, client } = await connect({ write: true }, () => ({ status: 201, body: { pending: { id: "w1", entry: 480 } } }));
+  const r = await call("place_paper_option_order", { option_key: "MCX_FO|583810", lots: 1, entry: 480, stop: 400 });
+  expect(JSON.parse(r.text).waiting.id).toBe("w1");
+  expect(calls[0]).toMatchObject({ url: "http://stream.test/paper/accounts/main/orders", method: "POST", body: { option: { key: "MCX_FO|583810" }, side: "buy", lots: 1, entry: 480, stop: 400 } });
+  expect(calls[0]!.headers["x-drishti-actor"]).toBe("mcp");
+  const bad: any = await client.callTool({ name: "place_paper_option_order", arguments: { option_key: "MCX:CRUDEOIL", lots: 1 } }).catch((e) => ({ isError: true, content: [{ text: String(e) }] }));
+  expect(bad.isError).toBe(true);
+  expect(calls).toHaveLength(1);
 });

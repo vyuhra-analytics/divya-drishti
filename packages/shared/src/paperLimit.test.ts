@@ -31,9 +31,9 @@ function setup() {
 const buy = (over: object = {}) => ({ symbol: "MCX:CRUDEOIL", side: "buy", lots: 1, entry: 9380, ...over });
 const sell = (over: object = {}) => ({ symbol: "MCX:CRUDEOIL", side: "sell", lots: 1, entry: 9420, ...over });
 const optBuy = (over: object = {}) => ({ option: { key: KEY }, side: "buy", lots: 1, entry: 480, ...over });
-const ok = <T>(r: { ok: boolean } & T) => {
+const ok = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => {
   if (!r.ok) throw new Error((r as { error?: string }).error);
-  return r;
+  return r as Extract<T, { ok: true }>;
 };
 
 test("the entry price is read strictly, and an order with one is told apart", () => {
@@ -185,8 +185,8 @@ test("an option limit buy waits for the premium to fall to it, fills as an optio
   expect((await store.trades("main", 1))[0]).toMatchObject({ reason: "stop", option: { strike: 9600 } });
 });
 
-test("option limit refusals: an agent, an expired contract, a stop over the entry", async () => {
-  expect(await setup().engine.placeLimit("main", optBuy(), "mcp")).toMatchObject({ ok: false, status: 422 });
+test("option limit refusals: an expired contract, a stop over the entry (an agent may place one, under its caps)", async () => {
+  expect(await setup().engine.placeLimit("main", optBuy({ lots: 3 }), "mcp")).toMatchObject({ ok: false, status: 422 }); // the agent cap is 2 lots
   const late = setup();
   late.tick(40 * 86_400_000);
   expect(await late.engine.placeLimit("main", optBuy(), "ui")).toMatchObject({ ok: false, status: 422 });

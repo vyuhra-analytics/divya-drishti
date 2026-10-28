@@ -101,6 +101,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           timeFormatter: chartTimeLabel,
           persist: `drishti-adv-${widget.id}`, // drawings, indicators and layout survive reloads; the view does not (advStorage)
           storage: advStorage(first.current.symbol, instrument(first.current.symbol)?.exchange ?? "MCX"),
+          rail: !/^(reportday|usib)-/.test(widget.id), // the strategy desks get a clean chart: no drawing toolbar, only the price, the levels and the indicators
           branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
         });
         oa.current = created;

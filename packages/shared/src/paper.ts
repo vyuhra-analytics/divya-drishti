@@ -101,7 +101,8 @@ export interface PaperPosition extends OrderMeta {
   option?: OptionRef;
 }
 
-export type ExitReason = "manual" | "stop" | "target";
+/** "expired": an option left open past its last trading minute, settled at its last known premium */
+export type ExitReason = "manual" | "stop" | "target" | "expired";
 
 export interface PaperTrade extends OrderMeta {
   id: string;

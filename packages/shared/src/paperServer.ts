@@ -224,6 +224,8 @@ export interface PaperDeps {
     info(key: string): Promise<(OptionRef & { lot: number; expiresAt: number }) | undefined>;
     quote(key: string): PaperQuote | undefined;
     live(key: string): boolean;
+    /** ask the feed to watch a contract (a browser does this by picking a strike; an agent cannot) */
+    watch?(key: string): void;
   };
   rates(): Promise<CostRates>;
   now(): number;
@@ -291,6 +293,11 @@ export class PaperEngine {
     const p = this.queue.then(fn);
     this.queue = p.catch(() => undefined);
     return p;
+  }
+
+  /** An option past its last trading minute (23:30 IST on its expiry day, as the order check uses). */
+  private expired(p: PaperPosition): boolean {
+    return !!p.option && this.d.now() >= Date.parse(`${p.option.expiry}T23:30:00+05:30`);
   }
 
   /** The Upstox keys of the option positions that are open: the stream keeps their quotes coming so stops fire with the browser closed. */
@@ -387,7 +394,6 @@ export class PaperEngine {
   private async placeOptionNow(accountId: string, raw: unknown, actor: Actor): Promise<Result<PlaceResult>> {
     const od = this.d.option;
     if (!od) return fail(503, "option paper trading is not available on this server");
-    if (actor !== "ui") return fail(422, "option paper orders are placed from the browser: agents cannot place them yet");
     const parsed = parseOptionOrder(raw);
     if ("error" in parsed) return fail(400, parsed.error);
     const { order } = parsed;
@@ -411,7 +417,10 @@ export class PaperEngine {
     if (positions.length >= lim.maxOpenPositions) return fail(422, `at most ${lim.maxOpenPositions} open positions`);
     if ((await this.d.store.ordersSince(accountId, actor, this.d.now() - 86_400_000)) >= lim.maxOrdersPerDay) return fail(422, `order limit reached: at most ${lim.maxOrdersPerDay} orders in 24 hours`);
     const q = od.quote(order.key);
-    if (!q) return fail(503, "no live premium for this option yet: pick it in the panel so the feed watches it");
+    if (!q) {
+      od.watch?.(order.key);
+      return fail(503, "no live premium for this option yet: the feed has been asked to watch it, try again in a few seconds");
+    }
     if (!od.live(order.key)) return fail(503, "the market is closed or the feed is stale: paper orders fill only on a live price");
     const ref: OptionRef = { key: info.key, label: info.label, underlying: info.underlying, type: info.type, strike: info.strike, expiry: info.expiry, tick: info.tick };
     const slippage = account.slippage * info.tick;
@@ -514,7 +523,6 @@ export class PaperEngine {
     if (isOpt) {
       const od = this.d.option;
       if (!od) return fail(503, "option paper trading is not available on this server");
-      if (actor !== "ui") return fail(422, "option paper orders are placed from the browser: agents cannot place them yet");
       const parsed = parseOptionOrder(raw);
       if ("error" in parsed) return fail(400, parsed.error);
       const o = parsed.order;
@@ -522,6 +530,7 @@ export class PaperEngine {
       const info = await od.info(o.key);
       if (!info) return fail(404, "that is not an option contract of ours (crude, crude mini, gas or gas mini)");
       if (this.d.now() >= info.expiresAt) return fail(422, `${info.label} has expired`);
+      od.watch?.(o.key);
       symbol = o.key;
       side = "buy";
       lots = o.lots;
@@ -665,7 +674,7 @@ export class PaperEngine {
     return this.serial(async () => {
       const r = await this.closeNow(accountId, positionId, actor, reason);
       if (actor !== "engine") await this.audit(actor, "close", accountId, { positionId }, r, r.ok ? `net ${r.trade.net.toFixed(0)}` : "");
-      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? `${reason === "stop" ? "Stop" : "Target"} hit: ` : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.option?.label ?? r.trade.symbol} ${r.trade.option ? "" : r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
+      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? (reason === "expired" ? "Expired, settled: " : `${reason === "stop" ? "Stop" : "Target"} hit: `) : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.option?.label ?? r.trade.symbol} ${r.trade.option ? "" : r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
       return r;
     });
   }
@@ -675,9 +684,11 @@ export class PaperEngine {
     if (!account) return fail(404, "no such account");
     const pos = (await this.d.store.positions(accountId)).find((p) => p.id === positionId);
     if (!pos) return fail(404, "no such open position");
-    const q = this.quoteOf(pos);
-    if (!q) return fail(503, "no live price for this contract");
-    const slippage = account.slippage * this.tickOf(pos);
+    const last = this.quoteOf(pos);
+    if (!last) return fail(503, "no live price for this contract");
+    // an expired option has no book to sell into: it settles at its last known premium, with no slippage
+    const q: PaperQuote = reason === "expired" ? { price: last.price } : last;
+    const slippage = reason === "expired" ? 0 : account.slippage * this.tickOf(pos);
     const closed = closePaper(pos, q, slippage, this.d.now(), reason, await this.d.rates());
     const dir = pos.side === "buy" ? 1 : -1;
     const trade: PaperTrade = {
@@ -730,6 +741,48 @@ export class PaperEngine {
       if (r.ok) this.d.publish({ account: accountId, event: "updated", actor, text: `${actor === "mcp" ? "Claude" : "You"} changed the stop/target on ${r.position.symbol}` });
       return r;
     });
+  }
+
+  /**
+   * Put an OPTION trade the trader already took and closed by hand into the journal (the Report day and USIB screens): { option: { key }, lots, entry, exit,
+   * openedAt, closedAt, reason?, strategy?, tag?, note?, client_order_id? }. Nothing is filled or priced: the entry and exit are the trader's own premiums, with no
+   * slippage, charged with the option rates. A repeat of a client_order_id returns the trade already stored. Browser only.
+   */
+  recordClosed(accountId: string, raw: any, actor: Actor): Promise<Result<{ trade: PaperTrade; duplicate?: true }>> {
+    return this.serial(async () => {
+      const r = await this.recordClosedNow(accountId, raw, actor);
+      await this.audit(actor, "record_closed", accountId, raw, r, r.ok ? `${r.trade.option?.label ?? r.trade.symbol} net ${r.trade.net.toFixed(0)}${r.duplicate ? " (duplicate)" : ""}` : "");
+      if (r.ok && !r.duplicate) this.d.publish({ account: accountId, event: "closed", actor, text: `Recorded a closed trade: ${r.trade.option?.label ?? r.trade.symbol}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
+      return r;
+    });
+  }
+
+  private async recordClosedNow(accountId: string, raw: any, actor: Actor): Promise<Result<{ trade: PaperTrade; duplicate?: true }>> {
+    if (actor !== "ui") return fail(422, "closed trades are recorded from the browser");
+    const od = this.d.option;
+    if (!od) return fail(503, "option paper trading is not available on this server");
+    if (!(await this.d.store.getAccount(accountId))) return fail(404, "no such account");
+    const key = raw?.option?.key;
+    if (typeof key !== "string" || !PAPER_OPTION_KEY.test(key)) return fail(400, "option.key must be an Upstox option key such as MCX_FO|583810");
+    const pos = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
+    if (!Number.isInteger(raw.lots) || raw.lots < 1 || raw.lots > 1000) return fail(400, "lots must be a whole number of 1 or more");
+    if (!pos(raw.entry) || !pos(raw.exit)) return fail(400, "entry and exit must be positive premiums");
+    if (!pos(raw.openedAt) || !pos(raw.closedAt) || raw.closedAt < raw.openedAt || raw.closedAt > this.d.now() + 60_000) return fail(400, "openedAt and closedAt must be times (epoch ms), closed after opened and not in the future");
+    const meta = parseOrderMeta({ client_order_id: raw.client_order_id, tag: raw.tag, strategy: raw.strategy });
+    if ("error" in meta) return fail(400, meta.error);
+    const cid = meta.meta.clientOrderId;
+    if (cid) {
+      const dup = (await this.d.store.trades(accountId, MAX_TRADES_KEPT)).find((x) => x.clientOrderId === cid);
+      if (dup) return { ok: true, trade: dup, duplicate: true };
+    }
+    const info = await od.info(key);
+    if (!info) return fail(404, "that is not an option contract of ours (crude, crude mini, gas or gas mini)");
+    const ref: OptionRef = { key: info.key, label: info.label, underlying: info.underlying, type: info.type, strike: info.strike, expiry: info.expiry, tick: info.tick };
+    const position: PaperPosition = { id: this.d.newId(), symbol: key, side: "buy", lots: raw.lots, units: info.lot, entry: raw.entry, openedAt: raw.openedAt, actor, option: ref };
+    const closed = closePaper(position, { price: raw.exit }, 0, raw.closedAt, raw.reason === "stop" || raw.reason === "target" ? raw.reason : "manual", await this.d.rates(), typeof raw.note === "string" ? raw.note.slice(0, MAX_NOTE) : "");
+    const trade: PaperTrade = { ...closed, actor, closedBy: actor, ...meta.meta };
+    await this.d.store.saveTrade(accountId, trade);
+    return { ok: true, trade };
   }
 
   /** One-time import of the account the browser kept before accounts moved to the server: only into an empty account, only well-formed rows. */
@@ -788,13 +841,15 @@ export class PaperEngine {
       return q && this.liveOf(order) && limitFill(order.side, q, order.entry) !== undefined;
     });
     const filling = fills.length ? Promise.all(fills.map(({ account, order }) => this.fillWaiting(account, order.id))).then(() => undefined) : Promise.resolve();
+    const lapsed = [...this.open.values()].filter(({ position }) => this.expired(position) && this.quoteOf(position));
     const due = [...this.open.values()].filter(({ position }) => {
       const q = this.quoteOf(position);
-      return q && this.liveOf(position) && exitHit(position, q.price);
+      return !this.expired(position) && q && this.liveOf(position) && exitHit(position, q.price);
     });
-    if (due.length === 0) return filling;
+    if (due.length === 0 && lapsed.length === 0) return filling;
     return Promise.all([
       filling,
+      ...lapsed.map(({ account, position }) => this.close(account, position.id, "engine", "expired").then(() => undefined)),
       ...due.map(({ account, position }) => {
         const q = this.quoteOf(position)!;
         const hit = exitHit(position, q.price);
