@@ -69,9 +69,9 @@ describe("Kotak Neo Gain-Loss statement", () => {
   });
 
   test("Kotak's contract names give their underlying, and the statement splits charges by underlying (Zerodha's cannot)", async () => {
-    expect(parseSymbol("BANKNIFTY      24DEC24    CE 52700")).toEqual({ underlying: "BANKNIFTY", kind: "option", optionType: "CE", strike: 52700 });
+    expect(parseSymbol("BANKNIFTY      24DEC24    CE 52700")).toEqual({ underlying: "BANKNIFTY", kind: "option", optionType: "CE", strike: 52700, expiryMonth: "2024-12", expiryDate: "2024-12-24" });
     expect(parseSymbol("M&M 26DEC24 PE 2900.5")).toMatchObject({ underlying: "M&M", strike: 2900.5 });
-    expect(parseSymbol("NIFTY 26DEC24 FUT")).toEqual({ underlying: "NIFTY", kind: "future" });
+    expect(parseSymbol("NIFTY 26DEC24 FUT")).toEqual({ underlying: "NIFTY", kind: "future", expiryMonth: "2024-12", expiryDate: "2024-12-26" });
     const p = parseKotakPnl(await readXlsx(workbook()));
     const imp: ImportRecord = { id: 1, accountId: 1, kind: "pnl", segment: p.segment, periodFrom: p.periodFrom, periodTo: p.periodTo, fileName: "k.xlsx", importedAt: "", summary: p.summary, lines: p.lines, charges: p.charges, fills: [], problems: [] };
     const s = summarize([{ id: 1, nickname: "A", relation: "", hidden: false, note: "" }], [{ id: 1, memberId: 1, broker: "kotak", label: "x", clientCode: "XYZ123" }], [imp]);
@@ -108,7 +108,7 @@ describe("Kotak's newer layout (2026-27): buy and sell charge columns", () => {
   test("heads are summed over both sides, the total is 'Total Charges', and the figures reconcile", async () => {
     const p = parseKotakPnl(await readXlsx(bytes()));
     expect(p.problems).toEqual([]);
-    expect(p.lines[0]).toMatchObject({ symbol: "SENSEX 04Jun26 CE 76200", realized: -4369.14, charges: 39 });
+    expect(p.lines[0]).toMatchObject({ symbol: "SENSEX 04JUN26 CE 76200", realized: -4369.14, charges: 39 });
     expect(Object.fromEntries(p.charges.map((c) => [c.head.split(" ")[0], c.amount]))).toMatchObject({ Brokerage: 20, GST: 4, Miscellaneous: 5, Securities: 10 });
     expect(p.summary.realized - p.summary.charges).toBeCloseTo(-4408.14, 6);
     expect(parseSymbol(p.lines[0].symbol)).toMatchObject({ underlying: "SENSEX", kind: "option", optionType: "CE", strike: 76200 });

@@ -352,3 +352,60 @@ describe("what the screen reads beyond the totals", () => {
     expect(JSON.stringify(st)).not.toContain("AB1234"); // the client id only ever appears masked
   });
 });
+
+describe("a Kotak Transaction Statement", () => {
+  const HEAD = ["Trade Date", "Trade Time", "Order Time", "Security Name", "ISIN", "Exchange", "Order Source", "Transaction Type", "Product Type", "Quantity", "Market Rate", "Total", "GST", "Brokerage", "Misc.", "Total Charges", "STT/CTT"];
+  const tx = (client = "KX9999", holder = "") =>
+    makeXlsx([
+      {
+        name: "On Market",
+        rows: [
+          [],
+          ["Client Name", holder],
+          ["Client Code", client, null, "Total Buy Value", null, null, null, "1,257.50"],
+          ["Transaction Period", "From: 2025-04-01 To: 2026-03-31", null, "Total Sell Value", null, null, null, "7,500.00"],
+          [null, null, null, "Charges", null, null, null, "33.55"],
+          [null, null, null, "STT/CTT", null, null, null, "0.75"],
+          ["Exchange Type", "Derivative"],
+          [],
+          HEAD,
+          ["20/08/2025", "10:00:00", "10:00:00", "OPTIDXNIFTY     21AUG2025PE  24750.00", "-", "NSEDERV  ", "Kotak Neo", "Sell", "Cash", 75, 100, 7500, 1.9, 10, 0.5, 12.4, 0.75],
+          ["19/08/2025", "12:55:25", "12:55:13", "OPTIDXNIFTY     21AUG2025PE  24750.00", "-", "NSEDERV  ", "Kotak Neo", "Buy", "Cash", 75, 16.5, 1237.5, 1.88, 10, 0.44, 12.32, 0],
+          ["13/08/2025", "12:17:25", "11:23:22", "OPTFUTCRUDEOILM 14AUG2025CE   5700.00", "-", "MCX      ", "Kotak Neo", "Buy", "Cash", 20, 1, 20, 1.8, 6.83, 0.5, 8.83, 0],
+        ] as never,
+      },
+    ]);
+
+  test("is stored as one tradebook per segment under the account of its client id, and a repeat is refused", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const r = await svc.importFile(undefined, "Transaction_Statement_KX9999.xlsx", tx());
+    expect(r).toMatchObject({ kind: "tradebook", newAccount: true, rows: 3, segment: "fno", segments: ["fno", "commodity"] }); // in the order the file first mentions them
+    expect(store.a[0]).toMatchObject({ broker: "kotak", clientCode: "KX9999" });
+    expect(store.i.map((i) => [i.kind, i.segment, i.fills.length])).toEqual([["tradebook", "fno", 2], ["tradebook", "commodity", 1]]);
+    expect(store.i[1].fills[0].charges).toBe(8.83); // every fill carries its own charges
+    await expect(svc.importFile(undefined, "again.xlsx", tx())).rejects.toThrow(/already imported/);
+  });
+
+  test("goes to the account its Gain & Loss statement already created, and under the member of its name", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const priya = await svc.addMember({ nickname: "Priya Sharma" });
+    const first = await svc.importFile(undefined, "tx.xlsx", tx("KX9999", "PRIYA SHARMA"));
+    expect(first.filedUnder).toBe("Priya Sharma");
+    const second = await svc.importFile(undefined, "tx2.xlsx", makeXlsx([{ name: "On Market", rows: [[], ["Client Name"], ["Client Code", "KX9999"], ["Transaction Period", "From: 2024-04-01 To: 2025-03-31"], [], [], [], [], HEAD, ["20/08/2024", "10:00:00", "10:00:00", "OPTIDXNIFTY     22AUG2024PE  24750.00", "-", "NSEDERV  ", "Kotak Neo", "Buy", "Cash", 75, 5, 375, 1.8, 10, 0.4, 12.2, 0]] as never }]));
+    expect(second.newAccount).toBe(false); // the same client id: the same account
+    expect(store.a).toHaveLength(1);
+    expect(store.a[0].memberId).toBe(priya.id);
+  });
+
+  test("an overlapping period of the same segment is refused before anything is stored", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    await svc.importFile(undefined, "tx.xlsx", tx());
+    const before = store.i.length;
+    const overlapping = makeXlsx([{ name: "On Market", rows: [[], ["Client Name"], ["Client Code", "KX9999"], ["Transaction Period", "From: 2025-06-01 To: 2026-01-31"], [], [], [], [], HEAD, ["20/08/2025", "10:00:00", "10:00:00", "OPTIDXNIFTY     21AUG2025PE  24750.00", "-", "NSEDERV  ", "Kotak Neo", "Buy", "Cash", 75, 5, 375, 1.8, 10, 0.4, 12.2, 0]] as never }]);
+    await expect(svc.importFile(undefined, "other.xlsx", overlapping)).rejects.toThrow(/overlaps/);
+    expect(store.i).toHaveLength(before);
+  });
+});

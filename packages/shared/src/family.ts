@@ -1,6 +1,6 @@
 // Family accounts: the household's own broker statements, imported and analysed. Pure functions only (the API stores, the screen draws). A record-keeper:
 // it holds what the broker reported, never credentials or full account numbers, and gives no advice. See docs/redesign/FAMILY_ACCOUNTS.md.
-import { matchFills, reconcileWithStatement, type Reconciliation } from "./fifo";
+import { matchFills, reconcileWithStatement, settleExpired, type Matched, type Reconciliation } from "./fifo";
 import type { ChargeHead, PnlLine, Segment } from "./zerodhaPnl";
 import type { Fill } from "./zerodhaTradebook";
 
@@ -80,7 +80,18 @@ export interface ParsedSymbol {
   kind: "option" | "future" | "other";
   optionType?: "CE" | "PE";
   strike?: number;
+  /** the month the contract expires ("2024-12"), read from its name: a closing result cannot be later than this, and for short-dated contracts it is the month it was traded */
+  expiryMonth?: string;
+  /** the expiry date ("2024-12-24") when the name carries the day (Kotak's names and Zerodha's weekly names do), else the last day of the expiry month (monthly names and futures) */
+  expiryDate?: string;
 }
+
+const MONTH_NUMBER: Record<string, number> = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+// the weekly format writes the month as one character: 1-9, then O, N, D
+const WEEKLY_MONTH: Record<string, number> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, O: 10, N: 11, D: 12 };
+const yearMonth = (yy: string, month: number | undefined) => (month ? `${2000 + Number(yy)}-${String(month).padStart(2, "0")}` : undefined);
+const dayOf = (yy: string, month: number | undefined, dd: string) => (month ? `${2000 + Number(yy)}-${String(month).padStart(2, "0")}-${dd.padStart(2, "0")}` : undefined);
+const monthEnd = (yy: string, month: number | undefined) => (month ? `${2000 + Number(yy)}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(2000 + Number(yy), month, 0)).getUTCDate()).padStart(2, "0")}` : undefined);
 
 // Kotak writes the contract as words: "BANKNIFTY 24DEC24 CE 52700" (the workbook pads the gaps with spaces)
 const KOTAK_OPTION = new RegExp(`^([A-Z][A-Z0-9&-]*?) (\\d{2})(${MONTHS})(\\d{2}) (CE|PE) (\\d+(?:\\.\\d+)?)$`);
@@ -90,15 +101,15 @@ const KOTAK_FUTURE = new RegExp(`^([A-Z][A-Z0-9&-]*?) (\\d{2})(${MONTHS})(\\d{2}
 export function parseSymbol(symbol: string): ParsedSymbol {
   const s = symbol.trim().toUpperCase().replace(/\s+/g, " ");
   const k = KOTAK_OPTION.exec(s);
-  if (k) return { underlying: k[1], kind: "option", optionType: k[5] as "CE" | "PE", strike: Number(k[6]) };
+  if (k) return { underlying: k[1], kind: "option", optionType: k[5] as "CE" | "PE", strike: Number(k[6]), expiryMonth: yearMonth(k[4], MONTH_NUMBER[k[3]]), expiryDate: dayOf(k[4], MONTH_NUMBER[k[3]], k[2]) };
   const kf = KOTAK_FUTURE.exec(s);
-  if (kf) return { underlying: kf[1], kind: "future" };
+  if (kf) return { underlying: kf[1], kind: "future", expiryMonth: yearMonth(kf[4], MONTH_NUMBER[kf[3]]), expiryDate: dayOf(kf[4], MONTH_NUMBER[kf[3]], kf[2]) };
   let m = WEEKLY.exec(s);
-  if (m) return { underlying: m[1], kind: "option", optionType: m[6] as "CE" | "PE", strike: Number(m[5]) };
+  if (m) return { underlying: m[1], kind: "option", optionType: m[6] as "CE" | "PE", strike: Number(m[5]), expiryMonth: yearMonth(m[2], WEEKLY_MONTH[m[3]]), expiryDate: dayOf(m[2], WEEKLY_MONTH[m[3]], m[4]) };
   m = MONTHLY.exec(s);
-  if (m) return { underlying: m[1], kind: "option", optionType: m[5] as "CE" | "PE", strike: Number(m[4]) };
+  if (m) return { underlying: m[1], kind: "option", optionType: m[5] as "CE" | "PE", strike: Number(m[4]), expiryMonth: yearMonth(m[2], MONTH_NUMBER[m[3]]), expiryDate: monthEnd(m[2], MONTH_NUMBER[m[3]]) };
   m = FUTURE.exec(s);
-  if (m) return { underlying: m[1], kind: "future" };
+  if (m) return { underlying: m[1], kind: "future", expiryMonth: yearMonth(m[2], MONTH_NUMBER[m[3]]), expiryDate: monthEnd(m[2], MONTH_NUMBER[m[3]]) };
   return { underlying: s, kind: "other" };
 }
 
@@ -192,6 +203,20 @@ export interface Filter {
   period?: string;
 }
 
+/** The day the contract expires, for `settleExpired`. */
+const expiryDateOf = (symbol: string) => parseSymbol(symbol).expiryDate;
+
+/** FIFO over the fills, with every contract that had expired by `cutoff` closed at zero on its expiry date. Fills are matched under upper-case names. */
+function matchWithExpiry(fills: Iterable<Fill>, cutoff: string): Matched {
+  return settleExpired(matchFills([...fills].map((f) => ({ ...f, symbol: f.symbol.toUpperCase() }))), expiryDateOf, cutoff);
+}
+
+/** The latest day a tradebook can speak for: its own last day, or the day it was imported when that is earlier (nothing after that day had happened yet). */
+const knownUntil = (b: ImportRecord) => [b.periodTo, /^\d{4}-\d{2}-\d{2}/.test(b.importedAt) ? b.importedAt.slice(0, 10) : "9999-12-31"].sort()[0];
+
+/** A statement's rounding: Kotak's figures are rounded in several places and differ from the fills by up to about 35 paise a contract, Zerodha's by under a paisa. */
+const toleranceFor = (broker: string | undefined) => (broker === "kotak" ? 0.5 : 0.011);
+
 /**
  * A statement that straddles two financial years (a calendar-year Console export is April-March on both sides of its year end) has no dates, so it cannot be cut by
  * itself (and even one that never crosses a year end is labelled by its file period, not by the year its trades fall in). When a tradebook covering its period reconciles with it symbol by symbol, the dated closes decide which year each result belongs to: one part per year, the
@@ -203,8 +228,8 @@ export function splitByFinancialYear(imp: ImportRecord, imports: ImportRecord[])
   const fills = new Map<string, Fill>();
   for (const b of imports) if (b.kind === "tradebook" && b.accountId === imp.accountId && b.segment === imp.segment && b.periodFrom <= imp.periodFrom && b.periodTo >= imp.periodTo) for (const f of b.fills) fills.set(f.tradeId, f);
   if (fills.size === 0) return [imp];
-  const inPeriod = matchFills([...fills.values()]).closed.filter((c) => c.closeDate >= imp.periodFrom && c.closeDate <= imp.periodTo);
-  if (!reconcileWithStatement({ closed: inPeriod, open: [] }, imp.lines).every((d) => d.ok)) return [imp];
+  const inPeriod = matchWithExpiry(fills.values(), imp.periodTo).closed.filter((c) => c.closeDate >= imp.periodFrom && c.closeDate <= imp.periodTo);
+  if (!reconcileWithStatement({ closed: inPeriod, open: [] }, imp.lines.map((l) => ({ ...l, symbol: l.symbol.toUpperCase() }))).every((d) => d.ok)) return [imp];
   const weight = (c: (typeof inPeriod)[number]) => (c.openPrice + c.closePrice) * c.quantity;
   const total = inPeriod.reduce((a, c) => a + weight(c), 0);
   const years = [...new Set(inPeriod.map((c) => fyOf(c.closeDate)))].sort();
@@ -342,15 +367,24 @@ export interface MonthRow {
   realized: number;
   /** the statement's charges spread over the months by traded value: an ESTIMATE (a statement gives one total for the whole period) */
   charges: number;
+  /** exact plus estimated, after all charges */
   net: number;
   closes: number;
+  /**
+   * What a statement WITHOUT dates puts in this month by the month its contracts expire (Kotak's report has no dates; a Zerodha statement without a tradebook has
+   * none either), and the contracts of a statement whose tradebook does not hold them (positions opened before it starts). An ESTIMATE: a contract bought weeks
+   * before its expiry may have been closed earlier, so each month is right to within a month for short-dated options and less so for long-dated ones.
+   */
+  est: { realized: number; charges: number; contracts: number };
 }
 export interface MonthlyView {
   months: MonthRow[];
   /** per statement that has a tradebook covering its period: do the dated fills add up to the statement symbol by symbol? */
   reconciliation: { importId: number; fileName: string; ok: boolean; differences: Reconciliation[] }[];
-  /** statements with no tradebook, so their months are missing */
+  /** statements with no tradebook: their months are placed by contract expiry (`MonthRow.est`) */
   withoutTradebook: { importId: number; fileName: string; periodFrom: string; periodTo: string }[];
+  /** contracts whose name carries no expiry month, so they are in no month at all */
+  unplaced: { contracts: number; realized: number };
 }
 
 /** The month-by-month result for a selection: realised from the tradebooks' dated fills (matched first in, first out), charges from the statements spread by traded value. */
@@ -366,9 +400,32 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
     return true;
   });
   const months = new Map<string, MonthRow>();
-  const row = (m: string) => months.get(m) ?? (months.set(m, { month: m, realized: 0, charges: 0, net: 0, closes: 0 }), months.get(m)!);
+  const row = (m: string) => months.get(m) ?? (months.set(m, { month: m, realized: 0, charges: 0, net: 0, closes: 0, est: { realized: 0, charges: 0, contracts: 0 } }), months.get(m)!);
   const reconciliation: MonthlyView["reconciliation"] = [];
   const withoutTradebook: MonthlyView["withoutTradebook"] = [];
+  const unplaced = { contracts: 0, realized: 0 };
+  // a month belongs to the selection when the filter names no year, or names a financial year it falls in, or a statement period it falls inside
+  const inYear = (month: string) => {
+    if (!filter.period) return true;
+    if (/^\d{4}-\d{2}$/.test(filter.period)) return fyOf(`${month}-01`) === filter.period;
+    return month >= filter.period.slice(0, 7) && month <= filter.period.slice(-10, -3);
+  };
+  // a closed contract cannot have been realised after its statement ends or after the statement was imported, whatever month it expires in
+  const capOf = (st: ImportRecord) => [st.periodTo.slice(0, 7), /^\d{4}-\d{2}/.test(st.importedAt) ? st.importedAt.slice(0, 7) : ""].filter(Boolean).sort()[0];
+  const place = (symbol: string, realized: number, charges: number, cap: string) => {
+    const expiry = parseSymbol(symbol).expiryMonth;
+    if (!expiry) {
+      unplaced.contracts++;
+      unplaced.realized += realized;
+      return;
+    }
+    const month = expiry > cap ? cap : expiry;
+    if (!inYear(month)) return;
+    const r = row(month);
+    r.est.realized += realized;
+    r.est.charges += charges;
+    r.est.contracts++;
+  };
   const keys = new Set(sel.map((i) => `${i.accountId}|${i.segment}`));
   for (const key of keys) {
     const group = sel.filter((i) => `${i.accountId}|${i.segment}` === key);
@@ -376,7 +433,7 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
     const stmts = group.filter((i) => i.kind === "pnl" && (!filter.period || overlaps({ from: i.periodFrom, to: i.periodTo }, fyRange(filter.period))));
     const fills = new Map<string, Fill>();
     for (const b of books) for (const f of b.fills) fills.set(f.tradeId, f);
-    const matched = matchFills([...fills.values()]);
+    const matched = matchWithExpiry(fills.values(), books.map(knownUntil).sort().at(-1) ?? "0000-00-00");
     const closed = filter.period ? matched.closed.filter((c) => fyOf(c.closeDate) === filter.period) : matched.closed;
     for (const c of closed) {
       const r = row(c.closeDate.slice(0, 7));
@@ -387,19 +444,38 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
       const covering = books.filter((b) => b.periodFrom <= st.periodFrom && b.periodTo >= st.periodTo);
       if (covering.length === 0) {
         withoutTradebook.push({ importId: st.id, fileName: st.fileName, periodFrom: st.periodFrom, periodTo: st.periodTo });
+        // no dates at all: each contract goes in the month it expires, with the charges it carries, else the statement's charges shared by traded value
+        const weightOf = (l: PnlLine) => l.buyValue + l.sellValue || Math.abs(l.realized) || 1;
+        const stCharges = st.charges.reduce((a, c) => a + c.amount, 0);
+        const weights = st.lines.reduce((a, l) => a + weightOf(l), 0);
+        for (const l of st.lines) place(l.symbol, l.realized, l.charges ?? (weights > 0 ? (stCharges * weightOf(l)) / weights : 0), capOf(st));
         continue;
       }
       const inPeriod = matched.closed.filter((c) => c.closeDate >= st.periodFrom && c.closeDate <= st.periodTo);
-      const diffs = reconcileWithStatement({ closed: inPeriod, open: [] }, st.lines);
+      const diffs = reconcileWithStatement({ closed: inPeriod, open: [] }, st.lines.map((l) => ({ ...l, symbol: l.symbol.toUpperCase() })), toleranceFor(acc.get(st.accountId)?.broker));
       reconciliation.push({ importId: st.id, fileName: st.fileName, ok: diffs.every((d) => d.ok), differences: diffs.filter((d) => !d.ok) });
+      // a symbol the tradebook does not hold (opened before it starts) or holds differently: what the statement has and the fills do not, in its expiry month
+      for (const d of diffs.filter((x) => !x.ok)) place(d.symbol, (d.statement ?? 0) - (d.tradebook ?? 0), 0, capOf(st));
+      // a tradebook that gives the charges on every fill (Kotak's) makes the month's charges exact: each fill's own, in the month it was traded
+      const own = [...fills.values()].filter((f) => f.date >= st.periodFrom && f.date <= st.periodTo);
+      if (own.length > 0 && own.every((f) => f.charges !== undefined)) {
+        // the fills' charges differ from the statement's total by a few paise of rounding: scaled to it, so the months add up to the statement
+        const ownSum = own.reduce((a, f) => a + (f.charges ?? 0), 0);
+        const stSum = st.charges.reduce((a, c) => a + c.amount, 0);
+        const scale = ownSum > 0 && stSum > 0 ? stSum / ownSum : 1;
+        for (const f of own) if (inYear(f.date.slice(0, 7))) row(f.date.slice(0, 7)).charges += (f.charges ?? 0) * scale;
+        continue;
+      }
       const weight = (c: (typeof inPeriod)[number]) => (c.openPrice + c.closePrice) * c.quantity;
       const total = inPeriod.reduce((a, c) => a + weight(c), 0);
       const charges = st.charges.reduce((a, c) => a + c.amount, 0);
       if (total > 0) for (const c of inPeriod) if (!filter.period || fyOf(c.closeDate) === filter.period) row(c.closeDate.slice(0, 7)).charges += (charges * weight(c)) / total;
     }
   }
-  const out = [...months.values()].sort((a, b) => (a.month < b.month ? -1 : 1)).map((m) => ({ ...m, realized: r2(m.realized), charges: r2(m.charges), net: r2(m.realized - m.charges) }));
-  return { months: out, reconciliation, withoutTradebook };
+  const out = [...months.values()]
+    .sort((a, b) => (a.month < b.month ? -1 : 1))
+    .map((m) => ({ ...m, realized: r2(m.realized), charges: r2(m.charges), net: r2(m.realized - m.charges + m.est.realized - m.est.charges), est: { realized: r2(m.est.realized), charges: r2(m.est.charges), contracts: m.est.contracts } }));
+  return { months: out, reconciliation, withoutTradebook, unplaced: { contracts: unplaced.contracts, realized: r2(unplaced.realized) } };
 }
 
 const csvCell = (v: string | number): string => {
@@ -438,8 +514,8 @@ export function familyCsv(report: { summary: Summary; monthly: MonthlyView }, na
     rows.push([]);
   }
   if (report.monthly.months.length) {
-    rows.push(["Month", "Realised (exact, from dated trades)", "Charges (estimated: the statement total spread by traded value)", "Net", "Closes"]);
-    for (const m of report.monthly.months) rows.push([m.month, m.realized, m.charges, m.net, m.closes]);
+    rows.push(["Month", "Realised (exact, from dated trades)", "Realised (estimate: placed by contract expiry month)", "Charges (estimated: the statement total spread by traded value)", "Net", "Closes", "Contracts placed by expiry"]);
+    for (const m of report.monthly.months) rows.push([m.month, m.realized, m.est.realized, r2(m.charges + m.est.charges), m.net, m.closes, m.est.contracts]);
   }
   return toCsv(rows);
 }

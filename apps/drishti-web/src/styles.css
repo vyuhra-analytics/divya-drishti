@@ -860,3 +860,7 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .family details.fam-alerts > summary .fam-dot { width: 8px; height: 8px; border-radius: 50%; background: #e0a030; flex: none; }
 .family details.fam-alerts > summary small { color: var(--muted); }
 .family details.fam-alerts > .fam-alert { margin: 0 8px 8px; }
+.family .fam-chart .fam-est { fill-opacity: .45; stroke-width: 1; stroke-dasharray: 3 2; }
+.family .fam-chart .fam-up.fam-est { stroke: var(--up); }
+.family .fam-chart .fam-down.fam-est { stroke: var(--down); }
+.family .fam-legend i.fam-est { opacity: .5; outline: 1px dashed var(--up); }

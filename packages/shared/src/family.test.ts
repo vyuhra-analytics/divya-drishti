@@ -135,11 +135,23 @@ describe("first-in-first-out matching", () => {
 
 describe("symbols, years and charge groups", () => {
   test("parses weekly, monthly and future symbols", () => {
-    expect(parseSymbol("BANKNIFTY2461951100CE")).toEqual({ underlying: "BANKNIFTY", kind: "option", optionType: "CE", strike: 51100 });
+    expect(parseSymbol("BANKNIFTY2461951100CE")).toEqual({ underlying: "BANKNIFTY", kind: "option", optionType: "CE", strike: 51100, expiryMonth: "2024-06", expiryDate: "2024-06-19" });
     expect(parseSymbol("FINNIFTY2470223350PE")).toMatchObject({ underlying: "FINNIFTY", strike: 23350, optionType: "PE" });
     expect(parseSymbol("MIDCPNIFTY24JUN12275CE")).toMatchObject({ underlying: "MIDCPNIFTY", strike: 12275 });
-    expect(parseSymbol("NIFTY24JULFUT")).toEqual({ underlying: "NIFTY", kind: "future" });
+    expect(parseSymbol("NIFTY24JULFUT")).toEqual({ underlying: "NIFTY", kind: "future", expiryMonth: "2024-07", expiryDate: "2024-07-31" }); // a monthly name has no day: the last day of the month
     expect(parseSymbol("RELIANCE")).toEqual({ underlying: "RELIANCE", kind: "other" });
+  });
+  test("the expiry month is read from the name in every format the two brokers use", () => {
+    expect(parseSymbol("FINNIFTY2470223350PE").expiryMonth).toBe("2024-07"); // weekly: 24 7 02
+    expect(parseSymbol("NIFTY24O1024000CE").expiryMonth).toBe("2024-10"); // the weekly month letters: O, N, D
+    expect(parseSymbol("NIFTY24N0724000CE").expiryMonth).toBe("2024-11");
+    expect(parseSymbol("NIFTY24D1224000CE").expiryMonth).toBe("2024-12");
+    expect(parseSymbol("MIDCPNIFTY24JUN12275CE").expiryMonth).toBe("2024-06"); // monthly
+    expect(parseSymbol("CRUDEOILM24NOVFUT").expiryMonth).toBe("2024-11");
+    expect(parseSymbol("BANKNIFTY      24DEC24    CE 52700").expiryMonth).toBe("2024-12"); // Kotak
+    expect(parseSymbol("SENSEX 04Jun26 CE 76200").expiryMonth).toBe("2026-06"); // Kotak, mixed case
+    expect(parseSymbol("NIFTY 26DEC24 FUT").expiryMonth).toBe("2024-12");
+    expect(parseSymbol("RELIANCE").expiryMonth).toBeUndefined();
   });
   test("financial year runs April to March", () => {
     expect(fyOf("2024-03-31")).toBe("2023-24");
@@ -233,5 +245,65 @@ describe("summary and monthly view", () => {
     expect(v.reconciliation[0].ok).toBe(true);
     expect(v.withoutTradebook).toEqual([]);
     expect(monthlyView(members, accounts, [st]).withoutTradebook).toHaveLength(1);
+  });
+});
+
+describe("months for statements without dates", () => {
+  const members: FamilyMember[] = [{ id: 1, nickname: "A", relation: "", hidden: false, note: "" }];
+  const accounts: FamilyAccount[] = [{ id: 10, memberId: 1, broker: "kotak", label: "k", clientCode: "XYZ123" }, { id: 11, memberId: 1, broker: "zerodha", label: "z", clientCode: "AB1234" }];
+  const line = (symbol: string, realized: number, charges?: number) => ({ symbol, quantity: 25, buyValue: 1000, sellValue: 1000 + realized, realized, openQuantity: 0, unrealized: 0, ...(charges !== undefined ? { charges } : {}) });
+  const stmt = (id: number, accountId: number, lines: ReturnType<typeof line>[], charge: number, over: Partial<ImportRecord> = {}): ImportRecord => ({
+    id, accountId, kind: "pnl", segment: "fno", periodFrom: "2024-04-01", periodTo: "2025-03-31", fileName: `s${id}.xlsx`, importedAt: "", summary: { charges: charge, otherCreditDebit: 0, realized: lines.reduce((a, l) => a + l.realized, 0), unrealized: 0 },
+    lines, charges: [{ head: "Brokerage", amount: charge }], fills: [], problems: [], ...over,
+  });
+
+  test("each contract goes in the month it expires, with its own charges or its share of the statement's, and the months add up to the net", () => {
+    const k = stmt(1, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20), line("NIFTY 24NOV24 CE 24000", -200, 10), line("SENSEX 26DEC24 PE 80000", -100, 5)], 35);
+    const v = monthlyView(members, accounts, [k]);
+    expect(v.months.map((m) => [m.month, m.est.realized, m.est.charges, m.est.contracts, m.net])).toEqual([["2024-11", -200, 10, 1, -210], ["2024-12", 400, 25, 2, 375]]);
+    expect(v.months.reduce((a, m) => a + m.net, 0)).toBeCloseTo(summarize(members, accounts, [k]).totals.net, 6);
+    expect(v.months.every((m) => m.realized === 0 && m.closes === 0)).toBe(true); // nothing here is exact
+    expect(v.unplaced).toEqual({ contracts: 0, realized: 0 });
+  });
+
+  test("a statement with no per-contract charges shares its total by traded value", () => {
+    const z = stmt(2, 11, [line("NIFTY2461923000CE", 100), line("NIFTY24JUL23000CE", -100)], 20);
+    const v = monthlyView(members, accounts, [z]);
+    expect(v.months.map((m) => [m.month, m.est.charges])).toEqual([["2024-06", 10.5], ["2024-07", 9.5]]); // weights 2,100 and 1,900 of 4,000 traded
+  });
+
+  test("a contract cannot be placed after its statement ends or after the statement was imported", () => {
+    const k = stmt(1, 10, [line("NIFTY 26DEC26 CE 24000", 500, 20)], 20, { periodTo: "2027-03-31", importedAt: "2026-10-28T04:00:00Z" });
+    expect(monthlyView(members, accounts, [k]).months.map((m) => m.month)).toEqual(["2026-10"]);
+    const short = stmt(1, 10, [line("NIFTY 26DEC24 CE 24000", 500, 20)], 20, { periodTo: "2024-10-31" });
+    expect(monthlyView(members, accounts, [short]).months.map((m) => m.month)).toEqual(["2024-10"]);
+  });
+
+  test("a name with no expiry is counted as unplaced, never dropped from the total", () => {
+    const v = monthlyView(members, accounts, [stmt(3, 11, [line("RELIANCE", 300, 5), line("NIFTY24JUL23000CE", 50, 5)], 10)]);
+    expect(v.unplaced).toEqual({ contracts: 1, realized: 300 });
+    expect(v.months.map((m) => m.month)).toEqual(["2024-07"]);
+  });
+
+  test("the year filter keeps only the months in that financial year", () => {
+    const k = stmt(1, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20), line("NIFTY 25MAY25 CE 24000", 100, 5)], 25, { periodTo: "2026-03-31" });
+    expect(monthlyView(members, accounts, [k], { period: "2024-25" }).months.map((m) => m.month)).toEqual(["2024-12"]);
+    expect(monthlyView(members, accounts, [k], { period: "2025-26" }).months.map((m) => m.month)).toEqual(["2025-05"]);
+  });
+
+  test("exact months stay exact, and the symbols a tradebook does not hold are placed by expiry", () => {
+    const fill = (symbol: string, date: string, side: "buy" | "sell", price: number, id: string) => ({ symbol, date, time: null, side, quantity: 25, price, tradeId: id, exchange: "NSE" }) as const;
+    const book: ImportRecord = { ...stmt(4, 11, [], 0), kind: "tradebook", fills: [fill("NIFTY2461923000CE", "2024-06-19", "buy", 40, "a"), fill("NIFTY2461923000CE", "2024-06-19", "sell", 50, "b")] };
+    // the statement also holds a position the tradebook never saw (opened before it starts)
+    const st = stmt(5, 11, [line("NIFTY2461923000CE", 250), line("NIFTY24JUL23900PE", -2731.25)], 30);
+    const v = monthlyView(members, accounts, [st, book]);
+    expect(v.reconciliation[0].ok).toBe(false);
+    const june = v.months.find((m) => m.month === "2024-06")!;
+    const july = v.months.find((m) => m.month === "2024-07")!;
+    expect(june).toMatchObject({ realized: 250, closes: 1 });
+    expect(june.est.contracts).toBe(0);
+    expect(july).toMatchObject({ realized: 0, closes: 0 });
+    expect(july.est).toMatchObject({ realized: -2731.25, contracts: 1 });
+    expect(v.months.reduce((a, m) => a + m.realized + m.est.realized, 0)).toBeCloseTo(250 - 2731.25, 6);
   });
 });

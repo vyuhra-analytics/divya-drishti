@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type Segment, type Summary } from "@drishti/shared";
+import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import type { Widget } from "./workspace";
 
@@ -75,8 +75,12 @@ function Bar({ value, max }: { value: number; max: number }) {
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (m: string) => `${MON[Number(m.slice(5, 7)) - 1] ?? m.slice(5)} ${m.slice(2, 4)}`;
 
-/** The net of each month as bars, with the running total as a line. Values are left out of the picture while amounts are hidden. */
-function MonthChart({ months, hide }: { months: { month: string; net: number }[]; hide: boolean }) {
+/**
+ * The net of each month as bars, with the running total as a line. A month can hold an exact part (from a tradebook's dated trades) and an estimated part
+ * (contracts of statements without dates, placed by their expiry month): they are drawn apart, the estimate lighter and dashed. Values are left out of the
+ * picture while amounts are hidden.
+ */
+function MonthChart({ months, hide }: { months: MonthRow[]; hide: boolean }) {
   const n = months.length;
   const step = 44;
   const W = Math.max(320, n * step);
@@ -86,21 +90,31 @@ function MonthChart({ months, hide }: { months: { month: string; net: number }[]
   const mid = top + (H - top - bottom) / 2;
   let run = 0;
   const cum = months.map((m) => (run += m.net));
-  const maxAbs = Math.max(1, ...months.map((m) => Math.abs(m.net)), ...cum.map(Math.abs));
+  const exact = (m: MonthRow) => m.realized - m.charges;
+  const est = (m: MonthRow) => m.est.realized - m.est.charges;
+  const maxAbs = Math.max(1, ...months.flatMap((m) => [Math.abs(exact(m)), Math.abs(est(m))]), ...cum.map(Math.abs));
   const k = (mid - top) / maxAbs;
   const x = (i: number) => (W / n) * (i + 0.5);
   const bw = Math.min(26, (W / n) * 0.6);
   return (
     <svg className="fam-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={hide ? "Net by month (values hidden)" : `Net by month, ${n} months`}>
       <line x1="0" x2={W} y1={mid} y2={mid} className="fam-zero" />
-      {months.map((m, i) => (
-        <g key={m.month}>
-          <rect x={x(i) - bw / 2} y={m.net >= 0 ? mid - m.net * k : mid} width={bw} height={Math.max(1, Math.abs(m.net) * k)} className={m.net >= 0 ? "fam-up" : "fam-down"} rx="2">
-            {!hide && <title>{`${m.month}: ${inr(m.net)}`}</title>}
+      {months.map((m, i) => {
+        const both = m.closes > 0 && m.est.contracts > 0;
+        const w = both ? bw / 2 - 1 : bw;
+        const bar = (v: number, dx: number, estimated: boolean) => (
+          <rect x={x(i) + dx} y={v >= 0 ? mid - v * k : mid} width={w} height={Math.max(1, Math.abs(v) * k)} className={`${v >= 0 ? "fam-up" : "fam-down"}${estimated ? " fam-est" : ""}`} rx="2">
+            {!hide && <title>{`${m.month}${estimated ? " (estimated by expiry month)" : " (exact)"}: ${inr(v)}`}</title>}
           </rect>
-          <text x={x(i)} y={H - 8} textAnchor="middle" className="fam-axis">{monthLabel(m.month)}</text>
-        </g>
-      ))}
+        );
+        return (
+          <g key={m.month}>
+            {m.closes > 0 && bar(exact(m), both ? -w - 1 : -w / 2, false)}
+            {m.est.contracts > 0 && bar(est(m), both ? 1 : -w / 2, true)}
+            <text x={x(i)} y={H - 8} textAnchor="middle" className="fam-axis">{monthLabel(m.month)}</text>
+          </g>
+        );
+      })}
       {n > 1 && <polyline className="fam-cum" fill="none" points={cum.map((c, i) => `${x(i)},${mid - c * k}`).join(" ")} />}
       {n > 1 && cum.map((c, i) => <circle key={i} cx={x(i)} cy={mid - c * k} r="2.5" className="fam-cumdot">{!hide && <title>{`running total ${inr(c)}`}</title>}</circle>)}
     </svg>
@@ -186,7 +200,8 @@ export function FamilyWidget(_: { widget: Widget }) {
       const [o, r] = await Promise.all([call<Overview>(""), call<Report>(`/summary${query}`)]);
       // an API that has not been restarted since an update answers without the newer fields: the screen shows what it has instead of failing
       setData({ ...o, coverage: o.coverage ?? { years: [], rows: [] }, statementPeriods: o.statementPeriods ?? [] });
-      setReport({ ...r, contracts: r.contracts ?? [], contractsTotal: r.contractsTotal ?? 0, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
+      const monthly = { ...r.monthly, months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
+      setReport({ ...r, monthly, contracts: r.contracts ?? [], contractsTotal: r.contractsTotal ?? 0, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -299,20 +314,26 @@ export function FamilyWidget(_: { widget: Widget }) {
     const syms = r.differences.map((d) => (hide ? "a symbol" : `${d.symbol} (${inr(d.difference)})`)).join(", ");
     alerts.push({ key: `mm-${r.importId}`, tone: "warn", title: `Carried-in positions${acc && !hide ? ` in ${accountName(acc)}` : ""}`, text: `${r.differences.length} symbol${r.differences.length === 1 ? "" : "s"} in ${hide ? "a statement" : r.fileName} ${r.differences.length === 1 ? "has" : "have"} no matching trades in the tradebook: ${syms}. They were probably opened before the tradebook starts, so add the tradebook for the earlier period. Until then this statement keeps its own period instead of being cut into financial years.` });
   }
+  // statements without dates are not "missing" months: their contracts are placed by expiry month, which the Months tab labels as an estimate
   const brokerOf = (importId: number) => data.accounts.find((a) => a.id === data.imports.find((i) => i.id === importId)?.accountId)?.broker;
-  const kotakOnly = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) === "kotak");
-  const zerodhaMissing = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) !== "kotak");
-  if (zerodhaMissing.length > 0)
-    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${[...new Set(zerodhaMissing.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)))].join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
-  if (kotakOnly.length > 0)
-    alerts.push({ key: "kotak-months", tone: "info", title: "No months for Kotak", text: `Kotak's Gain & Loss report has no trade dates${hide ? "" : ` (${[...new Set(kotakOnly.map((w) => `${w.periodFrom} to ${w.periodTo}`))].join(", ")})`}, so it gives the year's totals and charges but no months. Months would need Kotak's contract notes, which are not read yet.` });
+  const noDates = [...new Set(monthly.withoutTradebook.map((w) => w.importId))];
+  const zerodhaNoBook = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) !== "kotak");
+  if (noDates.length > 0)
+    alerts.push({
+      key: "est-months",
+      tone: "info",
+      title: "Some months are estimated",
+      text: `${noDates.length} statement${noDates.length === 1 ? " has" : "s have"} no trade dates, so each contract is placed in the month it expires (the real trade can be a few weeks earlier). ${zerodhaNoBook.length > 0 ? "A Zerodha tradebook for the same period gives exact months. " : ""}${monthly.withoutTradebook.some((w) => brokerOf(w.importId) === "kotak") ? "For Kotak, add its Transaction Statement (Profile → Reports → Transaction Statement): it has every trade with its date." : ""}`.trim(),
+    });
+
   const alertCard = (a: (typeof alerts)[number]) => (
     <div key={a.key} className={`fam-alert ${a.tone}`} role={a.tone === "warn" ? "alert" : "status"}>
       <div>
         <b>{a.title}</b>
         <p>{a.text}</p>
       </div>
-      {a.key !== "kotak-months" && <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>}
+      {a.key !== "est-months" && <button className="tf" onClick={() => setTab("months")}>See months</button>}
+      {a.key === "est-months" && <button className="tf" onClick={() => setTab("setup")}>Add files</button>}
     </div>
   );
   // one thing to check is shown as it is; several fold into one line that opens, so the numbers stay at the top
@@ -582,6 +603,19 @@ export function FamilyWidget(_: { widget: Widget }) {
               </section>
             </div>
 
+            {monthly.months.length > 1 && (
+              <section className="fam-card">
+                <h2>Net by month</h2>
+                <MonthChart months={monthly.months} hide={hide} />
+                <p className="fam-legend">
+                  <span><i className="fam-up" /> exact</span>
+                  <span><i className="fam-up fam-est" /> estimated by contract expiry month</span>
+                  <span><i className="fam-line" /> running total</span>
+                  <button className="tf" onClick={() => setTab("months")}>Details</button>
+                </p>
+              </section>
+            )}
+
             <section className="fam-card">{rowsTable("Financial year", s.byPeriod, (r) => r.label)}</section>
 
             <section className="fam-card">
@@ -741,41 +775,50 @@ export function FamilyWidget(_: { widget: Widget }) {
       {active === "months" && (
         <>
           {monthly.months.length === 0 ? (
-            <p className="muted">Months need a tradebook (the statement has no dates). Download it from Console → Reports → Tradebook for the same period and add it in <b>Files and people</b>.</p>
+            <p className="muted">No month to show: no statement here has a tradebook, and its contract names carry no expiry month to place them by. Add a tradebook for the same period in <b>Files and people</b>.</p>
           ) : (
             <>
               <section className="fam-card">
                 <MonthChart months={monthly.months} hide={hide} />
-                <p className="fam-legend"><i className="fam-up" /> month <i className="fam-line" /> running total</p>
+                <p className="fam-legend">
+                  <span><i className="fam-up" /> exact (dated trades)</span>
+                  <span><i className="fam-up fam-est" /> estimate (by contract expiry month)</span>
+                  <span><i className="fam-line" /> running total</span>
+                </p>
               </section>
               <div className="fam-scroll"><table className="fam-table">
                 <thead>
                   <tr>
                     <th>Month</th>
-                    <th className="num">Realised</th>
-                    <th className="num" title="The statement's charges spread over the months by traded value: an estimate">Charges (est.)</th>
+                    <th className="num" title="From a tradebook's dated trades, first in first out">Exact</th>
+                    <th className="num" title="Contracts of statements without dates, placed in the month they expire">Estimate</th>
+                    <th className="num" title="Exact charges, plus the estimate's: the statement's total shared by traded value, or the contract's own charges where the statement gives them">Charges</th>
                     <th className="num">Net</th>
                     <th className="fam-barcol" />
-                    <th className="num">Closes</th>
+                    <th className="num">Contracts</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
-                    const max = Math.max(...monthly.months.map((m) => Math.abs(m.net)));
+                    const max = Math.max(1, ...monthly.months.map((m) => Math.abs(m.net)));
                     return monthly.months.map((m) => (
                       <tr key={m.month}>
                         <td>{m.month}</td>
-                        <td className="num">{signed(m.realized)}</td>
-                        <td className="num">{money(m.charges)}</td>
+                        <td className="num">{m.closes > 0 ? signed(m.realized) : <span className="muted">—</span>}</td>
+                        <td className="num">{m.est.contracts > 0 ? <i title="Placed by the month the contracts expire">{signed(m.est.realized)}</i> : <span className="muted">—</span>}</td>
+                        <td className="num">{money(m.charges + m.est.charges)}</td>
                         <td className="num">{signed(m.net)}</td>
                         <td><Bar value={m.net} max={max} /></td>
-                        <td className="num muted">{m.closes}</td>
+                        <td className="num muted">{m.closes + m.est.contracts}</td>
                       </tr>
                     ));
                   })()}
                 </tbody>
               </table></div>
-              <p className="muted">Realised is exact, from the dated trades (first in, first out). Charges are the statement's total spread over the months by traded value: an estimate by month, exact in total.</p>
+              <p className="muted">
+                <b>Exact</b> comes from a tradebook's dated trades. <b>Estimate</b> places each contract of a statement without dates in the month it expires: right for short-dated options, up to a few weeks late for contracts held longer, and never later than the statement or its import. The months add up to the totals.
+                {monthly.unplaced.contracts > 0 && ` ${monthly.unplaced.contracts} contract${monthly.unplaced.contracts === 1 ? "" : "s"} carry no expiry in their name and are in no month${hide ? "" : ` (${inr(monthly.unplaced.realized)})`}.`}
+              </p>
             </>
           )}
           {monthly.reconciliation.filter((r) => r.ok).length > 0 && <p className="up">✓ {monthly.reconciliation.filter((r) => r.ok).length} statement{monthly.reconciliation.filter((r) => r.ok).length === 1 ? "" : "s"} add{monthly.reconciliation.filter((r) => r.ok).length === 1 ? "s" : ""} up to the tradebook, symbol by symbol.</p>}
@@ -786,7 +829,7 @@ export function FamilyWidget(_: { widget: Widget }) {
         <>
           <h2>Add files</h2>
           <p className="muted">
-            <b>Zerodha Console:</b> Reports → P&amp;L and Reports → Tradebook, as Excel. <b>Kotak Neo:</b> Profile → Reports → Gain &amp; Loss Statement, as Excel. Each file finds its account by client id; a statement gives the totals and charges, a Zerodha tradebook gives the months.
+            <b>Zerodha Console:</b> Reports → P&amp;L and Reports → Tradebook, as Excel. <b>Kotak Neo:</b> Profile → Reports → Gain &amp; Loss Statement (the totals and charges) and Transaction Statement (every trade with its date), as Excel. Each file finds its account by client id; a statement gives the totals and charges, a tradebook or Transaction Statement gives the months.
           </p>
           <div
             className={`fam-drop no-drag${dragging ? " over" : ""}`}

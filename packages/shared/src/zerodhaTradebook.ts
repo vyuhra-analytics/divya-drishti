@@ -17,6 +17,8 @@ export interface Fill {
   /** the exchange's trade id: a repeat of the same id is the same fill */
   tradeId: string;
   exchange: string;
+  /** everything charged on this fill (brokerage, GST, exchange charges, STT/CTT), when the file gives it per fill (Kotak's does, Zerodha's tradebook does not) */
+  charges?: number;
 }
 export interface ZerodhaTradebook {
   broker: "zerodha";

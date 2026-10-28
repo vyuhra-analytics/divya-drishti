@@ -36,9 +36,10 @@ const report = {
     imports: [{ id: 1 }] as never,
   },
   monthly: {
-    months: [{ month: "2024-06", realized: 250, charges: 20, net: 230, closes: 2 }, { month: "2024-07", realized: -1250, charges: 80, net: -1330, closes: 3 }],
+    months: [{ month: "2024-06", realized: 250, charges: 20, net: 230, closes: 2, est: { realized: 0, charges: 0, contracts: 0 } }, { month: "2024-07", realized: -1250, charges: 80, net: -1100, closes: 3, est: { realized: 400, charges: 50, contracts: 2 } }],
     reconciliation: [{ importId: 1, fileName: "pnl-AB1234.xlsx", ok: false, differences: [{ symbol: "NIFTY24JUL23900PE", statement: -2731.25, tradebook: null, difference: 2731.25, ok: false }] }],
-    withoutTradebook: [],
+    withoutTradebook: [{ importId: 1, fileName: "pnl-AB1234.xlsx", periodFrom: "2024-04-01", periodTo: "2025-03-31" }],
+    unplaced: { contracts: 0, realized: 0 },
   },
   contracts: [contract("c1", "NIFTY24JUN23000CE", 1000), contract("c2", "NIFTY24JUN23100PE", -3000), contract("c3", "CRUDEOIL 15NOV24 CE 5900", 2500, { segment: "commodity", memberId: 2, charges: 40, net: 2460 })],
   contractsTotal: 3,
@@ -77,9 +78,10 @@ test("the net leads, the years are charted, every member is compared and the unf
   expect(screen.getAllByText("Dad").length).toBeGreaterThan(0);
   // a leftover empty member is not worth a card, the one holding an account is
   // several things to check fold into one line that opens: each is still there for the reader
-  expect(screen.getByText("2 things to check")).toBeTruthy();
+  expect(screen.getByText("3 things to check")).toBeTruthy();
   expect(screen.getAllByText("A member was created from a file").length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Carried-in positions/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Some months are estimated").length).toBeGreaterThan(0);
   expect(screen.getByText(/NIFTY24JUL23900PE/)).toBeTruthy();
 });
 
@@ -181,4 +183,20 @@ test("an API that has not been restarted since the update still shows the screen
   expect(screen.queryByText("Why the result is what it is")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
   expect(screen.getByText("No contracts in this selection.")).toBeTruthy();
+});
+
+test("the months tab separates what a tradebook proves from what is placed by contract expiry, and says which is which", async () => {
+  await open();
+  // the overview carries the month chart too, with both kinds of bar
+  expect(screen.getAllByRole("img", { name: /Net by month, 2 months/ }).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  expect(screen.getByText("exact (dated trades)")).toBeTruthy();
+  expect(screen.getByText("estimate (by contract expiry month)")).toBeTruthy();
+  const jul = screen.getByText("2024-07").closest("tr")!;
+  expect(within(jul).getByText("-1,250.00")).toBeTruthy(); // exact
+  expect(within(jul).getByText("400.00")).toBeTruthy(); // estimate
+  expect(within(jul).getByText("-1,100.00")).toBeTruthy(); // net after both and all charges
+  const jun = screen.getByText("2024-06").closest("tr")!;
+  expect(within(jun).getAllByText("—").length).toBe(1); // no estimate in June
+  expect(screen.getByText(/The months add up to the totals/)).toBeTruthy();
 });

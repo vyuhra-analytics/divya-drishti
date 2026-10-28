@@ -131,7 +131,7 @@ export function parseKotakSections(sheets: Sheet[]): KotakPnl[] {
     const realisedAfterCharges = num(r[cReal]);
     if (!Number.isNaN(realisedAfterCharges) && Math.abs(realisedAfterCharges + g + b + m - gross) > TOLERANCE) cur.problems.push(`${name}: gross ${gross} is not the realised result ${realisedAfterCharges} plus its charges`);
     if (Math.abs(gross - c - n) > TOLERANCE) cur.problems.push(`${name}: gross ${gross} less charges ${c} is ${round2(gross - c)} but the statement's net is ${n}`);
-    cur.lines.push({ symbol: name.replace(/\s+/g, " "), quantity: num(r[cQty]), buyValue: num(r[cBuy]), sellValue: num(r[cSell]), realized: gross, openQuantity: 0, unrealized: 0, charges: c });
+    cur.lines.push({ symbol: name.replace(/\s+/g, " ").toUpperCase(), quantity: num(r[cQty]), buyValue: num(r[cBuy]), sellValue: num(r[cSell]), realized: gross, openQuantity: 0, unrealized: 0, charges: c });
     cur.sums.gst += g;
     cur.sums.brk += b;
     cur.sums.misc += m;

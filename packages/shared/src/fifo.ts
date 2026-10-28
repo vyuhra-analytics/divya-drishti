@@ -54,6 +54,27 @@ export function matchFills(fills: readonly Fill[]): Matched {
   return { closed, open: [...books.values()].flat() };
 }
 
+/**
+ * A contract that has expired is not open any more: a long option bought and never sold expired worthless, and the broker's statement books that loss at expiry,
+ * which no fill shows. Every open lot whose contract expired on or before `cutoff` is closed at 0 on its expiry date. Settling at zero is an assumption (an option
+ * in the money at expiry settles for something): a contract where it is wrong shows up as a difference when the result is reconciled with the statement.
+ * `expiryOf` gives a contract's expiry date, or undefined when the name does not carry one.
+ */
+export function settleExpired(matched: Matched, expiryOf: (symbol: string) => string | undefined, cutoff: string): Matched {
+  const closed = [...matched.closed];
+  const open: OpenLot[] = [];
+  for (const lot of matched.open) {
+    const expiry = expiryOf(lot.symbol);
+    if (expiry === undefined || expiry > cutoff || expiry < lot.openDate) {
+      open.push(lot);
+      continue;
+    }
+    const pnl = lot.direction === "long" ? -lot.openPrice * lot.quantity : lot.openPrice * lot.quantity;
+    closed.push({ symbol: lot.symbol, direction: lot.direction, quantity: lot.quantity, openDate: lot.openDate, closeDate: expiry, openPrice: lot.openPrice, closePrice: 0, pnl: r6(pnl) });
+  }
+  return { closed, open };
+}
+
 export interface Reconciliation {
   symbol: string;
   /** the statement's realised result for the symbol, and what the tradebook's fills give */

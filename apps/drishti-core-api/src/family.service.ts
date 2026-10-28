@@ -13,7 +13,9 @@ import {
   monthlyView,
   overlaps,
   looksLikeKotakPnl,
+  looksLikeKotakTransactions,
   parseKotakSections,
+  parseKotakTransactions,
   parseZerodhaPnl,
   parseZerodhaTradebook,
   looksLikeZerodhaPnl,
@@ -225,14 +227,20 @@ export class FamilyService {
     let broker: Broker = "zerodha";
     let clientName: string | undefined;
     try {
-      if (looksLikeKotakPnl(sheets)) {
+      if (looksLikeKotakTransactions(sheets)) {
+        // Kotak's tradebook: every fill with its date and charges, one tradebook per segment (NSE derivatives, MCX)
+        broker = "kotak";
+        const all = parseKotakTransactions(sheets);
+        clientName = all[0].clientName;
+        parts = all.map((parsed) => ({ kind: "tradebook" as const, parsed }));
+      } else if (looksLikeKotakPnl(sheets)) {
         broker = "kotak";
         const all = parseKotakSections(sheets);
         clientName = all[0].clientName;
         parts = all.map((parsed) => ({ kind: "pnl" as const, parsed }));
       } else if (looksLikeZerodhaPnl(sheets)) parts = [{ kind: "pnl", parsed: parseZerodhaPnl(sheets) }];
       else if (looksLikeZerodhaTradebook(sheets)) parts = [{ kind: "tradebook", parsed: parseZerodhaTradebook(sheets) }];
-      else throw new Error("this is neither a Zerodha Console P&L statement or tradebook nor a Kotak Neo Gain-Loss statement (other brokers' files are not read yet)");
+      else throw new Error("this is neither a Zerodha Console P&L statement or tradebook nor a Kotak Neo Gain-Loss or Transaction Statement (other brokers' files are not read yet)");
     } catch (e) {
       throw new UnprocessableEntityException((e as Error).message);
     }
