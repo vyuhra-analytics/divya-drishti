@@ -757,3 +757,12 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .daystrip { flex: 1; min-width: 0; margin: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
 .daystrip b { color: var(--accent); font-weight: 600; }
 @media (max-width: 900px) { .daystrip { display: none; } }
+
+/* Family: the household's broker statements */
+.family { font-size: 12px; }
+.family h2 { margin: 14px 0 4px; font-size: 12px; }
+.family dl.quote-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; margin: 4px 0; }
+.family dl.quote-grid > div { display: flex; flex-direction: column; }
+.family dt { color: var(--muted); font-size: 11px; }
+.family dd { margin: 0; font-size: 15px; }
+.family table input { width: 11em; }

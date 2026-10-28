@@ -1,6 +1,6 @@
 # Family accounts: member ledger and broker P&L analysis
 
-Status: PLAN, agreed 2026-10-28, build starts 2026-10-29. No code written yet.
+Status: day 1 built (2026-10-28): Zerodha P&L and tradebook import, auto-created accounts by client id, FIFO months, the Family desk (F9). Kotak, the dated rate table, export and limits are next. Client id is now stored (masked on screen) at the owner's request, replacing "last four only".
 
 ## What the owner decided
 

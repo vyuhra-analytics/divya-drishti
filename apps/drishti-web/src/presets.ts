@@ -135,6 +135,12 @@ export const PRESETS: Preset[] = [
         ["usib-1", "usib", null, "MCX:CRUDEOIL", "5m", 7, 0, 5, 28],
       ]),
   },
+  {
+    key: "family",
+    name: "Family",
+    hint: "The household's broker statements: add a Zerodha P&L or tradebook file, name the people, and read realised P&L, charges and the net by year, member, account and month",
+    build: () => snapshot("family", [["family-1", "family", null, "MCX:CRUDEOIL", "5m", 0, 0, 12, 28]]),
+  },
 ];
 
 export const MAX_SAVED = 20;

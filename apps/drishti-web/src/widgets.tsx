@@ -10,6 +10,7 @@ import { ChokepointsWidget } from "./ChokepointsPanel";
 import { CurveWidget } from "./CurvePanel";
 import { EiaWidget } from "./EiaPanel";
 import { DriversWidget } from "./DriversPanel";
+import { FamilyWidget } from "./FamilyPanel";
 import { LabelWidget } from "./LabelPanel";
 import { EiaReportWidget } from "./EiaReportPanel";
 import { ReportDayWidget } from "./ReportDayPanel";
@@ -271,6 +272,7 @@ export const WIDGETS: Record<
   eiareport: { title: "EIA Report", component: EiaReportWidget, linked: false, showSymbol: false },
   reportday: { title: "Report day", component: ReportDayWidget, linked: false, showSymbol: false },
   usib: { title: "USIB", component: UsibWidget, linked: false, showSymbol: false },
+  family: { title: "Family", component: FamilyWidget, linked: false, showSymbol: false },
   drivers: { title: "Drivers", component: DriversWidget, linked: true, showSymbol: true },
   labels: { title: "Label headlines", component: LabelWidget, linked: false, showSymbol: false },
   recap: { title: "Energy recap", component: RecapWidget, linked: true, showSymbol: true },

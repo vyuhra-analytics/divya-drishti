@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import compression from "compression";
-import type { NextFunction, Request, Response } from "express";
+import { raw, type NextFunction, type Request, type Response } from "express";
 import { allowedOrigins, RateLimiter } from "@drishti/shared";
 import { AppModule } from "./app.module";
 
@@ -13,6 +13,7 @@ const limiter = new RateLimiter(600, 60_000); // a full workspace load is ~10 re
 
 const app = await NestFactory.create(AppModule);
 app.enableCors({ origin: origins }); // only our web app / Tauri may read responses in a browser
+app.use("/family/import", raw({ type: () => true, limit: "30mb" })); // a broker statement upload: the .xlsx bytes as they are
 app.use(compression()); // chart history is ~450 KB of JSON uncompressed
 app.use((req: Request, res: Response, next: NextFunction) => {
   const key = req.ip ?? "unknown";

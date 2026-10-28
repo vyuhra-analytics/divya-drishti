@@ -132,11 +132,11 @@ test("panels added in the same millisecond get different ids, so changing one ne
 // ---- the redesigned desks (docs/redesign/RESEARCH_DESK.md): six research desks, F1 to F6, and the Report day desk, F7
 const types = (key: string) => PRESETS.find((p) => p.key === key)!.build().widgets.map((w) => w.type);
 
-test("the built-in desks are the Evening desk, the five research workspaces and the Report day desk, in F-key order", () => {
-  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday", "usib"]);
-  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day", "USIB"]);
-  // eight built-in desks leave F9 for one saved one
-  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, false, true]);
+test("the built-in desks are the Evening desk, the five research workspaces, Report day, USIB and Family, in F-key order", () => {
+  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday", "usib", "family"]);
+  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day", "USIB", "Family"]);
+  // nine built-in desks fill F1 to F9; saved ones follow them in the sidebar list (they have no F-key any more)
+  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, false, false, true]);
 });
 
 test("each desk holds what its question needs", () => {
