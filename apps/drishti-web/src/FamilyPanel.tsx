@@ -32,6 +32,8 @@ interface Report {
 interface Outcome {
   file: string;
   ok: boolean;
+  /** a file that was already imported: nothing to do, shown as a plain note rather than a failure */
+  skipped?: boolean;
   text: string;
   canAccept?: boolean;
   bytes?: ArrayBuffer;
@@ -134,7 +136,8 @@ export function FamilyWidget(_: { widget: Widget }) {
         out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${SEGMENT_LABELS[r.segment]} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? `, new account for client ${r.client} (name the person below)` : ""}` });
       } catch (e) {
         const msg = (e as Error).message;
-        out.push({ file: f.name, ok: false, text: msg, canAccept: /does not add up/.test(msg), bytes: f.buf });
+        const skipped = /exact file is already imported/.test(msg);
+        out.push({ file: f.name, ok: false, ...(skipped ? { skipped: true } : {}), text: skipped ? "already imported, skipped (nothing was counted twice). Remove it from the list below to import it again." : msg, canAccept: /does not add up/.test(msg), bytes: f.buf });
       }
     }
     setOutcomes((prev) => [...out, ...prev.filter((p) => !out.some((o) => o.file === p.file))].slice(0, 12));
@@ -361,8 +364,8 @@ export function FamilyWidget(_: { widget: Widget }) {
           </p>
           <input ref={input} type="file" accept=".xlsx" multiple disabled={busy} onChange={(e) => void upload(e.target.files)} aria-label="Choose statement or tradebook files" />
           {outcomes.map((o) => (
-            <p key={o.file} className={o.ok ? "up" : "down"}>
-              {o.ok ? "✓" : "✗"} {hide ? "file" : o.file}: {o.text}
+            <p key={o.file} className={o.skipped ? "muted" : o.ok ? "up" : "down"}>
+              {o.skipped ? "•" : o.ok ? "✓" : "✗"} {hide ? "file" : o.file}: {o.text}
               {o.canAccept && (
                 <button className="tf" disabled={busy} onClick={() => void upload(null, true, o)}>Import anyway</button>
               )}
