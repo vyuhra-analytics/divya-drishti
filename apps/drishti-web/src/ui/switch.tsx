@@ -6,7 +6,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Compon
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full border border-line bg-bg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent-fill disabled:opacity-50 data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-fill",
+      "inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full border border-[color-mix(in_srgb,var(--muted)_65%,transparent)] bg-bg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent-fill disabled:opacity-50 data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-fill",
       className,
     )}
     {...props}
