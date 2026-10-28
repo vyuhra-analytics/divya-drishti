@@ -1,4 +1,11 @@
 /* Standard trading themes (TradingView palettes). Dark: slate canvas. Light: grey canvas, white panels. Both share the amber accent: the same fill (#c98512) in both, and the amber for text bright on dark panels (#f0a020) and darker on white (#9a6000, 5.2:1). */
+/* Every digit in the app is drawn in a monospace face: this font answers only for 0-9 (unicode-range) and falls back to the system monospace, so letters and punctuation keep the interface font. Chart canvases use their own fonts. */
+@font-face {
+  font-family: "Drishti Digits";
+  src: local("Cascadia Mono"), local("Consolas"), local("SF Mono"), local("Menlo"), local("DejaVu Sans Mono"), local("Liberation Mono"), local("Courier New");
+  unicode-range: U+0030-0039;
+  size-adjust: 104%;
+}
 :root {
   --bg: #0e1117;
   --panel: #131722;
@@ -20,7 +27,7 @@
   --g-red: #ef5350;
   --pad: 5px;
   color-scheme: dark;
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Drishti Digits", Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
   font-variant-numeric: tabular-nums; /* prices must not jitter */
   font-size: 13px;
   color: var(--text);

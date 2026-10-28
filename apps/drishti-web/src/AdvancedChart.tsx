@@ -9,6 +9,7 @@ import { registerFlowStudies } from "./advFlow";
 import { registerKillzones } from "./advKillzones";
 import { registerSessionBreaks } from "./advSessionBreaks";
 import { ensureStrategyLevels, registerStrategyLevels } from "./advStrategyLevels";
+import { ensureChartDefaults } from "./advDefaults";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, type Widget } from "./workspace";
 
@@ -105,6 +106,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
         });
         oa.current = created;
+        ensureChartDefaults(created, widget.id); // Volume pane (candle-direction colours) and the bar-close countdown, once per chart
         if (/^(reportday|usib)-/.test(widget.id)) ensureStrategyLevels(created); // the strategy desks draw their levels on their chart
         settleUntil.current = Date.now() + SETTLE_MS;
         if (import.meta.env.DEV) ((window as unknown as { __adv?: Record<string, OaWidget> }).__adv ??= {})[widget.id] = created; // dev-only handle for debugging in the console
