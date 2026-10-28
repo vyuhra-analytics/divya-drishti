@@ -52,6 +52,7 @@ export function Feeds() {
 
   return (
     <>
+      <div className="set-grid">
       <div className="field">
         <span>
           Upstox (MCX real-time)
@@ -89,7 +90,7 @@ export function Feeds() {
         </div>
       )}
 
-      <div className="field">
+      <div className="field wide">
         <span>
           MCX primary source
           <small className="muted">Preferred feed for MCX prices; the other takes over if it goes quiet for 15 s</small>
@@ -100,8 +101,10 @@ export function Feeds() {
           <option value="upstox">Upstox first</option>
         </select>
       </div>
+      </div>
 
       {health?.feed === "demo" && <p className="hint down">Demo feed (FEED=demo): prices are simulated.</p>}
+      <div className="set-cards">
       {health &&
         Object.entries(health.providers).map(([name, p]) => (
           <div className="field" key={name}>
@@ -120,6 +123,7 @@ export function Feeds() {
             </span>
           </div>
         ))}
+      </div>
       {!health && <p className="hint muted">Stream service unreachable.</p>}
     </>
   );

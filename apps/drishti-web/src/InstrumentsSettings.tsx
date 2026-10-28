@@ -37,6 +37,7 @@ export function InstrumentsSettings() {
 
   return (
     <>
+      <div className="set-cards">
       {INSTRUMENTS.map((i) => (
         <div className="field" key={i.symbol}>
           <span>
@@ -53,7 +54,8 @@ export function InstrumentsSettings() {
           )}
         </div>
       ))}
-      <form onSubmit={add} aria-label="Add instrument">
+      </div>
+      <form className="set-grid" onSubmit={add} aria-label="Add instrument">
         <div className="field">
           <span>Exchange</span>
           <select value={f.exchange} onChange={(e) => set("exchange", e.target.value)} aria-label="Exchange">
@@ -116,11 +118,11 @@ export function InstrumentsSettings() {
           <input value={f.tv} onChange={(e) => set("tv", e.target.value.toUpperCase())} aria-label="TradingView root" />
         </div>
         {(error || problem) && (
-          <p className="field-error" role="alert">
+          <p className="field-error wide" role="alert">
             {error ?? problem}
           </p>
         )}
-        <div className="field">
+        <div className="field wide">
           <span className="muted">{check && "instrument" in check ? `Will track ${check.instrument.symbol}` : "Fill in the symbol, name and lot"}</span>
           <button className="btn" disabled={!check || "error" in check || busy}>
             {busy ? "Adding…" : "Add instrument"}

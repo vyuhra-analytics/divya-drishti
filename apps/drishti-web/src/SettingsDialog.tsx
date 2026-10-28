@@ -97,16 +97,16 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
   const streamErr = validateUrl(stream, ["ws:", "wss:"]);
 
   return (
-    <>
+    <div className="set-grid">
       <Field label="API URL" hint="empty = default (dev proxy /api)">
         <input value={api} placeholder="http://localhost:3001" onChange={(e) => setApi(e.target.value)} />
       </Field>
-      {apiErr && <p className="field-error">{apiErr}</p>}
+      {apiErr && <p className="field-error wide">{apiErr}</p>}
       <Field label="Stream URL" hint="empty = default (dev proxy /ws)">
         <input value={stream} placeholder="ws://localhost:3002/ws" onChange={(e) => setStream(e.target.value)} />
       </Field>
-      {streamErr && <p className="field-error">{streamErr}</p>}
-      <div className="field">
+      {streamErr && <p className="field-error wide">{streamErr}</p>}
+      <div className="field wide">
         <span className={`status ${status}`}>● {status}</span>
         <button
           className="btn"
@@ -119,7 +119,7 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
           Save &amp; reconnect
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -235,7 +235,7 @@ export function SettingsDialog() {
             <Feeds />
           </section>
 
-          <section>
+          <section className="wide">
             <h3>Connection</h3>
             {/* key: re-seed drafts when saved URLs change (e.g. restore defaults) */}
             <Connection key={savedApi + "|" + savedStream} savedApi={savedApi} savedStream={savedStream} />
