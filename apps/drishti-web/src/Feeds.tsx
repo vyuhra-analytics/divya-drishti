@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { instrument } from "@drishti/shared";
 import { apiUrl, streamHttpUrl, useClock } from "./settings";
+import { Button, Select } from "./ui";
 
 interface Health {
   feed: "live" | "demo";
@@ -68,14 +69,14 @@ export function Feeds() {
                     : "not connected: MCX uses TradingView fallback"}
           </small>
         </span>
-        <button
-          className="btn"
+        <Button
+          variant="default"
           disabled={!upstox?.loginConfigured}
           title={upstox?.loginConfigured ? undefined : "Login needs UPSTOX_API_KEY / SECRET / REDIRECT_URI in .env"}
           onClick={() => window.open(`${apiUrl()}/auth/upstox/login`, "_blank", "noopener")}
         >
           {upstox?.via === "login" ? "Reconnect" : "Connect Upstox"}
-        </button>
+        </Button>
       </div>
 
       {upstox?.connected && (
@@ -95,11 +96,11 @@ export function Feeds() {
           MCX primary source
           <small className="muted">Preferred feed for MCX prices; the other takes over if it goes quiet for 15 s</small>
         </span>
-        <select aria-label="MCX primary source" value={primary ?? health?.mcxPrimary ?? "auto"} disabled={!health} onChange={(e) => setMcxPrimary(e.target.value)}>
+        <Select aria-label="MCX primary source" value={primary ?? health?.mcxPrimary ?? "auto"} disabled={!health} onChange={(e) => setMcxPrimary(e.target.value)}>
           <option value="auto">Auto (Upstox, then TradingView)</option>
           <option value="tradingview">TradingView first</option>
           <option value="upstox">Upstox first</option>
-        </select>
+        </Select>
       </div>
       </div>
 

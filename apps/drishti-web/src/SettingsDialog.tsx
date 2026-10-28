@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { TIMEFRAMES, type Timeframe } from "@drishti/shared";
 import { reconnect, useStore } from "./store";
 import { DEFAULTS, useSettings, validateUrl, type Settings } from "./settings";
 import { BUILTIN_CHANNELS } from "./TvWidget";
 import { Feeds } from "./Feeds";
 import { InstrumentsSettings } from "./InstrumentsSettings";
+import { Button, Dialog, DialogContent, DialogTitle, Input, Select as UiSelect, Switch } from "./ui";
 
 function TvChannels() {
   const channels = useSettings((s) => s.tvChannels);
@@ -24,9 +25,9 @@ function TvChannels() {
             {c.name}
             <small className="muted tv-url">{c.url}</small>
           </span>
-          <button className="btn" onClick={() => set({ tvChannels: channels.filter((x) => x !== c) })}>
+          <Button size="sm" onClick={() => set({ tvChannels: channels.filter((x) => x !== c) })}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
       <form
@@ -39,11 +40,11 @@ function TvChannels() {
           setUrl("");
         }}
       >
-        <input value={name} placeholder="Channel name" aria-label="Channel name" onChange={(e) => setName(e.target.value)} />
-        <input value={url} placeholder="https://…/playlist.m3u8" aria-label="Stream URL" onChange={(e) => setUrl(e.target.value)} />
-        <button className="btn" disabled={!canAdd}>
+        <Input value={name} placeholder="Channel name" aria-label="Channel name" onChange={(e) => setName(e.target.value)} />
+        <Input value={url} placeholder="https://…/playlist.m3u8" aria-label="Stream URL" onChange={(e) => setUrl(e.target.value)} />
+        <Button disabled={!canAdd} type="submit">
           Add
-        </button>
+        </Button>
       </form>
       {(urlErr || dupe) && <p className="field-error">{urlErr ?? "channel already added"}</p>}
       <p className="muted hint">Add your own channels: official broadcaster streams only (HLS .m3u8).</p>
@@ -68,7 +69,7 @@ function Select<K extends keyof Settings>({ k, options }: { k: K; options: [Sett
   const value = useSettings((s) => s[k]);
   const set = useSettings((s) => s.set);
   return (
-    <select
+    <UiSelect
       value={String(value)}
       onChange={(e) => set({ [k]: options.find(([v]) => String(v) === e.target.value)![0] } as Partial<Settings>)}
     >
@@ -77,14 +78,14 @@ function Select<K extends keyof Settings>({ k, options }: { k: K; options: [Sett
           {label}
         </option>
       ))}
-    </select>
+    </UiSelect>
   );
 }
 
 function Toggle({ k }: { k: "flash" | "lockLayout" | "confirmClose" }) {
   const value = useSettings((s) => s[k]);
   const set = useSettings((s) => s.set);
-  return <input type="checkbox" checked={value} onChange={(e) => set({ [k]: e.target.checked })} />;
+  return <Switch checked={value} onCheckedChange={(on) => set({ [k]: on })} />;
 }
 
 /** URL fields edit a draft; saving validates, stores and reconnects. */
@@ -99,17 +100,17 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
   return (
     <div className="set-grid">
       <Field label="API URL" hint="empty = default (dev proxy /api)">
-        <input value={api} placeholder="http://localhost:3001" onChange={(e) => setApi(e.target.value)} />
+        <Input value={api} placeholder="http://localhost:3001" onChange={(e) => setApi(e.target.value)} />
       </Field>
       {apiErr && <p className="field-error wide">{apiErr}</p>}
       <Field label="Stream URL" hint="empty = default (dev proxy /ws)">
-        <input value={stream} placeholder="ws://localhost:3002/ws" onChange={(e) => setStream(e.target.value)} />
+        <Input value={stream} placeholder="ws://localhost:3002/ws" onChange={(e) => setStream(e.target.value)} />
       </Field>
       {streamErr && <p className="field-error wide">{streamErr}</p>}
       <div className="field wide">
         <span className={`status ${status}`}>● {status}</span>
-        <button
-          className="btn"
+        <Button
+          variant="default"
           disabled={!!apiErr || !!streamErr}
           onClick={() => {
             set({ apiUrl: api.trim(), streamUrl: stream.trim() });
@@ -117,7 +118,7 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
           }}
         >
           Save &amp; reconnect
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -129,27 +130,13 @@ export function SettingsDialog() {
   const resetSettings = useSettings((s) => s.reset);
   const savedApi = useSettings((s) => s.apiUrl);
   const savedStream = useSettings((s) => s.streamUrl);
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const d = ref.current!;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
-
   return (
-    <dialog
-      ref={ref}
-      className="settings"
-      aria-label="Settings"
-      onClose={() => setOpen(false)}
-      onMouseDown={(e) => e.target === ref.current && setOpen(false)} // click on backdrop
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="settings" aria-describedby={undefined}>
       <header>
-        <strong>Settings</strong>
-        <button className="close" aria-label="Close settings" onClick={() => setOpen(false)}>
-          ✕
-        </button>
+        <DialogTitle asChild>
+          <strong>Settings</strong>
+        </DialogTitle>
       </header>
       {open && (
         <div className="settings-body">
@@ -211,12 +198,9 @@ export function SettingsDialog() {
             </Field>
             <div className="field">
               <span>Workspace layout</span>
-              <button
-                className="btn"
-                onClick={() => confirm("Reset panels, link groups and layout to defaults?") && useWorkspace.getState().reset()}
-              >
+              <Button onClick={() => confirm("Reset panels, link groups and layout to defaults?") && useWorkspace.getState().reset()}>
                 Reset workspace
-              </button>
+              </Button>
             </div>
           </section>
 
@@ -242,8 +226,7 @@ export function SettingsDialog() {
           </section>
 
           <footer>
-            <button
-              className="btn"
+            <Button
               onClick={() => {
                 const overridden = savedStream !== DEFAULTS.streamUrl;
                 resetSettings();
@@ -251,10 +234,11 @@ export function SettingsDialog() {
               }}
             >
               Restore default settings
-            </button>
+            </Button>
           </footer>
         </div>
       )}
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

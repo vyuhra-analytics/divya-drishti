@@ -4,6 +4,7 @@ import { App } from "./App";
 import { connectStream, useStore } from "./store";
 import { syncInstruments } from "./instrumentsClient";
 import { applyToDocument, useSettings } from "./settings";
+import "./tailwind.css";
 import "./styles.css";
 
 applyToDocument(useSettings.getState());

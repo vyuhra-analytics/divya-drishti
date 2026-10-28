@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { INSTRUMENTS, parseCustomInstrument } from "@drishti/shared";
 import { instrumentsCall, syncInstruments } from "./instrumentsClient";
+import { Button, Input, Select } from "./ui";
 
 const EMPTY = { exchange: "MCX", root: "", name: "", decimals: "2", lot: "", topic: "crude", upstox: "", tv: "", yahoo: "" };
 
@@ -48,9 +49,9 @@ export function InstrumentsSettings() {
             </small>
           </span>
           {i.custom && (
-            <button className="btn" onClick={() => remove(i.symbol)}>
+            <Button size="sm" onClick={() => remove(i.symbol)}>
               Remove
-            </button>
+            </Button>
           )}
         </div>
       ))}
@@ -58,64 +59,64 @@ export function InstrumentsSettings() {
       <form className="set-grid" onSubmit={add} aria-label="Add instrument">
         <div className="field">
           <span>Exchange</span>
-          <select value={f.exchange} onChange={(e) => set("exchange", e.target.value)} aria-label="Exchange">
+          <Select value={f.exchange} onChange={(e) => set("exchange", e.target.value)} aria-label="Exchange">
             <option value="MCX">MCX (₹)</option>
             <option value="NYMEX">NYMEX (US$, 10 min delay)</option>
-          </select>
+          </Select>
         </div>
         <div className="field">
           <span>
             Symbol<small className="muted">{mcx ? "as Upstox names it, e.g. ZINC" : "TradingView root, e.g. RB"}</small>
           </span>
-          <input value={f.root} onChange={(e) => set("root", e.target.value.toUpperCase())} aria-label="Symbol" />
+          <Input value={f.root} onChange={(e) => set("root", e.target.value.toUpperCase())} aria-label="Symbol" />
         </div>
         <div className="field">
           <span>Name</span>
-          <input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Zinc" aria-label="Name" />
+          <Input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Zinc" aria-label="Name" />
         </div>
         <div className="field">
           <span>
             Lot<small className="muted">units then unit</small>
           </span>
-          <input value={f.lot} onChange={(e) => set("lot", e.target.value)} placeholder="5000 kg" aria-label="Lot" />
+          <Input value={f.lot} onChange={(e) => set("lot", e.target.value)} placeholder="5000 kg" aria-label="Lot" />
         </div>
         <div className="field">
           <span>Price decimals</span>
-          <select value={f.decimals} onChange={(e) => set("decimals", e.target.value)} aria-label="Price decimals">
+          <Select value={f.decimals} onChange={(e) => set("decimals", e.target.value)} aria-label="Price decimals">
             {[0, 1, 2, 3, 4].map((n) => (
               <option key={n}>{n}</option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="field">
           <span>
             News topic<small className="muted">which headlines show beside it</small>
           </span>
-          <select value={f.topic} onChange={(e) => set("topic", e.target.value)} aria-label="News topic">
+          <Select value={f.topic} onChange={(e) => set("topic", e.target.value)} aria-label="News topic">
             <option value="crude">Crude and oil</option>
             <option value="natgas">Natural gas</option>
-          </select>
+          </Select>
         </div>
         {mcx ? (
           <div className="field">
             <span>
               Upstox underlying<small className="muted">only if it differs from the symbol</small>
             </span>
-            <input value={f.upstox} onChange={(e) => set("upstox", e.target.value.toUpperCase())} aria-label="Upstox underlying" />
+            <Input value={f.upstox} onChange={(e) => set("upstox", e.target.value.toUpperCase())} aria-label="Upstox underlying" />
           </div>
         ) : (
           <div className="field">
             <span>
               Yahoo symbol<small className="muted">default {f.root || "RB"}=F</small>
             </span>
-            <input value={f.yahoo} onChange={(e) => set("yahoo", e.target.value.toUpperCase())} aria-label="Yahoo symbol" />
+            <Input value={f.yahoo} onChange={(e) => set("yahoo", e.target.value.toUpperCase())} aria-label="Yahoo symbol" />
           </div>
         )}
         <div className="field">
           <span>
             TradingView root<small className="muted">default {mcx ? `MCX:${f.root || "ZINC"}` : `NYMEX:${f.root || "RB"}1!`}</small>
           </span>
-          <input value={f.tv} onChange={(e) => set("tv", e.target.value.toUpperCase())} aria-label="TradingView root" />
+          <Input value={f.tv} onChange={(e) => set("tv", e.target.value.toUpperCase())} aria-label="TradingView root" />
         </div>
         {(error || problem) && (
           <p className="field-error wide" role="alert">
@@ -124,9 +125,9 @@ export function InstrumentsSettings() {
         )}
         <div className="field wide">
           <span className="muted">{check && "instrument" in check ? `Will track ${check.instrument.symbol}` : "Fill in the symbol, name and lot"}</span>
-          <button className="btn" disabled={!check || "error" in check || busy}>
+          <Button variant="default" type="submit" disabled={!check || "error" in check || busy}>
             {busy ? "Adding…" : "Add instrument"}
-          </button>
+          </Button>
         </div>
       </form>
       <p className="muted hint">

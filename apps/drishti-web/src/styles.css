@@ -51,7 +51,10 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+/* in the base layer so the components in src/ui (Tailwind utilities) can override it */
+@layer base {
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+}
 
 .shell { height: 100vh; display: flex; flex-direction: column; }
 
@@ -208,7 +211,7 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .gear { font-size: 16px; color: var(--muted); }
 .gear:hover { color: var(--accent); }
 
-.settings { width: min(1000px, calc(100% - 32px)); max-height: 85vh; padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.settings { display: block; overflow-y: auto; width: min(1000px, calc(100% - 32px)); max-height: 85vh; padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .settings::backdrop { background: rgb(0 0 0 / 0.55); }
 .settings > header { position: sticky; top: 0; display: flex; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .settings > header .close { margin-left: auto; color: var(--muted); }
@@ -218,7 +221,7 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .field > span { display: flex; flex-direction: column; }
 .field small { font-size: 11px; }
-.field select, .field input:not([type="checkbox"]) { min-width: 0; width: 240px; max-width: 60%; padding: 4px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+.field select, .field input:not([type="checkbox"]) { min-width: 0; width: 240px; max-width: 60%; font: inherit; }
 .field input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent-fill); }
 .field-error { margin: 2px 0 0; font-size: 12px; color: var(--down); text-align: right; }
 .btn { padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; }
@@ -324,7 +327,9 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 h1.brand { margin: 0; font-size: inherit; }
 
 /* visible keyboard focus everywhere (mouse clicks don't trigger :focus-visible) */
-button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent-fill); outline-offset: -2px; }
+@layer base {
+  button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent-fill); outline-offset: -2px; }
+}
 
 .alerts { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .alert-form { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
@@ -901,3 +906,5 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .settings .set-grid .wide { grid-column: 1 / -1; }
 .settings .set-grid .field-error { text-align: left; }
 .settings .field select { width: auto; min-width: 240px; max-width: 100%; text-overflow: clip; }
+.settings.help { width: min(760px, calc(100% - 32px)); }
+.settings.help .settings-body { display: block; }

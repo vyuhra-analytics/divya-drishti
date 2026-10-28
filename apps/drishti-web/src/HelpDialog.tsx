@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { MNEMONICS } from "./command";
 import { useSettings } from "./settings";
 import { WIDGETS } from "./widgets";
+import { Button, Dialog, DialogContent, DialogTitle } from "./ui";
 
 const SHORTCUTS: [string, string][] = [
   ["Ctrl K", "Command palette: a symbol (CRUDEOIL), a panel code (GP, Q, OC…), or both (CL GP)"],
@@ -24,32 +25,28 @@ const GLOSSARY: [string, string][] = [
 
 /** Shortcuts, panel codes and a glossary. Opens with `?`, the topbar button, and once on first run. */
 export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const seen = useSettings((s) => s.helpSeen);
   const set = useSettings((s) => s.set);
+  const wasOpen = useRef(open);
 
+  // the welcome sheet counts as seen once it has been shown and closed, however it was closed
   useEffect(() => {
-    const d = ref.current!;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
+    if (wasOpen.current && !open && !seen) set({ helpSeen: true });
+    wasOpen.current = open;
+  }, [open, seen, set]);
 
   return (
-    <dialog
-      ref={ref}
-      className="settings help"
-      aria-label="Help"
-      onClose={() => {
-        if (!seen) set({ helpSeen: true });
-        onClose();
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
       }}
-      onMouseDown={(e) => e.target === ref.current && onClose()}
     >
+      <DialogContent className="settings help" aria-describedby={undefined}>
       <header>
-        <strong>{seen ? "Help" : "Welcome to Divya Drishti"}</strong>
-        <button className="close" aria-label="Close help" onClick={onClose}>
-          ✕
-        </button>
+        <DialogTitle asChild>
+          <strong>{seen ? "Help" : "Welcome to Divya Drishti"}</strong>
+        </DialogTitle>
       </header>
       <div className="settings-body">
         {!seen && (
@@ -90,11 +87,12 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
           ))}
         </dl>
         <footer>
-          <button className="btn" onClick={onClose}>
+          <Button variant="default" onClick={() => onClose()}>
             Got it
-          </button>
+          </Button>
         </footer>
       </div>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }
