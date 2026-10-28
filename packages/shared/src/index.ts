@@ -412,3 +412,4 @@ export * from "./kotakPnl";
 export * from "./zerodhaTradebook";
 export * from "./fifo";
 export * from "./family";
+export * from "./familyInsights";

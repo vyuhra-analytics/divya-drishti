@@ -108,6 +108,7 @@ export function chargeGroup(head: string): string {
   if (h.includes("brokerage")) return "Brokerage";
   if (h.includes("gst")) return "GST";
   if (h.includes("securities transaction") || h.includes("commodity transaction") || /\bstt\b|\bctt\b/.test(h)) return "STT / CTT";
+  if (h.startsWith("miscellaneous")) return "Miscellaneous"; // Kotak lumps exchange, clearing, stamp duty and SEBI into one head, so it is not any one of them
   if (h.includes("exchange transaction")) return "Exchange";
   if (h.includes("clearing")) return "Clearing";
   if (h.includes("sebi")) return "SEBI";
@@ -162,6 +163,11 @@ function finish(t: Totals): Totals {
 export interface GroupRow extends Totals {
   key: string;
   label: string;
+  /**
+   * The charges (and so the net) cover every contract in the row. False for an underlying whose statements gave charges for only some of its contracts (Kotak's
+   * give them per contract, Zerodha's give one total for the period), so `charges` is then only what is known and `net` should not be read.
+   */
+  chargesComplete?: boolean;
 }
 export interface Summary {
   totals: Totals;
@@ -171,7 +177,7 @@ export interface Summary {
   byAccount: GroupRow[];
   bySegment: GroupRow[];
   byUnderlying: GroupRow[];
-  /** every statement in the selection gave charges per contract (Kotak's does), so the underlying rows carry charges and net; Zerodha's gives one total for the period */
+  /** at least one underlying row carries charges (Kotak's statements give them per contract, Zerodha's give one total for the period); read `chargesComplete` on each row */
   underlyingHasCharges: boolean;
   /** the family of charge (brokerage, GST, STT...) across the selection */
   chargesByGroup: { group: string; amount: number }[];
@@ -236,12 +242,11 @@ export function splitByFinancialYear(imp: ImportRecord, imports: ImportRecord[])
   });
 }
 
-/** The whole picture for a selection of statements: totals, and the same numbers cut by period, member, account, segment and underlying. */
-export function summarize(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): Summary {
+/** The statements a selection rests on (a tradebook only adds the months, so only statements count). */
+function usedStatements(accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter): ImportRecord[] {
   const acc = new Map(accounts.map((a) => [a.id, a]));
-  const mem = new Map(members.map((m) => [m.id, m]));
-  const used = imports.filter((i) => {
-    if (i.kind !== "pnl") return false; // the totals rest on the broker's own statement; a tradebook only adds the months
+  return imports.filter((i) => {
+    if (i.kind !== "pnl") return false;
     const a = acc.get(i.accountId);
     if (!a) return false;
     if (filter.accountId !== undefined && a.id !== filter.accountId) return false;
@@ -249,7 +254,31 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     if (filter.segment && i.segment !== filter.segment) return false;
     return true;
   });
-  const parts = used.flatMap((i) => splitByFinancialYear(i, imports)).filter((p) => !filter.period || periodFy(p.periodFrom, p.periodTo) === filter.period);
+}
+
+/** One statement (or the part of one that falls in a financial year) with who it belongs to. */
+export interface StatementPart {
+  imp: ImportRecord;
+  memberId: number;
+  accountId: number;
+  /** the financial year label, or the statement's own period when it could not be cut */
+  fy: string;
+}
+
+/** The statements of a selection, each cut into financial years where a reconciling tradebook allows, filtered by year. */
+export function selectParts(accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): StatementPart[] {
+  const acc = new Map(accounts.map((a) => [a.id, a]));
+  return usedStatements(accounts, imports, filter)
+    .flatMap((i) => splitByFinancialYear(i, imports).map((imp) => ({ imp, memberId: acc.get(i.accountId)!.memberId, accountId: i.accountId, fy: periodFy(imp.periodFrom, imp.periodTo) })))
+    .filter((p) => !filter.period || p.fy === filter.period);
+}
+
+/** The whole picture for a selection of statements: totals, and the same numbers cut by period, member, account, segment and underlying. */
+export function summarize(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): Summary {
+  const acc = new Map(accounts.map((a) => [a.id, a]));
+  const mem = new Map(members.map((m) => [m.id, m]));
+  const used = usedStatements(accounts, imports, filter);
+  const parts = selectParts(accounts, imports, filter).map((p) => p.imp);
   const total = zero();
   const groups = {
     period: new Map<string, { label: string; t: Totals }>(),
@@ -258,6 +287,7 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     segment: new Map<string, { label: string; t: Totals }>(),
     underlying: new Map<string, { label: string; t: Totals }>(),
   };
+  const underlyingComplete = new Map<string, boolean>();
   const bump = (m: Map<string, { label: string; t: Totals }>, key: string, label: string, imp: ImportRecord) => {
     const g = m.get(key) ?? { label, t: zero() };
     addImport(g.t, imp);
@@ -283,7 +313,9 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
       by.set(u, part);
     }
     for (const [u, part] of by) {
-      if (part.lines.every((l) => l.charges !== undefined)) part.charges = [{ head: "Charges", amount: part.lines.reduce((a, l) => a + (l.charges ?? 0), 0) }];
+      // the charges this statement gives for these contracts, however many it gives (all of them for Kotak, none for Zerodha)
+      if (part.lines.some((l) => l.charges !== undefined)) part.charges = [{ head: "Charges", amount: part.lines.reduce((a, l) => a + (l.charges ?? 0), 0) }];
+      underlyingComplete.set(u, (underlyingComplete.get(u) ?? true) && part.lines.every((l) => l.charges !== undefined));
       bump(groups.underlying, u, u, part);
     }
   }
@@ -297,8 +329,8 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     byMember: rows(groups.member, byKey),
     byAccount: rows(groups.account, (a, b) => a.label.localeCompare(b.label)),
     bySegment: rows(groups.segment, byKey),
-    byUnderlying: rows(groups.underlying, byNet),
-    underlyingHasCharges: parts.length > 0 && parts.every((p) => p.lines.every((l) => l.charges !== undefined)),
+    byUnderlying: rows(groups.underlying, byNet).map((r) => ({ ...r, chargesComplete: underlyingComplete.get(r.key) ?? false })),
+    underlyingHasCharges: parts.some((p) => p.lines.some((l) => l.charges !== undefined)),
     chargesByGroup: [...heads.entries()].map(([group, amount]) => ({ group, amount: r2(amount) })).sort((a, b) => b.amount - a.amount),
     imports: used.filter((i) => parts.some((p) => p.id === i.id)).map((i) => ({ id: i.id, accountId: i.accountId, segment: i.segment, periodFrom: i.periodFrom, periodTo: i.periodTo, fileName: i.fileName, problems: i.problems.length })),
   };
@@ -399,7 +431,7 @@ export function familyCsv(report: { summary: Summary; monthly: MonthlyView }, na
   block("Member", s.byMember, (r) => nameOf.member(Number(r.key)));
   block("Account", s.byAccount, (r) => nameOf.account(Number(r.key)));
   block("Segment", s.bySegment, (r) => r.key);
-  block(s.underlyingHasCharges ? "Underlying" : "Underlying (realised only: charges are not split by symbol)", s.underlyingHasCharges ? s.byUnderlying : s.byUnderlying.map((r) => ({ ...r, charges: 0, net: r.realized })), (r) => r.label);
+  block(s.underlyingHasCharges ? "Underlying (charges only where the statement gives them per contract)" : "Underlying (realised only: charges are not split by symbol)", s.byUnderlying.map((r) => (r.chargesComplete ? r : { ...r, charges: 0, net: r.realized })), (r) => r.label);
   if (s.chargesByGroup.length) {
     rows.push(["Charges and taxes", "Amount"]);
     for (const c of s.chargesByGroup) rows.push([c.group, c.amount]);

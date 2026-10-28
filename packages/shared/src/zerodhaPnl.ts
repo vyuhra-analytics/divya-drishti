@@ -6,7 +6,7 @@
 import { readXlsx, type XlsxCell, type Sheet } from "./xlsx";
 
 export type Segment = "fno" | "equity" | "currency" | "commodity";
-export const SEGMENT_LABELS: Record<Segment, string> = { fno: "Equity F&O", equity: "Equity", currency: "Currency", commodity: "Commodity" };
+export const SEGMENT_LABELS: Record<Segment, string> = { fno: "Futures & Options (Derivatives)", equity: "Equity", currency: "Currency", commodity: "Commodity" };
 
 export interface PnlLine {
   symbol: string;

@@ -21,7 +21,8 @@ const int = (v: string | undefined, name: string) => {
  *   POST   /family/import?name=FILE[&account=ID][&dry=1][&accept=1]   body: the .xlsx bytes; the file finds its account by client id (one is created, under an
  *          "Unassigned" member, when none exists); dry=1 only reads and reports
  *   DELETE /family/imports/:id
- *   GET    /family/summary?member=&account=&segment=&period=        totals and cuts by period, member, account, segment, underlying, plus the monthly view
+ *   GET    /family/summary?member=&account=&segment=&period=        totals and cuts by period, member, account, segment, underlying, the monthly view, every contract, the insights and two cross-tables
+ *   GET    /family/statement?member=ID&period=2024-25               one member's financial year as a statement for the accountant
  */
 @Controller("family")
 export class FamilyController {
@@ -61,6 +62,11 @@ export class FamilyController {
     const body = req.body as unknown;
     if (!(body instanceof Uint8Array)) throw new BadRequestException("send the .xlsx file's bytes as the request body");
     return this.service.importFile(id, name ?? "", body, { dry: dry === "1", accept: accept === "1" });
+  }
+
+  @Get("statement")
+  statement(@Query("member") member?: string, @Query("period") period?: string) {
+    return this.service.statement(int(member, "member"), period);
   }
 
   @Get("summary")

@@ -262,3 +262,93 @@ describe("moving an account to a member who has one of the same name", () => {
     expect(store.a[0].label).toBe("Zerodha account");
   });
 });
+
+describe("a Kotak file with several segments", () => {
+  const head = [
+    [],
+    ["Client Name"],
+    ["Client Code", "KX9999", null, "Charges", null, 78],
+    ["Transaction Period", "From : 2024-04-01 To : 2025-03-31", null, "Net P&L", null, 143.77],
+    ["Transaction Type", "ALL", null, "Segment Type", null, "Derivatives, Commodity"],
+    [],
+    [],
+    ["Script Name", "Security Type", "ISIN", "Qty", "Buy Amt. (A)", "Sell Amt. (B)", "Gross Realized P&L", null, null, null, "Charges", null, null, null, null, "Net P&L (T - S)", "Gross P&L (T + (C + D + E))"],
+    [null, null, null, null, null, null, "Intraday", "<1yr.", ">1Yr.", "Total (T = B - A)", "GST (C)", "Brokerage (D)", "Misc. (E)", "STT/CTT (S)", "Total (C + D + E + S)", null, null],
+  ];
+  const both = (over: { derivOnly?: boolean } = {}) =>
+    makeXlsx([
+      {
+        name: "Realized Gain-Loss",
+        rows: [
+          ...head,
+          ["Derivatives"],
+          ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77],
+          ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77],
+          ["Commodity"],
+          ["CRUDEOIL 15NOV24 CE 5900", "OPTFUT", "-", 100, 12000, 12060, "-", 60, "NA", 60, 4, 20, 10, 10.75, 44.75, 49.25, 94],
+          ["Commodity Total", "", "", 100, 12000, 12060, 0, 60, 0, 60, 4, 20, 10, 10.75, 44.75, 49.25, 94],
+          [],
+          ["Grand Total"],
+          ["Disclaimer"],
+        ] as never,
+      },
+    ]);
+
+  test("is stored as one statement per segment under one account, and a repeat is refused", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const r = await svc.importFile(undefined, "all.xlsx", both());
+    expect(r).toMatchObject({ newAccount: true, segment: "fno", segments: ["fno", "commodity"], rows: 2 });
+    expect(r.summary).toMatchObject({ realized: 221.77, charges: 78 });
+    expect(store.i.map((i) => [i.segment, i.accountId])).toEqual([["fno", store.a[0].id], ["commodity", store.a[0].id]]);
+    expect(store.i[0].hash).not.toBe(store.i[1].hash);
+    await expect(svc.importFile(undefined, "again.xlsx", both())).rejects.toThrow(/already imported/);
+    expect(store.i).toHaveLength(2);
+  });
+
+  test("taken whole or not at all: an overlap in one segment stops the others being stored", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    await svc.importFile(undefined, "derivs.xlsx", makeXlsx([{ name: "Realized Gain-Loss", rows: [...head, ["Derivatives"], ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Disclaimer"]] as never }]), { accept: true });
+    const before = store.i.length;
+    await expect(svc.importFile(undefined, "all.xlsx", both(), { accept: true })).rejects.toThrow(/Futures & Options.*overlaps derivs.xlsx/);
+    expect(store.i).toHaveLength(before);
+  });
+});
+
+describe("what the screen reads beyond the totals", () => {
+  test("the summary carries every contract, the insights and the two cross-tables; the overview carries the coverage", async () => {
+    const { svc, acc } = await setup();
+    await svc.importFile(acc.id, "a.xlsx", statement());
+    const s = await svc.summary({});
+    expect(s.contracts).toHaveLength(1);
+    expect(s.contractsTotal).toBe(1);
+    expect(s.contracts[0]).toMatchObject({ symbol: "NIFTY2462023600CE", underlying: "NIFTY", segment: "fno", realized: 700 });
+    expect(s.insights).toMatchObject({ contracts: 1, winners: 1, losers: 0 });
+    expect(s.yearBySegment.cols.map((c) => c.key)).toEqual(["fno"]);
+    expect(s.memberByYear.rows).toHaveLength(1);
+    const o = await svc.overview();
+    expect(o.coverage.years).toEqual(["2024-25"]);
+    expect(o.statementPeriods).toEqual(["2024-25"]);
+    expect(o.coverage.rows[0].cells["2024-25"]).toMatchObject({ statements: ["fno"], tradebook: false, partial: true });
+  });
+
+  test("no insights for an empty selection", async () => {
+    const { svc } = await setup();
+    const s = await svc.summary({});
+    expect(s.insights).toBeNull();
+    expect(s.contracts).toEqual([]);
+  });
+
+  test("the accountant's statement needs a member and a financial year, and says so when there is none", async () => {
+    const { svc, acc, dad } = await setup();
+    await svc.importFile(acc.id, "a.xlsx", statement("AB1234", 700, "2025-03-31", "2024-04-01"));
+    await expect(svc.statement(undefined, "2024-25")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.statement(dad.id, "2024")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.statement(999, "2024-25")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.statement(dad.id, "2019-20")).rejects.toBeInstanceOf(NotFoundException);
+    const st = await svc.statement(dad.id, "2024-25");
+    expect(st).toMatchObject({ fy: "2024-25", totals: { realized: 700, chargesTotal: 30, net: 670 } });
+    expect(JSON.stringify(st)).not.toContain("AB1234"); // the client id only ever appears masked
+  });
+});

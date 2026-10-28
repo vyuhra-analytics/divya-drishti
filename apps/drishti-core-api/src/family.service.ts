@@ -1,17 +1,25 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, ConflictException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import {
+  accountantStatement,
   BROKER_LABELS,
+  contractRows,
+  insights,
+  memberByYear,
+  selectParts,
+  statementCoverage,
+  yearBySegment,
   maskCode,
   monthlyView,
   overlaps,
   looksLikeKotakPnl,
-  parseKotakPnl,
+  parseKotakSections,
   parseZerodhaPnl,
   parseZerodhaTradebook,
   looksLikeZerodhaPnl,
   looksLikeZerodhaTradebook,
   readXlsx,
+  SEGMENT_LABELS,
   summarize,
   type Broker,
   type Filter,
@@ -55,11 +63,17 @@ function text(v: unknown, field: string, max: number, required: boolean): string
   return v.trim();
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+/** contracts sent with a summary: ample for a household, bounded so one answer cannot grow without limit */
+const MAX_CONTRACTS_SENT = 5000;
+
 export interface ImportResult {
   dry: boolean;
   id?: number;
   kind: ImportKind;
   segment: Segment;
+  /** every segment the file held, when it held more than one (Kotak's all-segment report): each is stored as its own statement */
+  segments?: Segment[];
   periodFrom: string;
   periodTo: string;
   fileName: string;
@@ -87,6 +101,10 @@ export class FamilyService {
       accounts,
       // the list a screen needs, without the parsed content
       imports: imports.map((i) => ({ id: i.id, accountId: i.accountId, kind: i.kind, segment: i.segment, periodFrom: i.periodFrom, periodTo: i.periodTo, fileName: i.fileName, importedAt: i.importedAt, rows: i.kind === "pnl" ? i.lines.length : i.fills.length, problems: i.problems })),
+      // which statements and tradebooks are loaded for which year, whatever the screen is filtered to: it is about the files
+      coverage: statementCoverage(accounts, imports),
+      // every year or period a statement can be exported for (a statement that could not be cut to financial years has its own period)
+      statementPeriods: [...new Set(selectParts(accounts, imports).map((p) => p.fy))].sort(),
     };
   }
 
@@ -198,29 +216,32 @@ export class FamilyService {
     } catch (e) {
       throw new BadRequestException((e as Error).message);
     }
-    let kind: ImportKind;
-    let parsed;
+    // what the file holds: one statement or tradebook, or (Kotak) one statement per segment section
+    interface Part {
+      kind: ImportKind;
+      parsed: any;
+    }
+    let parts: Part[];
     let broker: Broker = "zerodha";
     let clientName: string | undefined;
     try {
       if (looksLikeKotakPnl(sheets)) {
-        kind = "pnl";
         broker = "kotak";
-        const k = parseKotakPnl(sheets);
-        clientName = k.clientName;
-        parsed = k;
-      } else if (looksLikeZerodhaPnl(sheets)) {
-        kind = "pnl";
-        parsed = parseZerodhaPnl(sheets);
-      } else if (looksLikeZerodhaTradebook(sheets)) {
-        kind = "tradebook";
-        parsed = parseZerodhaTradebook(sheets);
-      } else throw new Error("this is neither a Zerodha Console P&L statement or tradebook nor a Kotak Neo Gain-Loss statement (other brokers' files are not read yet)");
+        const all = parseKotakSections(sheets);
+        clientName = all[0].clientName;
+        parts = all.map((parsed) => ({ kind: "pnl" as const, parsed }));
+      } else if (looksLikeZerodhaPnl(sheets)) parts = [{ kind: "pnl", parsed: parseZerodhaPnl(sheets) }];
+      else if (looksLikeZerodhaTradebook(sheets)) parts = [{ kind: "tradebook", parsed: parseZerodhaTradebook(sheets) }];
+      else throw new Error("this is neither a Zerodha Console P&L statement or tradebook nor a Kotak Neo Gain-Loss statement (other brokers' files are not read yet)");
     } catch (e) {
       throw new UnprocessableEntityException((e as Error).message);
     }
-    const code = parsed.clientCode.toUpperCase();
+    const first = parts[0].parsed;
+    const code = String(first.clientCode).toUpperCase();
     if (!code) throw new UnprocessableEntityException("the file has no client id, so it cannot be matched to an account");
+    const fileHash = createHash("sha256").update(bytes).digest("hex");
+    // a file with several segments is stored as one statement per segment, so each has its own hash (the file's, then the segment)
+    const hashOf = (p: Part) => (parts.length > 1 ? `${fileHash}:${p.parsed.segment}` : fileHash);
 
     // which account: the one named, else the one with this client id, else a new one (created below, never on a dry run)
     const accounts = await this.store.accounts();
@@ -232,30 +253,37 @@ export class FamilyService {
       if (account.clientCode && account.clientCode !== code) throw new ConflictException(`this file is for client id ${maskCode(code)}, but account "${account.label}" is ${maskCode(account.clientCode)}: pick the right account, or leave the account empty to match by client id`);
     } else account = accounts.find((a) => a.broker === broker && a.clientCode === code);
 
+    // everything is checked before anything is stored, so a file with several segments is taken whole or not at all
     if (account) {
-      const hash = createHash("sha256").update(bytes).digest("hex");
-      if (await this.store.hasHash(account.id, hash)) throw new ConflictException("this exact file is already imported for this account");
-      const same = (await this.store.imports()).filter((i) => i.accountId === account!.id && i.kind === kind && i.segment === parsed.segment);
-      const clash = same.find((i) => overlaps({ from: i.periodFrom, to: i.periodTo }, { from: parsed.periodFrom, to: parsed.periodTo }));
-      if (clash) throw new ConflictException(`its period (${parsed.periodFrom} to ${parsed.periodTo}) overlaps ${clash.fileName} (${clash.periodFrom} to ${clash.periodTo}) already imported: remove that one first, or import a period that does not overlap`);
+      for (const part of parts) if (await this.store.hasHash(account.id, hashOf(part))) throw new ConflictException("this exact file is already imported for this account");
+      const stored = await this.store.imports();
+      for (const part of parts) {
+        const same = stored.filter((i) => i.accountId === account!.id && i.kind === part.kind && i.segment === part.parsed.segment);
+        const clash = same.find((i) => overlaps({ from: i.periodFrom, to: i.periodTo }, { from: part.parsed.periodFrom, to: part.parsed.periodTo }));
+        if (clash) throw new ConflictException(`its ${SEGMENT_LABELS[part.parsed.segment as Segment]} period (${part.parsed.periodFrom} to ${part.parsed.periodTo}) overlaps ${clash.fileName} (${clash.periodFrom} to ${clash.periodTo}) already imported: remove that one first, or import a period that does not overlap`);
+      }
     }
-    const problems = kind === "pnl" ? (parsed as { problems: string[] }).problems : [];
+    const problems = parts.flatMap((p) => (p.kind === "pnl" ? (p.parsed.problems as string[]) : []));
     if (problems.length && !opts.accept && !opts.dry) throw new UnprocessableEntityException(`the statement does not add up, so it was not imported: ${problems.join("; ")}`);
 
+    const sum = (f: (p: Part) => number) => parts.reduce((a, p) => a + f(p), 0);
     const result: ImportResult = {
       dry: !!opts.dry,
-      kind,
-      segment: parsed.segment,
-      periodFrom: parsed.periodFrom,
-      periodTo: parsed.periodTo,
+      kind: first === parts[0].parsed ? parts[0].kind : "pnl",
+      segment: first.segment,
+      ...(parts.length > 1 ? { segments: parts.map((p) => p.parsed.segment as Segment) } : {}),
+      periodFrom: first.periodFrom,
+      periodTo: first.periodTo,
       fileName: name,
       client: maskCode(code),
       account: account ? { id: account.id, label: account.label } : null,
       newAccount: !account,
-      rows: kind === "pnl" ? (parsed as any).lines.length : (parsed as any).fills.length,
-      ...(kind === "pnl" ? { summary: (parsed as any).summary } : {}),
+      rows: sum((p) => (p.kind === "pnl" ? p.parsed.lines.length : p.parsed.fills.length)),
+      ...(parts[0].kind === "pnl"
+        ? { summary: { charges: round2(sum((p) => p.parsed.summary.charges)), otherCreditDebit: round2(sum((p) => p.parsed.summary.otherCreditDebit)), realized: round2(sum((p) => p.parsed.summary.realized)), unrealized: round2(sum((p) => p.parsed.summary.unrealized)) } }
+        : {}),
       problems,
-      notes: kind === "tradebook" ? (parsed as any).notes : [],
+      notes: parts[0].kind === "tradebook" ? first.notes : [],
     };
     if (opts.dry) return result;
 
@@ -275,25 +303,51 @@ export class FamilyService {
     } else if (!account.clientCode) {
       await this.store.updateAccount(account.id, { clientCode: code });
     }
-    const saved = await this.store.addImport({
-      accountId: account.id,
-      kind,
-      segment: parsed.segment,
-      periodFrom: parsed.periodFrom,
-      periodTo: parsed.periodTo,
-      fileName: name,
-      fileHash: createHash("sha256").update(bytes).digest("hex"),
-      summary: kind === "pnl" ? (parsed as any).summary : { charges: 0, otherCreditDebit: 0, realized: 0, unrealized: 0 },
-      lines: kind === "pnl" ? (parsed as any).lines : [],
-      charges: kind === "pnl" ? (parsed as any).charges : [],
-      fills: kind === "tradebook" ? (parsed as any).fills : [],
-      problems,
-    });
-    return { ...result, id: saved.id, newAccount: result.newAccount };
+    let firstId: number | undefined;
+    for (const part of parts) {
+      const saved = await this.store.addImport({
+        accountId: account.id,
+        kind: part.kind,
+        segment: part.parsed.segment,
+        periodFrom: part.parsed.periodFrom,
+        periodTo: part.parsed.periodTo,
+        fileName: name,
+        fileHash: hashOf(part),
+        summary: part.kind === "pnl" ? part.parsed.summary : { charges: 0, otherCreditDebit: 0, realized: 0, unrealized: 0 },
+        lines: part.kind === "pnl" ? part.parsed.lines : [],
+        charges: part.kind === "pnl" ? part.parsed.charges : [],
+        fills: part.kind === "tradebook" ? part.parsed.fills : [],
+        problems: part.kind === "pnl" ? part.parsed.problems : [],
+      });
+      firstId ??= saved.id;
+    }
+    return { ...result, id: firstId, newAccount: result.newAccount };
   }
 
   async summary(filter: Filter) {
     const [members, accounts, imports] = await Promise.all([this.store.members(), this.store.accounts(), this.store.imports()]);
-    return { summary: summarize(members, accounts, imports, filter), monthly: monthlyView(members, accounts, imports, filter) };
+    const parts = selectParts(accounts, imports, filter);
+    const contracts = contractRows(parts);
+    return {
+      summary: summarize(members, accounts, imports, filter),
+      monthly: monthlyView(members, accounts, imports, filter),
+      // every contract of the selection (a household's statements are a few hundred to a few thousand), why the result is what it is, and the two cross-tables
+      contracts: contracts.slice(0, MAX_CONTRACTS_SENT),
+      contractsTotal: contracts.length,
+      insights: insights(contracts, parts) ?? null,
+      yearBySegment: yearBySegment(parts),
+      memberByYear: memberByYear(parts, members),
+    };
+  }
+
+  /** One member's financial year as a statement for the accountant (the screen turns it into a page or a CSV). */
+  async statement(memberId: number | undefined, period: string | undefined) {
+    if (memberId === undefined) throw new BadRequestException("member is required");
+    if (!period || !/^\d{4}-\d{2}$|^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/.test(period)) throw new BadRequestException("period must be a financial year like 2024-25 (or a statement's own period)");
+    const [members, accounts, imports] = await Promise.all([this.store.members(), this.store.accounts(), this.store.imports()]);
+    if (!members.some((m) => m.id === memberId)) throw new NotFoundException("no such member");
+    const st = accountantStatement(members, accounts, imports, memberId, period);
+    if (!st) throw new NotFoundException(`no statement for that member in ${period}`);
+    return st;
   }
 }

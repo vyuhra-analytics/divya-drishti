@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, type FamilyAccount, type FamilyMember, type GroupRow, type MonthlyView, type Segment, type Summary } from "@drishti/shared";
+import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type Segment, type Summary } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import type { Widget } from "./workspace";
 
@@ -24,10 +24,18 @@ interface Overview {
   members: FamilyMember[];
   accounts: FamilyAccount[];
   imports: ImportRow[];
+  coverage: CoverageView;
+  /** every year or period a statement can be exported for */
+  statementPeriods: string[];
 }
 interface Report {
   summary: Summary;
   monthly: MonthlyView;
+  contracts: ContractRow[];
+  contractsTotal: number;
+  insights: Insights | null;
+  yearBySegment: CrossTab;
+  memberByYear: CrossTab;
 }
 interface Outcome {
   file: string;
@@ -38,8 +46,9 @@ interface Outcome {
   canAccept?: boolean;
   bytes?: ArrayBuffer;
 }
-type Tab = "overview" | "months" | "setup";
-type Cut = "account" | "segment" | "underlying" | "charges";
+type Tab = "overview" | "contracts" | "months" | "setup";
+type Cut = "account" | "segment" | "underlying" | "charges" | "yearseg" | "memberyear";
+type SortKey = "symbol" | "segment" | "member" | "fy" | "quantity" | "realized" | "charges" | "net";
 
 const HIDE_KEY = "drishti-family-hide";
 const inr = (n: number, dp = 2) => n.toLocaleString("en-IN", { minimumFractionDigits: dp, maximumFractionDigits: dp });
@@ -98,6 +107,41 @@ function MonthChart({ months, hide }: { months: { month: string; net: number }[]
   );
 }
 
+/** The net of each financial year as bars, one per segment, side by side. Values are left out of the picture while amounts are hidden. */
+function GroupedChart({ tab, hide }: { tab: CrossTab; hide: boolean }) {
+  const n = tab.rows.length;
+  const m = Math.max(1, tab.cols.length);
+  const W = Math.max(320, n * (m * 26 + 34));
+  const H = 190;
+  const top = 12;
+  const bottom = 24;
+  const mid = top + (H - top - bottom) / 2;
+  const maxAbs = Math.max(1, ...tab.rows.flatMap((r) => tab.cols.map((c) => Math.abs(tab.cells[r.key]?.[c.key]?.net ?? 0))));
+  const k = (mid - top) / maxAbs;
+  const gw = W / n;
+  const bw = Math.min(24, (gw * 0.8) / m);
+  return (
+    <svg className="fam-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={hide ? "Net by financial year (values hidden)" : `Net by financial year, ${n} years`}>
+      <line x1="0" x2={W} y1={mid} y2={mid} className="fam-zero" />
+      {tab.rows.map((r, i) => (
+        <g key={r.key}>
+          {tab.cols.map((c, j) => {
+            const v = tab.cells[r.key]?.[c.key]?.net;
+            if (v === undefined) return null;
+            const x = i * gw + gw / 2 + (j - (m - 1) / 2) * (bw + 3) - bw / 2;
+            return (
+              <rect key={c.key} x={x} y={v >= 0 ? mid - v * k : mid} width={bw} height={Math.max(1, Math.abs(v) * k)} className={`fam-s${j % 4}`} rx="2">
+                {!hide && <title>{`${r.label}, ${c.label}: ${inr(v)}`}</title>}
+              </rect>
+            );
+          })}
+          <text x={i * gw + gw / 2} y={H - 8} textAnchor="middle" className="fam-axis">{r.label.length > 9 ? r.label.slice(2, 7) : r.label}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 const heading = (title: string) => title.replace(/^By /, "").replace(/^./, (c) => c.toUpperCase());
 
 export function FamilyWidget(_: { widget: Widget }) {
@@ -120,6 +164,11 @@ export function FamilyWidget(_: { widget: Widget }) {
   const [newMember, setNewMember] = useState("");
   const [tab, setTab] = useState<Tab | null>(null);
   const [cut, setCut] = useState<Cut>("account");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "realized", dir: 1 });
+  const [shown, setShown] = useState(200);
+  const [stMember, setStMember] = useState("");
+  const [stYear, setStYear] = useState("");
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
@@ -135,8 +184,9 @@ export function FamilyWidget(_: { widget: Widget }) {
   const reload = useCallback(async () => {
     try {
       const [o, r] = await Promise.all([call<Overview>(""), call<Report>(`/summary${query}`)]);
-      setData(o);
-      setReport(r);
+      // an API that has not been restarted since an update answers without the newer fields: the screen shows what it has instead of failing
+      setData({ ...o, coverage: o.coverage ?? { years: [], rows: [] }, statementPeriods: o.statementPeriods ?? [] });
+      setReport({ ...r, contracts: r.contracts ?? [], contractsTotal: r.contractsTotal ?? 0, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -170,8 +220,8 @@ export function FamilyWidget(_: { widget: Widget }) {
     const out: Outcome[] = [];
     for (const f of list) {
       try {
-        const r = await call<{ kind: string; segment: Segment; periodFrom: string; periodTo: string; rows: number; newAccount: boolean; client: string; filedUnder?: string }>(`/import?name=${encodeURIComponent(f.name)}${accept ? "&accept=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: f.buf });
-        out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${SEGMENT_LABELS[r.segment]} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? (r.filedUnder ? `, new account for client ${r.client}, filed under ${hide ? "the member of that name" : r.filedUnder}` : `, new account for client ${r.client} (name the person below)`) : ""}` });
+        const r = await call<{ kind: string; segment: Segment; segments?: Segment[]; periodFrom: string; periodTo: string; rows: number; newAccount: boolean; client: string; filedUnder?: string }>(`/import?name=${encodeURIComponent(f.name)}${accept ? "&accept=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: f.buf });
+        out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${(r.segments ?? [r.segment]).map((x) => SEGMENT_LABELS[x]).join(" + ")} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? (r.filedUnder ? `, new account for client ${r.client}, filed under ${hide ? "the member of that name" : r.filedUnder}` : `, new account for client ${r.client} (name the person below)`) : ""}` });
       } catch (e) {
         const msg = (e as Error).message;
         const skipped = /exact file is already imported/.test(msg);
@@ -205,9 +255,9 @@ export function FamilyWidget(_: { widget: Widget }) {
   const unassigned = data.members.filter((m) => /^Unassigned \d+$/.test(m.nickname) && data.accounts.some((a) => a.memberId === m.id));
 
   /** a table of totals by some grouping; `charges` false for a grouping a statement cannot split (underlying) */
-  const rowsTable = (title: string, rows: GroupRow[], label: (r: GroupRow) => string, charges = true) => {
+  const rowsTable = (title: string, rows: GroupRow[], label: (r: GroupRow) => string, charges = true, partial = false) => {
     if (rows.length === 0) return null;
-    const max = Math.max(...rows.map((r) => Math.abs(charges ? r.net : r.realized)));
+    const max = Math.max(1, ...rows.map((r) => Math.abs(charges && !(partial && !r.chargesComplete) ? r.net : r.realized)));
     return (
       <div className="fam-scroll">
         {title && <h2>{title}</h2>}
@@ -227,9 +277,9 @@ export function FamilyWidget(_: { widget: Widget }) {
               <tr key={r.key}>
                 <td>{label(r)}</td>
                 <td className="num">{signed(r.realized)}</td>
-                {charges && <td className="num">{money(r.charges)}</td>}
-                {charges && <td className="num">{signed(r.net)}</td>}
-                <td><Bar value={charges ? r.net : r.realized} max={max} /></td>
+                {charges && <td className="num" title={partial && !r.chargesComplete ? "Only the contracts whose statement gives charges per contract (Kotak's) are counted here" : undefined}>{money(r.charges)}{partial && !r.chargesComplete ? "*" : ""}</td>}
+                {charges && <td className="num">{partial && !r.chargesComplete ? <span className="muted">—</span> : signed(r.net)}</td>}
+                <td><Bar value={charges && !(partial && !r.chargesComplete) ? r.net : r.realized} max={max} /></td>
                 <td className="num muted">{r.winners} / {r.losers}</td>
               </tr>
             ))}
@@ -253,22 +303,32 @@ export function FamilyWidget(_: { widget: Widget }) {
   const kotakOnly = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) === "kotak");
   const zerodhaMissing = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) !== "kotak");
   if (zerodhaMissing.length > 0)
-    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${zerodhaMissing.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)).join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
+    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${[...new Set(zerodhaMissing.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)))].join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
   if (kotakOnly.length > 0)
-    alerts.push({ key: "kotak-months", tone: "info", title: "No months for Kotak", text: `Kotak's Gain & Loss report has no trade dates${hide ? "" : ` (${kotakOnly.map((w) => `${w.periodFrom} to ${w.periodTo}`).join(", ")})`}, so it gives the year's totals and charges but no months. Months would need Kotak's contract notes, which are not read yet.` });
-  const alertBlock = alerts.length > 0 && (
-    <div className="fam-alerts no-drag">
-      {alerts.map((a) => (
-        <div key={a.key} className={`fam-alert ${a.tone}`} role={a.tone === "warn" ? "alert" : "status"}>
-          <div>
-            <b>{a.title}</b>
-            <p>{a.text}</p>
-          </div>
-          {a.key !== "kotak-months" && <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>}
-        </div>
-      ))}
+    alerts.push({ key: "kotak-months", tone: "info", title: "No months for Kotak", text: `Kotak's Gain & Loss report has no trade dates${hide ? "" : ` (${[...new Set(kotakOnly.map((w) => `${w.periodFrom} to ${w.periodTo}`))].join(", ")})`}, so it gives the year's totals and charges but no months. Months would need Kotak's contract notes, which are not read yet.` });
+  const alertCard = (a: (typeof alerts)[number]) => (
+    <div key={a.key} className={`fam-alert ${a.tone}`} role={a.tone === "warn" ? "alert" : "status"}>
+      <div>
+        <b>{a.title}</b>
+        <p>{a.text}</p>
+      </div>
+      {a.key !== "kotak-months" && <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>}
     </div>
   );
+  // one thing to check is shown as it is; several fold into one line that opens, so the numbers stay at the top
+  const alertBlock =
+    alerts.length === 0 ? null : alerts.length === 1 ? (
+      <div className="fam-alerts no-drag">{alertCard(alerts[0])}</div>
+    ) : (
+      <details className="fam-alerts no-drag">
+        <summary>
+          {alerts.some((a) => a.tone === "warn") && <span className="fam-dot" aria-hidden="true" />}
+          <b>{alerts.length} things to check</b>
+          <small>{alerts.map((a) => a.title).join(" · ")}</small>
+        </summary>
+        {alerts.map(alertCard)}
+      </details>
+    );
 
   /** the numbers on screen as a CSV file named by what it covers; names come from the members, the client id is never in it */
   const download = () => {
@@ -285,6 +345,53 @@ export function FamilyWidget(_: { widget: Widget }) {
     URL.revokeObjectURL(url);
   };
 
+  // ---- the accountant's statement: fetched for one member and year, then opened as a printable page or saved as CSV
+  const stMemberId = stMember || String(data.members.find((m) => data.accounts.some((a) => a.memberId === m.id))?.id ?? "");
+  const stPeriod = stYear || data.statementPeriods[data.statementPeriods.length - 1] || "";
+  const statement = async (as: "csv" | "page") => {
+    const memberName = data.members.find((m) => m.id === Number(stMemberId))?.nickname ?? "";
+    await act(async () => {
+      const st = await call<AccountantStatement>(`/statement?member=${stMemberId}&period=${encodeURIComponent(stPeriod)}`);
+      const url = URL.createObjectURL(as === "csv" ? new Blob([toCsv(statementRows(st, memberName))], { type: "text/csv;charset=utf-8" }) : new Blob([statementHtml(st, memberName)], { type: "text/html;charset=utf-8" }));
+      if (as === "csv") {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `statement-${stPeriod.replace(/ /g, "")}-${memberName.replace(/[^A-Za-z0-9]+/g, "_")}.csv`;
+        link.click();
+      } else window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    });
+  };
+
+  // ---- every contract: searched, sorted, and saved as CSV
+  const contractList = (() => {
+    const needle = q.trim().toLowerCase();
+    const mname = (id: number) => (data.members.find((m) => m.id === id)?.nickname ?? "").toLowerCase();
+    const list = report.contracts.filter((c) => !needle || c.symbol.toLowerCase().includes(needle) || c.underlying.toLowerCase().includes(needle) || (!hide && mname(c.memberId).includes(needle)));
+    const val = (c: ContractRow): number | string => (sort.key === "member" ? mname(c.memberId) : sort.key === "segment" ? c.segment : sort.key === "symbol" ? c.symbol : sort.key === "fy" ? c.fy : (c[sort.key] ?? Number.POSITIVE_INFINITY));
+    return [...list].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * sort.dir;
+    });
+  })();
+  const sortBy = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, dir: (cur.dir * -1) as 1 | -1 } : { key, dir: key === "realized" || key === "net" || key === "charges" ? 1 : -1 }));
+  const sortHead = (key: SortKey, text: string, num = false) => (
+    <th className={num ? "num" : undefined} aria-sort={sort.key === key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+      <button className="fam-sort" onClick={() => sortBy(key)}>{text}{sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : ""}</button>
+    </th>
+  );
+  const downloadContracts = () => {
+    const rows: (string | number)[][] = [["Contract", "Segment", "Member", "Year", "Quantity", "Realised (before charges)", "Charges (where given per contract)", "Net (where charges are known)"]];
+    for (const c of contractList) rows.push([c.symbol, SEGMENT_LABELS[c.segment], data.members.find((m) => m.id === c.memberId)?.nickname ?? "", c.fy, c.quantity, c.realized, c.charges ?? "", c.net ?? ""]);
+    const url = URL.createObjectURL(new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "family-contracts.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const tabButton = (id: Tab, text: string) => (
     <button key={id} className={`tf${active === id ? " active" : ""}`} aria-pressed={active === id} onClick={() => setTab(id)}>{text}</button>
   );
@@ -294,6 +401,7 @@ export function FamilyWidget(_: { widget: Widget }) {
       <div className="fam-top no-drag">
         <span className="fam-tabs">
           {tabButton("overview", "Overview")}
+          {tabButton("contracts", "Contracts")}
           {tabButton("months", "Months")}
           {tabButton("setup", "Files and people")}
         </span>
@@ -373,16 +481,81 @@ export function FamilyWidget(_: { widget: Widget }) {
               <span>{s.totals.symbols} symbols traded</span>
             </p>
 
+            {report.insights && (() => {
+              const i = report.insights;
+              const pct = (v: number | null) => (hide || v === null ? "••" : `${(v * 100).toFixed(0)}%`);
+              const times = (v: number | null) => (hide || v === null ? "••" : `${v.toFixed(2)}×`);
+              const maxLoss = Math.max(1, ...i.worst.map((r) => Math.abs(r.realized)), ...i.best.map((r) => r.realized));
+              const list = (rows: ContractRow[], title: string) => (
+                <div>
+                  <h3>{title}</h3>
+                  {rows.map((r) => (
+                    <div key={r.id} className="fam-ct">
+                      <span className="fam-ct-name" title={`${SEGMENT_LABELS[r.segment]} · ${r.fy}`}>{r.symbol}</span>
+                      <span className="num">{signed(r.realized, 0)}</span>
+                      <Bar value={r.realized} max={maxLoss} />
+                    </div>
+                  ))}
+                </div>
+              );
+              return (
+                <section className="fam-card fam-insights">
+                  <h2>Why the result is what it is</h2>
+                  <p className="fam-verdict">{hide ? "Turn off Hide names and amounts to read this." : i.verdict}</p>
+                  <div className="fam-stats">
+                    <div title="Contracts that closed in profit as a share of those that closed with a result"><span>Win rate</span><b>{pct(i.winRate)}</b><small>{hide ? "••" : `${i.winners} won, ${i.losers} lost`}</small></div>
+                    <div><span>Average win</span><b>{signed(i.avgWin, 0)}</b><small>per winning contract</small></div>
+                    <div><span>Average loss</span><b>{signed(i.avgLoss, 0)}</b><small>per losing contract</small></div>
+                    <div title="The average win divided by the size of the average loss. Under 1×, the typical loss is bigger than the typical win."><span>Win size ÷ loss size</span><b>{times(i.payoff)}</b><small>under 1× = losses are bigger</small></div>
+                    <div title="All the winnings divided by all the losses. Under 1×, more was lost than won, before charges."><span>Winnings ÷ losses</span><b>{times(i.profitFactor)}</b><small>before charges</small></div>
+                    <div><span>Per contract</span><b>{signed(i.expectancy, 0)}</b><small>average result</small></div>
+                  </div>
+                  <p className="muted">
+                    {hide ? "••" : `Charges are ${i.chargesOfWinnings === null ? "—" : (i.chargesOfWinnings * 100).toFixed(1) + "% of the winnings"}${i.chargesOfLosses === null ? "" : ` and ${(i.chargesOfLosses * 100).toFixed(1)}% of the losses`}.${i.worstFiveShare === null ? "" : ` The ${Math.min(5, i.losers)} worst contracts hold ${(i.worstFiveShare * 100).toFixed(0)}% of all the losses.`}`}
+                  </p>
+                  <div className="fam-two">
+                    {list(i.worst, "Biggest losses")}
+                    {list(i.best, "Biggest wins")}
+                  </div>
+                  {i.bySegment.length > 1 && (
+                    <div className="fam-scroll">
+                      <table className="fam-table">
+                        <thead>
+                          <tr><th>Segment</th><th className="num">Contracts</th><th className="num">Win rate</th><th className="num" title="average win ÷ size of the average loss">Win ÷ loss size</th><th className="num">Winnings ÷ losses</th><th className="num">Realised</th></tr>
+                        </thead>
+                        <tbody>
+                          {i.bySegment.map((sg) => (
+                            <tr key={sg.segment}>
+                              <td>{SEGMENT_LABELS[sg.segment]}</td>
+                              <td className="num">{sg.contracts}</td>
+                              <td className="num">{pct(sg.winRate)}</td>
+                              <td className="num">{times(sg.payoff)}</td>
+                              <td className="num">{times(sg.profitFactor)}</td>
+                              <td className="num">{signed(sg.realized, 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
             <div className="fam-grid">
               <section className="fam-card">
-                <h2>Net by month</h2>
-                {monthly.months.length > 0 ? (
+                <h2>Net by financial year</h2>
+                {report.yearBySegment.rows.length > 0 ? (
                   <>
-                    <MonthChart months={monthly.months} hide={hide} />
-                    <p className="fam-legend"><i className="fam-up" /> month <i className="fam-line" /> running total{!hide ? ` · ${inr(monthly.months.reduce((a, m) => a + m.net, 0))} so far` : ""}</p>
+                    <GroupedChart tab={report.yearBySegment} hide={hide} />
+                    <p className="fam-legend">
+                      {report.yearBySegment.cols.map((c, j) => (
+                        <span key={c.key}><i className={`fam-s${j % 4}`} /> {c.label}</span>
+                      ))}
+                    </p>
                   </>
                 ) : (
-                  <p className="muted">The months come from a tradebook. Add one for the same period in Files and people.</p>
+                  <p className="muted">No statement in this selection.</p>
                 )}
               </section>
               <section className="fam-card">
@@ -414,9 +587,9 @@ export function FamilyWidget(_: { widget: Widget }) {
             <section className="fam-card">
               <div className="fam-cuts no-drag" role="tablist" aria-label="Break the numbers down by">
                 <span className="muted">Break down by</span>
-                {(["account", "segment", "underlying", "charges"] as Cut[]).map((c) => (
+                {(["account", "segment", "underlying", "charges", "yearseg", "memberyear"] as Cut[]).map((c) => (
                   <button key={c} role="tab" aria-selected={cut === c} className={`tf${cut === c ? " active" : ""}`} onClick={() => setCut(c)}>
-                    {c === "charges" ? "Charges and taxes" : c[0].toUpperCase() + c.slice(1)}
+                    {c === "charges" ? "Charges and taxes" : c === "yearseg" ? "Year × segment" : c === "memberyear" ? "Member × year" : c[0].toUpperCase() + c.slice(1)}
                   </button>
                 ))}
               </div>
@@ -428,10 +601,44 @@ export function FamilyWidget(_: { widget: Widget }) {
               {cut === "segment" && rowsTable("", s.bySegment, (r) => SEGMENT_LABELS[r.key as Segment] ?? r.key)}
               {cut === "underlying" && (
                 <>
-                  {rowsTable("", s.byUnderlying, (r) => r.label, s.underlyingHasCharges)}
-                  {!s.underlyingHasCharges && <p className="muted">A Zerodha statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying. (Kotak's gives them per contract.)</p>}
+                  {rowsTable("", s.byUnderlying, (r) => r.label, s.underlyingHasCharges, true)}
+                  <p className="muted">
+                    {s.underlyingHasCharges
+                      ? "* Charges are known per contract only for Kotak statements, so an underlying that also has Zerodha contracts shows just those and no net."
+                      : "A Zerodha statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying. (Kotak's gives them per contract.)"}
+                  </p>
                 </>
               )}
+              {(cut === "yearseg" || cut === "memberyear") && (() => {
+                const tab = cut === "yearseg" ? report.yearBySegment : report.memberByYear;
+                const label = (rowKey: string, rowLabel: string) => (cut === "memberyear" ? memberName(Number(rowKey)) : rowLabel);
+                return (
+                  <div className="fam-scroll">
+                    <table className="fam-table">
+                      <thead>
+                        <tr>
+                          <th>{cut === "yearseg" ? "Year" : "Member"}</th>
+                          {tab.cols.map((c) => <th key={c.key} className="num">{c.label}</th>)}
+                          <th className="num">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tab.rows.map((r) => (
+                          <tr key={r.key}>
+                            <td>{label(r.key, r.label)}</td>
+                            {tab.cols.map((c) => {
+                              const cell = tab.cells[r.key]?.[c.key];
+                              return <td key={c.key} className="num" title={cell ? (hide ? undefined : `realised ${inr(cell.realized)}, charges ${inr(cell.charges)}`) : undefined}>{cell ? signed(cell.net, 0) : <span className="muted">—</span>}</td>;
+                            })}
+                            <td className="num"><b>{signed(tab.cols.reduce((a, c) => a + (tab.cells[r.key]?.[c.key]?.net ?? 0), 0), 0)}</b></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="muted">Net after charges, in rupees.</p>
+                  </div>
+                );
+              })()}
               {cut === "charges" &&
                 (s.chargesByGroup.some((c) => c.amount !== 0) ? (
                   <div className="fam-scroll">
@@ -452,8 +659,84 @@ export function FamilyWidget(_: { widget: Widget }) {
                   <p className="muted">No charges recorded.</p>
                 ))}
             </section>
+
+            {data.statementPeriods.length > 0 && (
+              <section className="fam-card no-drag">
+                <h2>Statement for your accountant</h2>
+                <p className="muted">One member's year: per segment the realised result, the charges by head and the net, then every contract. Prepared from the statements as reported, not tax advice.</p>
+                <div className="fam-add">
+                  <label>
+                    Member
+                    <select value={stMemberId} onChange={(e) => setStMember(e.target.value)}>
+                      {data.members.filter((m) => data.accounts.some((a) => a.memberId === m.id)).map((m) => (
+                        <option key={m.id} value={m.id}>{memberName(m.id)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Year
+                    <select value={stPeriod} onChange={(e) => setStYear(e.target.value)}>
+                      {data.statementPeriods.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className="tf" disabled={busy || hide || !stMemberId} onClick={() => void statement("page")} title={hide ? "Turn off Hide names and amounts first" : "Open a printable page (print it or save it as PDF)"}>Open printable page</button>
+                  <button className="tf" disabled={busy || hide || !stMemberId} onClick={() => void statement("csv")} title={hide ? "Turn off Hide names and amounts first" : "Download as CSV"}>Download CSV</button>
+                </div>
+              </section>
+            )}
           </>
         ))}
+
+      {active === "contracts" && (
+        <section className="fam-card no-drag">
+          {report.contracts.length === 0 ? (
+            <p className="muted">No contracts in this selection.</p>
+          ) : (
+            <>
+              <div className="fam-cuts">
+                <input className="fam-search" type="search" placeholder="Search contract or underlying" aria-label="Search contracts" value={q} onChange={(e) => { setQ(e.target.value); setShown(200); }} />
+                <span className="muted">{contractList.length} of {report.contractsTotal} contracts</span>
+                <button className="tf" onClick={downloadContracts} disabled={hide} title={hide ? "Turn off Hide names and amounts to export" : "Download the contracts on screen as CSV"}>Download CSV</button>
+              </div>
+              <div className="fam-scroll">
+                <table className="fam-table">
+                  <thead>
+                    <tr>
+                      {sortHead("symbol", "Contract")}
+                      {sortHead("segment", "Segment")}
+                      {sortHead("member", "Member")}
+                      {sortHead("fy", "Year")}
+                      {sortHead("quantity", "Qty", true)}
+                      {sortHead("realized", "Realised", true)}
+                      {sortHead("charges", "Charges", true)}
+                      {sortHead("net", "Net", true)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contractList.slice(0, shown).map((c) => (
+                      <tr key={c.id}>
+                        <td title={c.file}>{c.symbol}</td>
+                        <td>{SEGMENT_LABELS[c.segment]}</td>
+                        <td>{memberName(c.memberId)}</td>
+                        <td>{c.fy}</td>
+                        <td className="num">{c.quantity}</td>
+                        <td className="num">{signed(c.realized)}</td>
+                        <td className="num">{c.charges === undefined ? <span className="muted" title="This statement gives charges for the whole period, not per contract">—</span> : money(c.charges)}</td>
+                        <td className="num">{c.net === undefined ? <span className="muted">—</span> : signed(c.net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {contractList.length > shown && <button className="tf" onClick={() => setShown((n) => n + 300)}>Show {Math.min(300, contractList.length - shown)} more</button>}
+              {report.contractsTotal > report.contracts.length && <p className="muted">Only the first {report.contracts.length} contracts are loaded; narrow the year, member or segment above to see the rest.</p>}
+              <p className="muted">Charges and net appear only where the statement gives charges per contract (Kotak's). Zerodha's statement gives one total for the period.</p>
+            </>
+          )}
+        </section>
+      )}
 
       {active === "months" && (
         <>
@@ -622,6 +905,43 @@ export function FamilyWidget(_: { widget: Widget }) {
                 <button key={m.id} type="button" className="tf" title="Remove a member who has no accounts" onClick={() => void act(() => call(`/members/${m.id}`, { method: "DELETE" }))}>Remove {m.nickname}</button>
               ))}
             </form>
+          )}
+
+          {data.coverage.years.length > 0 && (
+            <>
+              <h2>What is loaded</h2>
+              <div className="fam-scroll">
+                <table className="fam-table fam-cover">
+                  <thead>
+                    <tr>
+                      <th>Account</th>
+                      {data.coverage.years.map((y) => <th key={y} className="num">{y}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.coverage.rows.map((r) => {
+                      const a = data.accounts.find((x) => x.id === r.accountId);
+                      return (
+                        <tr key={r.accountId}>
+                          <td>{a ? accountName(a) : r.accountId}</td>
+                          {data.coverage.years.map((y) => {
+                            const c = r.cells[y];
+                            if (!c) return <td key={y} className="num"><span className="muted" title="Nothing loaded for this year">—</span></td>;
+                            return (
+                              <td key={y} className="num" title={`${c.statements.map((sg) => SEGMENT_LABELS[sg]).join(", ") || "no statement"}${c.tradebook ? "; tradebook loaded" : "; no tradebook"}${c.partial ? "; covers only part of the year" : ""}`}>
+                                {c.statements.length > 0 ? <span className={c.partial ? "fam-part" : "fam-ok"}>✓ {c.statements.map((sg) => (sg === "commodity" ? "Com" : sg === "fno" ? "F&O" : SEGMENT_LABELS[sg])).join(" + ")}</span> : <span className="muted">no statement</span>}
+                                {c.tradebook && <span className="fam-ok"> · months</span>}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted">✓ a statement is loaded (amber: it covers only part of the year). “months” means a tradebook is loaded too, which is what gives the month-by-month view.</p>
+            </>
           )}
 
           {data.imports.length > 0 && (
