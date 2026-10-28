@@ -17,6 +17,8 @@ export interface PnlLine {
   /** a position still open at the end of the period, with its unrealised result as the broker reported it */
   openQuantity: number;
   unrealized: number;
+  /** the charges on this contract alone, when the broker's statement gives them (Kotak's does, Zerodha's gives one total for the period) */
+  charges?: number;
 }
 export interface ChargeHead {
   head: string;

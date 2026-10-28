@@ -5,6 +5,8 @@ import {
   maskCode,
   monthlyView,
   overlaps,
+  looksLikeKotakPnl,
+  parseKotakPnl,
   parseZerodhaPnl,
   parseZerodhaTradebook,
   looksLikeZerodhaPnl,
@@ -66,6 +68,8 @@ export interface ImportResult {
   /** the account it goes to; null when none exists yet for this client id (one is created on import) */
   account: { id: number; label: string } | null;
   newAccount: boolean;
+  /** the member a new account was filed under because the file printed that member's name (Kotak files); absent when an "Unassigned" member was created */
+  filedUnder?: string;
   /** symbols (statement) or fills (tradebook) read */
   rows: number;
   summary?: { charges: number; otherCreditDebit: number; realized: number; unrealized: number };
@@ -148,7 +152,18 @@ export class FamilyService {
       if (!Number.isInteger(mid) || !members.some((m) => m.id === mid)) throw new NotFoundException("no such member");
       patch.memberId = mid;
     }
-    const next = { ...cur, ...patch };
+    let next = { ...cur, ...patch };
+    // moving an account to a member who already has one of that name is routine (every first account is "<Broker> account"): keep the move and tell the two apart
+    if (body?.label === undefined && patch.memberId !== undefined) {
+      const taken = (label: string) => accounts.some((a) => a.id !== id && a.memberId === next.memberId && a.label.toLowerCase() === label.toLowerCase());
+      if (taken(next.label)) {
+        const base = `${next.label} (${BROKER_LABELS[next.broker]})`;
+        let label = base;
+        for (let n = 2; taken(label); n++) label = `${base} ${n}`;
+        next = { ...next, label };
+        patch.label = label;
+      }
+    }
     if (accounts.some((a) => a.id !== id && a.memberId === next.memberId && a.label.toLowerCase() === next.label.toLowerCase())) throw new ConflictException(`this member already has an account called ${next.label}`);
     return (await this.store.updateAccount(id, patch))!;
   }
@@ -185,14 +200,22 @@ export class FamilyService {
     }
     let kind: ImportKind;
     let parsed;
+    let broker: Broker = "zerodha";
+    let clientName: string | undefined;
     try {
-      if (looksLikeZerodhaPnl(sheets)) {
+      if (looksLikeKotakPnl(sheets)) {
+        kind = "pnl";
+        broker = "kotak";
+        const k = parseKotakPnl(sheets);
+        clientName = k.clientName;
+        parsed = k;
+      } else if (looksLikeZerodhaPnl(sheets)) {
         kind = "pnl";
         parsed = parseZerodhaPnl(sheets);
       } else if (looksLikeZerodhaTradebook(sheets)) {
         kind = "tradebook";
         parsed = parseZerodhaTradebook(sheets);
-      } else throw new Error("this is neither a Zerodha Console P&L statement nor a tradebook (other brokers' files are not read yet)");
+      } else throw new Error("this is neither a Zerodha Console P&L statement or tradebook nor a Kotak Neo Gain-Loss statement (other brokers' files are not read yet)");
     } catch (e) {
       throw new UnprocessableEntityException((e as Error).message);
     }
@@ -205,9 +228,9 @@ export class FamilyService {
     if (accountId !== undefined) {
       account = accounts.find((a) => a.id === accountId);
       if (!account) throw new NotFoundException("no such account");
-      if (account.broker !== "zerodha") throw new UnprocessableEntityException(`there is no reader for ${BROKER_LABELS[account.broker]} files yet`);
+      if (account.broker !== broker) throw new UnprocessableEntityException(`this is a ${BROKER_LABELS[broker]} file, but account "${account.label}" is a ${BROKER_LABELS[account.broker]} account`);
       if (account.clientCode && account.clientCode !== code) throw new ConflictException(`this file is for client id ${maskCode(code)}, but account "${account.label}" is ${maskCode(account.clientCode)}: pick the right account, or leave the account empty to match by client id`);
-    } else account = accounts.find((a) => a.broker === "zerodha" && a.clientCode === code);
+    } else account = accounts.find((a) => a.broker === broker && a.clientCode === code);
 
     if (account) {
       const hash = createHash("sha256").update(bytes).digest("hex");
@@ -216,7 +239,7 @@ export class FamilyService {
       const clash = same.find((i) => overlaps({ from: i.periodFrom, to: i.periodTo }, { from: parsed.periodFrom, to: parsed.periodTo }));
       if (clash) throw new ConflictException(`its period (${parsed.periodFrom} to ${parsed.periodTo}) overlaps ${clash.fileName} (${clash.periodFrom} to ${clash.periodTo}) already imported: remove that one first, or import a period that does not overlap`);
     }
-    const problems = kind === "pnl" ? (parsed as ReturnType<typeof parseZerodhaPnl>).problems : [];
+    const problems = kind === "pnl" ? (parsed as { problems: string[] }).problems : [];
     if (problems.length && !opts.accept && !opts.dry) throw new UnprocessableEntityException(`the statement does not add up, so it was not imported: ${problems.join("; ")}`);
 
     const result: ImportResult = {
@@ -240,11 +263,15 @@ export class FamilyService {
       const members = await this.store.members();
       if (members.length >= MAX_MEMBERS) throw new UnprocessableEntityException(`at most ${MAX_MEMBERS} members: remove an unused one first`);
       if (accounts.length >= MAX_ACCOUNTS) throw new UnprocessableEntityException(`at most ${MAX_ACCOUNTS} accounts`);
+      // a file that prints the holder's name (Kotak's) goes under the member of that name when there is one; the name itself is never stored
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const named = clientName && norm(clientName) ? members.filter((m) => norm(m.nickname) === norm(clientName!)) : [];
       let n = 1;
       while (members.some((m) => m.nickname.toLowerCase() === `unassigned ${n}`)) n++;
-      const member = await this.store.addMember({ nickname: `Unassigned ${n}`, relation: "", hidden: false, note: "Created from an imported file: rename it to the person, or move the account to an existing member." });
-      account = await this.store.addAccount({ memberId: member.id, broker: "zerodha", label: "Trading account", clientCode: code });
+      const member = named.length === 1 ? named[0] : await this.store.addMember({ nickname: `Unassigned ${n}`, relation: "", hidden: false, note: "Created from an imported file: rename it to the person, or move the account to an existing member." });
+      account = await this.store.addAccount({ memberId: member.id, broker, label: `${BROKER_LABELS[broker]} account`, clientCode: code });
       result.account = { id: account.id, label: account.label };
+      if (named.length === 1) result.filedUnder = member.nickname;
     } else if (!account.clientCode) {
       await this.store.updateAccount(account.id, { clientCode: code });
     }

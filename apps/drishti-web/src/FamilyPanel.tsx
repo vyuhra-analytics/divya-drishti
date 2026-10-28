@@ -170,8 +170,8 @@ export function FamilyWidget(_: { widget: Widget }) {
     const out: Outcome[] = [];
     for (const f of list) {
       try {
-        const r = await call<{ kind: string; segment: Segment; periodFrom: string; periodTo: string; rows: number; newAccount: boolean; client: string }>(`/import?name=${encodeURIComponent(f.name)}${accept ? "&accept=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: f.buf });
-        out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${SEGMENT_LABELS[r.segment]} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? `, new account for client ${r.client} (name the person below)` : ""}` });
+        const r = await call<{ kind: string; segment: Segment; periodFrom: string; periodTo: string; rows: number; newAccount: boolean; client: string; filedUnder?: string }>(`/import?name=${encodeURIComponent(f.name)}${accept ? "&accept=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: f.buf });
+        out.push({ file: f.name, ok: true, text: `${r.kind === "pnl" ? "Statement" : "Tradebook"} ${SEGMENT_LABELS[r.segment]} ${r.periodFrom} to ${r.periodTo}: ${r.rows} ${r.kind === "pnl" ? "symbols" : "fills"} read${r.newAccount ? (r.filedUnder ? `, new account for client ${r.client}, filed under ${hide ? "the member of that name" : r.filedUnder}` : `, new account for client ${r.client} (name the person below)`) : ""}` });
       } catch (e) {
         const msg = (e as Error).message;
         const skipped = /exact file is already imported/.test(msg);
@@ -249,8 +249,13 @@ export function FamilyWidget(_: { widget: Widget }) {
     const syms = r.differences.map((d) => (hide ? "a symbol" : `${d.symbol} (${inr(d.difference)})`)).join(", ");
     alerts.push({ key: `mm-${r.importId}`, tone: "warn", title: `Carried-in positions${acc && !hide ? ` in ${accountName(acc)}` : ""}`, text: `${r.differences.length} symbol${r.differences.length === 1 ? "" : "s"} in ${hide ? "a statement" : r.fileName} ${r.differences.length === 1 ? "has" : "have"} no matching trades in the tradebook: ${syms}. They were probably opened before the tradebook starts, so add the tradebook for the earlier period. Until then this statement keeps its own period instead of being cut into financial years.` });
   }
-  if (monthly.withoutTradebook.length > 0)
-    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${monthly.withoutTradebook.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)).join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
+  const brokerOf = (importId: number) => data.accounts.find((a) => a.id === data.imports.find((i) => i.id === importId)?.accountId)?.broker;
+  const kotakOnly = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) === "kotak");
+  const zerodhaMissing = monthly.withoutTradebook.filter((w) => brokerOf(w.importId) !== "kotak");
+  if (zerodhaMissing.length > 0)
+    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${zerodhaMissing.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)).join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
+  if (kotakOnly.length > 0)
+    alerts.push({ key: "kotak-months", tone: "info", title: "No months for Kotak", text: `Kotak's Gain & Loss report has no trade dates${hide ? "" : ` (${kotakOnly.map((w) => `${w.periodFrom} to ${w.periodTo}`).join(", ")})`}, so it gives the year's totals and charges but no months. Months would need Kotak's contract notes, which are not read yet.` });
   const alertBlock = alerts.length > 0 && (
     <div className="fam-alerts no-drag">
       {alerts.map((a) => (
@@ -259,7 +264,7 @@ export function FamilyWidget(_: { widget: Widget }) {
             <b>{a.title}</b>
             <p>{a.text}</p>
           </div>
-          <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>
+          {a.key !== "kotak-months" && <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>}
         </div>
       ))}
     </div>
@@ -423,8 +428,8 @@ export function FamilyWidget(_: { widget: Widget }) {
               {cut === "segment" && rowsTable("", s.bySegment, (r) => SEGMENT_LABELS[r.key as Segment] ?? r.key)}
               {cut === "underlying" && (
                 <>
-                  {rowsTable("", s.byUnderlying, (r) => r.label, false)}
-                  <p className="muted">A statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying.</p>
+                  {rowsTable("", s.byUnderlying, (r) => r.label, s.underlyingHasCharges)}
+                  {!s.underlyingHasCharges && <p className="muted">A Zerodha statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying. (Kotak's gives them per contract.)</p>}
                 </>
               )}
               {cut === "charges" &&
@@ -498,7 +503,7 @@ export function FamilyWidget(_: { widget: Widget }) {
         <>
           <h2>Add files</h2>
           <p className="muted">
-            Zerodha Console: <b>Reports → P&amp;L</b> and <b>Reports → Tradebook</b>, downloaded as Excel. Each file finds its account by client id; the statement gives the totals and charges, the tradebook gives the months.
+            <b>Zerodha Console:</b> Reports → P&amp;L and Reports → Tradebook, as Excel. <b>Kotak Neo:</b> Profile → Reports → Gain &amp; Loss Statement, as Excel. Each file finds its account by client id; a statement gives the totals and charges, a Zerodha tradebook gives the months.
           </p>
           <div
             className={`fam-drop no-drag${dragging ? " over" : ""}`}

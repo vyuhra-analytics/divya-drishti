@@ -82,9 +82,17 @@ export interface ParsedSymbol {
   strike?: number;
 }
 
+// Kotak writes the contract as words: "BANKNIFTY 24DEC24 CE 52700" (the workbook pads the gaps with spaces)
+const KOTAK_OPTION = new RegExp(`^([A-Z][A-Z0-9&-]*?) (\\d{2})(${MONTHS})(\\d{2}) (CE|PE) (\\d+(?:\\.\\d+)?)$`);
+const KOTAK_FUTURE = new RegExp(`^([A-Z][A-Z0-9&-]*?) (\\d{2})(${MONTHS})(\\d{2}) FUT$`);
+
 /** What a broker's F&O symbol is: BANKNIFTY2461951100CE (weekly option), MIDCPNIFTY24JUN12275CE (monthly option), NIFTY24JULFUT (future). Anything else is "other" (a cash symbol). */
 export function parseSymbol(symbol: string): ParsedSymbol {
-  const s = symbol.trim().toUpperCase();
+  const s = symbol.trim().toUpperCase().replace(/\s+/g, " ");
+  const k = KOTAK_OPTION.exec(s);
+  if (k) return { underlying: k[1], kind: "option", optionType: k[5] as "CE" | "PE", strike: Number(k[6]) };
+  const kf = KOTAK_FUTURE.exec(s);
+  if (kf) return { underlying: kf[1], kind: "future" };
   let m = WEEKLY.exec(s);
   if (m) return { underlying: m[1], kind: "option", optionType: m[6] as "CE" | "PE", strike: Number(m[5]) };
   m = MONTHLY.exec(s);
@@ -163,6 +171,8 @@ export interface Summary {
   byAccount: GroupRow[];
   bySegment: GroupRow[];
   byUnderlying: GroupRow[];
+  /** every statement in the selection gave charges per contract (Kotak's does), so the underlying rows carry charges and net; Zerodha's gives one total for the period */
+  underlyingHasCharges: boolean;
   /** the family of charge (brokerage, GST, STT...) across the selection */
   chargesByGroup: { group: string; amount: number }[];
   /** every statement used, so the screen can list what the numbers rest on */
@@ -272,7 +282,10 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
       part.lines.push(l);
       by.set(u, part);
     }
-    for (const [u, part] of by) bump(groups.underlying, u, u, part);
+    for (const [u, part] of by) {
+      if (part.lines.every((l) => l.charges !== undefined)) part.charges = [{ head: "Charges", amount: part.lines.reduce((a, l) => a + (l.charges ?? 0), 0) }];
+      bump(groups.underlying, u, u, part);
+    }
   }
   const rows = (m: Map<string, { label: string; t: Totals }>, sort: (a: GroupRow, b: GroupRow) => number): GroupRow[] =>
     [...m.entries()].map(([key, g]) => ({ key, label: g.label, ...finish(g.t) })).sort(sort);
@@ -285,6 +298,7 @@ export function summarize(members: FamilyMember[], accounts: FamilyAccount[], im
     byAccount: rows(groups.account, (a, b) => a.label.localeCompare(b.label)),
     bySegment: rows(groups.segment, byKey),
     byUnderlying: rows(groups.underlying, byNet),
+    underlyingHasCharges: parts.length > 0 && parts.every((p) => p.lines.every((l) => l.charges !== undefined)),
     chargesByGroup: [...heads.entries()].map(([group, amount]) => ({ group, amount: r2(amount) })).sort((a, b) => b.amount - a.amount),
     imports: used.filter((i) => parts.some((p) => p.id === i.id)).map((i) => ({ id: i.id, accountId: i.accountId, segment: i.segment, periodFrom: i.periodFrom, periodTo: i.periodTo, fileName: i.fileName, problems: i.problems.length })),
   };
@@ -385,7 +399,7 @@ export function familyCsv(report: { summary: Summary; monthly: MonthlyView }, na
   block("Member", s.byMember, (r) => nameOf.member(Number(r.key)));
   block("Account", s.byAccount, (r) => nameOf.account(Number(r.key)));
   block("Segment", s.bySegment, (r) => r.key);
-  block("Underlying (realised only: charges are not split by symbol)", s.byUnderlying.map((r) => ({ ...r, charges: 0, net: r.realized })), (r) => r.label);
+  block(s.underlyingHasCharges ? "Underlying" : "Underlying (realised only: charges are not split by symbol)", s.underlyingHasCharges ? s.byUnderlying : s.byUnderlying.map((r) => ({ ...r, charges: 0, net: r.realized })), (r) => r.label);
   if (s.chargesByGroup.length) {
     rows.push(["Charges and taxes", "Amount"]);
     for (const c of s.chargesByGroup) rows.push([c.group, c.amount]);

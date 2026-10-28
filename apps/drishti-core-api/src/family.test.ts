@@ -107,12 +107,12 @@ describe("importing a statement", () => {
     expect(r.problems.length).toBeGreaterThan(0);
     expect(store.i).toHaveLength(1);
   });
-  test("not a workbook, an unknown report and a broker with no reader each say so", async () => {
+  test("not a workbook, an unknown report and a file for the wrong broker each say so", async () => {
     const { svc, dad, acc } = await setup();
     await expect(svc.importFile(acc.id, "a.xlsx", new Uint8Array([1, 2, 3, 4]))).rejects.toBeInstanceOf(BadRequestException);
     await expect(svc.importFile(acc.id, "a.xlsx", makeXlsx([{ name: "x", rows: [["hello"]] }]))).rejects.toThrow(/neither a Zerodha/);
     const kotak = await svc.addAccount({ memberId: dad.id, broker: "kotak", label: "k" });
-    await expect(svc.importFile(kotak.id, "a.xlsx", statement())).rejects.toThrow(/no reader for Kotak/);
+    await expect(svc.importFile(kotak.id, "a.xlsx", statement())).rejects.toThrow(/Zerodha file, but account .* is a Kotak account/);
     await expect(svc.importFile(999, "a.xlsx", statement())).rejects.toBeInstanceOf(NotFoundException);
   });
   test("the summary rests on the stored statement", async () => {
@@ -166,4 +166,99 @@ test("main.ts imports nothing at run time that the API does not depend on direct
   const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   for (const m of runtime) expect(Object.keys(deps).includes(m) || m === "reflect-metadata").toBe(true);
+});
+
+describe("a Kotak Neo Gain-Loss file", () => {
+  const kotak = (client = "KX9999", holder?: string) =>
+    makeXlsx([
+      {
+        name: "Realized Gain-Loss",
+        rows: [
+          [],
+          ["Client Name"],
+          ["Client Code", client, null, "Charges", null, 33.25],
+          ["Transaction Period", "From : 2024-04-01 To : 2025-03-31", null, "Net P&L", null, 94.52],
+          ["Transaction Type", "ALL", null, "Segment Type", null, "Derivatives"],
+          [],
+          [],
+          ["Script Name", "Security Type", "ISIN", "Qty", "Buy Amt. (A)", "Sell Amt. (B)", "Gross Realized P&L", null, null, null, "Charges", null, null, null, null, "Net P&L (T - S)", "Gross P&L (T + (C + D + E))"],
+          [null, null, null, null, null, null, "Intraday", "<1yr.", ">1Yr.", "Total\n(T = B - A)", "GST (C)", "Brokerage (D)", "Misc. (E)", "STT/CTT (S)", "Total (C + D + E + S)", null, null],
+          ["Derivatives"],
+          ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77],
+          ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77],
+        ] as never,
+      },
+      ...(holder ? [{ name: "P&L Equity-Tradewise", rows: [[], ["Client Name", holder]] as never }] : []),
+    ]);
+
+  test("creates a Kotak account for its client id, with the gross result and the charges, and a repeat is refused", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const r = await svc.importFile(undefined, "Gain_Loss_KX9999.xlsx", kotak());
+    expect(r).toMatchObject({ kind: "pnl", newAccount: true, rows: 1 });
+    expect(store.a[0]).toMatchObject({ broker: "kotak", clientCode: "KX9999" });
+    expect(store.i[0].summary).toMatchObject({ realized: 127.77, charges: 33.25 });
+    await expect(svc.importFile(undefined, "again.xlsx", kotak())).rejects.toThrow(/already imported/);
+  });
+
+  test("a Kotak file never lands in a Zerodha account, even one named explicitly", async () => {
+    const { svc, acc } = await setup();
+    await expect(svc.importFile(acc.id, "k.xlsx", kotak())).rejects.toThrow(/Kotak file, but account .* is a Zerodha account/);
+    // with no account named it finds none for Kotak and creates its own, leaving the Zerodha one alone
+    const r = await svc.importFile(undefined, "k.xlsx", kotak());
+    expect(r.newAccount).toBe(true);
+  });
+});
+
+describe("a file that prints the holder's name", () => {
+  const kotakNamed = (client: string, holder: string) =>
+    makeXlsx([
+      { name: "Realized Gain-Loss", rows: [[], ["Client Name"], ["Client Code", client, null, "Charges", null, 33.25], ["Transaction Period", "From : 2024-04-01 To : 2025-03-31", null, "Net P&L", null, 94.52], ["Transaction Type", "ALL", null, "Segment Type", null, "Derivatives"], [], [], ["Script Name", "Security Type", "ISIN", "Qty", "Buy Amt. (A)", "Sell Amt. (B)", "Gross Realized P&L", null, null, null, "Charges", null, null, null, null, "Net P&L (T - S)", "Gross P&L (T + (C + D + E))"], [null, null, null, null, null, null, "Intraday", "<1yr.", ">1Yr.", "Total (T = B - A)", "GST (C)", "Brokerage (D)", "Misc. (E)", "STT/CTT (S)", "Total (C + D + E + S)", null, null], ["Derivatives"], ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77]] as never },
+      { name: "P&L Equity-Tradewise", rows: [[], ["Client Name", holder]] as never },
+    ]);
+
+  test("goes under the member of that name (case and spacing ignored) and creates no Unassigned member", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const priya = await svc.addMember({ nickname: "Priya Sharma" });
+    const r = await svc.importFile(undefined, "k.xlsx", kotakNamed("KX9999", "PRIYA   SHARMA"));
+    expect(r).toMatchObject({ newAccount: true, filedUnder: "Priya Sharma" });
+    expect(store.a[0].memberId).toBe(priya.id);
+    expect(store.m).toHaveLength(1);
+  });
+
+  test("a name that matches no member, or two members, still creates an Unassigned member for the owner to name", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    await svc.addMember({ nickname: "Someone Else" });
+    const r = await svc.importFile(undefined, "k.xlsx", kotakNamed("KX9999", "PRIYA SHARMA"));
+    expect(r.filedUnder).toBeUndefined();
+    expect(store.m.map((m) => m.nickname)).toEqual(["Someone Else", "Unassigned 1"]);
+    // the name is compared, never stored
+    expect(JSON.stringify(store.a) + JSON.stringify(store.i)).not.toMatch(/PRIYA/i);
+  });
+});
+
+describe("moving an account to a member who has one of the same name", () => {
+  test("keeps the move and tells the two apart, so an Unassigned member can always be emptied and removed", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const a = await svc.addMember({ nickname: "Priya" });
+    const b = await svc.addMember({ nickname: "Unassigned 1" });
+    await svc.addAccount({ memberId: a.id, broker: "zerodha", label: "Zerodha account" });
+    const k = await svc.addAccount({ memberId: b.id, broker: "kotak", label: "Kotak account" });
+    const same = await svc.addAccount({ memberId: b.id, broker: "zerodha", label: "Zerodha account" });
+    const moved = await svc.updateAccount(same.id, { memberId: a.id });
+    expect(moved).toMatchObject({ memberId: a.id, label: "Zerodha account (Zerodha)" });
+    expect((await svc.updateAccount(k.id, { memberId: a.id })).label).toBe("Kotak account"); // no clash, no change
+    await svc.deleteMember(b.id);
+    expect(store.m.map((m) => m.nickname)).toEqual(["Priya"]);
+    // an explicit new label that clashes is still refused
+    await expect(svc.updateAccount(k.id, { label: "Zerodha account" })).rejects.toBeInstanceOf(ConflictException);
+  });
+  test("a file's new account is labelled by its broker", async () => {
+    const store = new MemStore();
+    await new FamilyService(store).importFile(undefined, "a.xlsx", statement());
+    expect(store.a[0].label).toBe("Zerodha account");
+  });
 });

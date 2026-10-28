@@ -408,6 +408,7 @@ export * from "./eveningClock";
 
 export * from "./xlsx";
 export * from "./zerodhaPnl";
+export * from "./kotakPnl";
 export * from "./zerodhaTradebook";
 export * from "./fifo";
 export * from "./family";
