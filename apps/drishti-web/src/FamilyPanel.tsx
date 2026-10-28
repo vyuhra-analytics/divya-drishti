@@ -39,6 +39,7 @@ interface Outcome {
   bytes?: ArrayBuffer;
 }
 type Tab = "overview" | "months" | "setup";
+type Cut = "account" | "segment" | "underlying" | "charges";
 
 const HIDE_KEY = "drishti-family-hide";
 const inr = (n: number, dp = 2) => n.toLocaleString("en-IN", { minimumFractionDigits: dp, maximumFractionDigits: dp });
@@ -59,6 +60,41 @@ function Bar({ value, max }: { value: number; max: number }) {
     <span className="fam-bar" aria-hidden="true">
       <i className={value >= 0 ? "up" : "down"} style={{ width: `${w}%` }} />
     </span>
+  );
+}
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthLabel = (m: string) => `${MON[Number(m.slice(5, 7)) - 1] ?? m.slice(5)} ${m.slice(2, 4)}`;
+
+/** The net of each month as bars, with the running total as a line. Values are left out of the picture while amounts are hidden. */
+function MonthChart({ months, hide }: { months: { month: string; net: number }[]; hide: boolean }) {
+  const n = months.length;
+  const step = 44;
+  const W = Math.max(320, n * step);
+  const H = 180;
+  const top = 12;
+  const bottom = 24;
+  const mid = top + (H - top - bottom) / 2;
+  let run = 0;
+  const cum = months.map((m) => (run += m.net));
+  const maxAbs = Math.max(1, ...months.map((m) => Math.abs(m.net)), ...cum.map(Math.abs));
+  const k = (mid - top) / maxAbs;
+  const x = (i: number) => (W / n) * (i + 0.5);
+  const bw = Math.min(26, (W / n) * 0.6);
+  return (
+    <svg className="fam-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={hide ? "Net by month (values hidden)" : `Net by month, ${n} months`}>
+      <line x1="0" x2={W} y1={mid} y2={mid} className="fam-zero" />
+      {months.map((m, i) => (
+        <g key={m.month}>
+          <rect x={x(i) - bw / 2} y={m.net >= 0 ? mid - m.net * k : mid} width={bw} height={Math.max(1, Math.abs(m.net) * k)} className={m.net >= 0 ? "fam-up" : "fam-down"} rx="2">
+            {!hide && <title>{`${m.month}: ${inr(m.net)}`}</title>}
+          </rect>
+          <text x={x(i)} y={H - 8} textAnchor="middle" className="fam-axis">{monthLabel(m.month)}</text>
+        </g>
+      ))}
+      {n > 1 && <polyline className="fam-cum" fill="none" points={cum.map((c, i) => `${x(i)},${mid - c * k}`).join(" ")} />}
+      {n > 1 && cum.map((c, i) => <circle key={i} cx={x(i)} cy={mid - c * k} r="2.5" className="fam-cumdot">{!hide && <title>{`running total ${inr(c)}`}</title>}</circle>)}
+    </svg>
   );
 }
 
@@ -83,6 +119,8 @@ export function FamilyWidget(_: { widget: Widget }) {
   const [reveal, setReveal] = useState<Set<number>>(new Set());
   const [newMember, setNewMember] = useState("");
   const [tab, setTab] = useState<Tab | null>(null);
+  const [cut, setCut] = useState<Cut>("account");
+  const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   const query = useMemo(() => {
@@ -163,19 +201,20 @@ export function FamilyWidget(_: { widget: Widget }) {
   const { summary: s, monthly } = report;
   const hasData = s.imports.length > 0;
   const active: Tab = tab ?? (hasData ? "overview" : "setup");
-  const unassigned = data.members.filter((m) => /^Unassigned \d+$/.test(m.nickname));
+  // only members that hold an account need a name: an empty one is just a leftover, removable in Files and people
+  const unassigned = data.members.filter((m) => /^Unassigned \d+$/.test(m.nickname) && data.accounts.some((a) => a.memberId === m.id));
 
   /** a table of totals by some grouping; `charges` false for a grouping a statement cannot split (underlying) */
   const rowsTable = (title: string, rows: GroupRow[], label: (r: GroupRow) => string, charges = true) => {
     if (rows.length === 0) return null;
     const max = Math.max(...rows.map((r) => Math.abs(charges ? r.net : r.realized)));
     return (
-      <>
-        <h2>{title}</h2>
+      <div className="fam-scroll">
+        {title && <h2>{title}</h2>}
         <table className="fam-table">
           <thead>
             <tr>
-              <th>{heading(title)}</th>
+              <th>{heading(title || "Name")}</th>
               <th className="num">Realised</th>
               {charges && <th className="num">Charges</th>}
               {charges && <th className="num">Net</th>}
@@ -196,9 +235,35 @@ export function FamilyWidget(_: { widget: Widget }) {
             ))}
           </tbody>
         </table>
-      </>
+      </div>
     );
   };
+
+  /** things that need the owner's attention, each with where to act */
+  const alerts: { key: string; tone: "warn" | "info"; title: string; text: string }[] = [];
+  if (unassigned.length > 0)
+    alerts.push({ key: "unassigned", tone: "info", title: unassigned.length === 1 ? "A member was created from a file" : `${unassigned.length} members were created from files`, text: hide ? "Turn off Hide names and amounts, then give each one a name or move the account to someone you already added." : `${unassigned.map((m) => `"${m.nickname}"`).join(", ")}: type the person's name over it, or move the account to someone you already added.` });
+  for (const r of monthly.reconciliation.filter((x) => !x.ok)) {
+    const imp = data.imports.find((i) => i.id === r.importId);
+    const acc = data.accounts.find((a) => a.id === imp?.accountId);
+    const syms = r.differences.map((d) => (hide ? "a symbol" : `${d.symbol} (${inr(d.difference)})`)).join(", ");
+    alerts.push({ key: `mm-${r.importId}`, tone: "warn", title: `Carried-in positions${acc && !hide ? ` in ${accountName(acc)}` : ""}`, text: `${r.differences.length} symbol${r.differences.length === 1 ? "" : "s"} in ${hide ? "a statement" : r.fileName} ${r.differences.length === 1 ? "has" : "have"} no matching trades in the tradebook: ${syms}. They were probably opened before the tradebook starts, so add the tradebook for the earlier period. Until then this statement keeps its own period instead of being cut into financial years.` });
+  }
+  if (monthly.withoutTradebook.length > 0)
+    alerts.push({ key: "notb", tone: "info", title: "Months are missing", text: `No tradebook yet for ${monthly.withoutTradebook.map((w) => (hide ? "a statement" : `${w.periodFrom} to ${w.periodTo}`)).join(", ")}: the statement gives the totals but only a tradebook gives the months.` });
+  const alertBlock = alerts.length > 0 && (
+    <div className="fam-alerts no-drag">
+      {alerts.map((a) => (
+        <div key={a.key} className={`fam-alert ${a.tone}`} role={a.tone === "warn" ? "alert" : "status"}>
+          <div>
+            <b>{a.title}</b>
+            <p>{a.text}</p>
+          </div>
+          <button className="tf" onClick={() => setTab("setup")}>{a.key === "unassigned" ? "Name them" : "Add files"}</button>
+        </div>
+      ))}
+    </div>
+  );
 
   /** the numbers on screen as a CSV file named by what it covers; names come from the members, the client id is never in it */
   const download = () => {
@@ -264,50 +329,124 @@ export function FamilyWidget(_: { widget: Widget }) {
         </label>
       </div>
       {error && <p className="down" role="alert">{error}</p>}
-      {unassigned.length > 0 && !hide && (
-        <p className="fam-note">
-          {unassigned.length === 1 ? `"${unassigned[0].nickname}" was created from a file.` : `${unassigned.length} members were created from files.`} Open <b>Files and people</b> and type the person's name over it, or move the account to someone you already added.
-        </p>
-      )}
+      {active !== "setup" && alertBlock}
 
       {active === "overview" &&
         (!hasData ? (
           <p className="muted">No statement yet, so there is nothing to total. Add a Zerodha P&amp;L file in <b>Files and people</b>. A tradebook alone gives the months but not the charges.</p>
         ) : (
           <>
-            <dl className="quote-grid">
-              <div><dt>Realised P&amp;L</dt><dd>{signed(s.totals.realized)}</dd></div>
-              <div><dt>Charges and taxes</dt><dd>{money(s.totals.charges)}</dd></div>
-              <div><dt>Net after charges</dt><dd>{signed(s.totals.net)}</dd></div>
-              <div><dt title="Open positions as the broker marked them at the end of the statement; not part of the net">Unrealised (reported)</dt><dd>{signed(s.totals.unrealized)}</dd></div>
-              <div><dt title="The sum of each symbol's absolute net result. The true turnover uses every trade, so this is a lower bound; ask your accountant for the filing figure.">F&amp;O turnover (at least)</dt><dd>{money(s.totals.turnoverAtLeast, 0)}</dd></div>
-              <div><dt>Charges as share of winnings</dt><dd>{hide ? "••" : s.totals.profits > 0 ? `${((s.totals.charges / s.totals.profits) * 100).toFixed(1)}%` : "—"}</dd></div>
-            </dl>
-            {rowsTable("By financial year", s.byPeriod, (r) => r.label)}
-            {rowsTable("By member", s.byMember, (r) => memberName(Number(r.key)))}
-            {rowsTable("By account", s.byAccount, (r) => {
-              const a = data.accounts.find((x) => x.id === Number(r.key));
-              return a ? accountName(a) : r.label;
-            })}
-            {rowsTable("By segment", s.bySegment, (r) => SEGMENT_LABELS[r.key as Segment] ?? r.key)}
-            {rowsTable("By underlying", s.byUnderlying, (r) => r.label, false)}
-            <p className="muted">A statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying.</p>
-            {s.chargesByGroup.some((c) => c.amount !== 0) && (
-              <>
-                <h2>Charges and taxes</h2>
-                <table className="fam-table">
-                  <tbody>
-                    {s.chargesByGroup.filter((c) => c.amount !== 0).map((c) => (
-                      <tr key={c.group}>
-                        <td>{c.group}</td>
-                        <td className="num">{money(c.amount)}</td>
-                        <td className="num muted">{hide || s.totals.charges === 0 ? "" : `${((c.amount / s.totals.charges) * 100).toFixed(1)}%`}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+            <div className="fam-kpis">
+              <div className="fam-kpi">
+                <span>Realised P&amp;L</span>
+                <b>{signed(s.totals.realized)}</b>
+                <small>{hide ? "••" : `${s.totals.winners} winning, ${s.totals.losers} losing symbols`}</small>
+              </div>
+              <div className="fam-kpi">
+                <span>Charges and taxes</span>
+                <b>{money(s.totals.charges)}</b>
+                <small>{hide ? "••" : s.totals.profits > 0 ? `${((s.totals.charges / s.totals.profits) * 100).toFixed(1)}% of the winnings` : "no winnings to compare"}</small>
+              </div>
+              <div className={`fam-kpi net ${s.totals.net > 0 ? "up" : s.totals.net < 0 ? "down" : ""}`}>
+                <span>Net after charges</span>
+                <b>{money(s.totals.net)}</b>
+                <small>
+                  {hide
+                    ? "••"
+                    : s.byPeriod.length > 1
+                      ? (() => {
+                          const best = [...s.byPeriod].sort((x, y) => y.net - x.net);
+                          return `best ${best[0].label} ${inr(best[0].net, 0)}, worst ${best[best.length - 1].label} ${inr(best[best.length - 1].net, 0)}`;
+                        })()
+                      : "after brokerage, taxes and fees"}
+                </small>
+              </div>
+            </div>
+            <p className="fam-meta">
+              <span title="Open positions as the broker marked them at the end of the statement; not part of the net">Unrealised (reported) {signed(s.totals.unrealized)}</span>
+              <span title="The sum of each symbol's absolute net result. The true turnover uses every trade, so this is a lower bound; ask your accountant for the filing figure.">F&amp;O turnover, at least {money(s.totals.turnoverAtLeast, 0)}</span>
+              <span>{s.totals.symbols} symbols traded</span>
+            </p>
+
+            <div className="fam-grid">
+              <section className="fam-card">
+                <h2>Net by month</h2>
+                {monthly.months.length > 0 ? (
+                  <>
+                    <MonthChart months={monthly.months} hide={hide} />
+                    <p className="fam-legend"><i className="fam-up" /> month <i className="fam-line" /> running total{!hide ? ` · ${inr(monthly.months.reduce((a, m) => a + m.net, 0))} so far` : ""}</p>
+                  </>
+                ) : (
+                  <p className="muted">The months come from a tradebook. Add one for the same period in Files and people.</p>
+                )}
+              </section>
+              <section className="fam-card">
+                <h2>Members</h2>
+                {(() => {
+                  const max = Math.max(1, ...s.byMember.map((m) => Math.abs(m.net)));
+                  return s.byMember.map((m) => {
+                    const accs = data.accounts.filter((a) => a.memberId === Number(m.key)).length;
+                    const decided = m.winners + m.losers;
+                    return (
+                      <div key={m.key} className="fam-member">
+                        <div className="fam-member-head">
+                          <b>{memberName(Number(m.key))}</b>
+                          <span className="num">{signed(m.net)}</span>
+                        </div>
+                        <Bar value={m.net} max={max} />
+                        <small className="muted">
+                          {accs} account{accs === 1 ? "" : "s"} · {hide ? "••" : `${decided ? Math.round((m.winners / decided) * 100) : 0}% winning symbols`} · realised {money(m.realized, 0)}, charges {money(m.charges, 0)}
+                        </small>
+                      </div>
+                    );
+                  });
+                })()}
+              </section>
+            </div>
+
+            <section className="fam-card">{rowsTable("Financial year", s.byPeriod, (r) => r.label)}</section>
+
+            <section className="fam-card">
+              <div className="fam-cuts no-drag" role="tablist" aria-label="Break the numbers down by">
+                <span className="muted">Break down by</span>
+                {(["account", "segment", "underlying", "charges"] as Cut[]).map((c) => (
+                  <button key={c} role="tab" aria-selected={cut === c} className={`tf${cut === c ? " active" : ""}`} onClick={() => setCut(c)}>
+                    {c === "charges" ? "Charges and taxes" : c[0].toUpperCase() + c.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {cut === "account" &&
+                rowsTable("", s.byAccount, (r) => {
+                  const a = data.accounts.find((x) => x.id === Number(r.key));
+                  return a ? accountName(a) : r.label;
+                })}
+              {cut === "segment" && rowsTable("", s.bySegment, (r) => SEGMENT_LABELS[r.key as Segment] ?? r.key)}
+              {cut === "underlying" && (
+                <>
+                  {rowsTable("", s.byUnderlying, (r) => r.label, false)}
+                  <p className="muted">A statement gives charges for the whole period, not per symbol, so charges and net are not split by underlying.</p>
+                </>
+              )}
+              {cut === "charges" &&
+                (s.chargesByGroup.some((c) => c.amount !== 0) ? (
+                  <div className="fam-scroll">
+                    <table className="fam-table">
+                      <tbody>
+                        {s.chargesByGroup.filter((c) => c.amount !== 0).map((c) => (
+                          <tr key={c.group}>
+                            <td>{c.group}</td>
+                            <td className="num">{money(c.amount)}</td>
+                            <td className="num muted">{hide || s.totals.charges === 0 ? "" : `${((c.amount / s.totals.charges) * 100).toFixed(1)}%`}</td>
+                            <td className="fam-barcol"><Bar value={-c.amount} max={Math.max(...s.chargesByGroup.map((x) => x.amount))} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">No charges recorded.</p>
+                ))}
+            </section>
           </>
         ))}
 
@@ -317,7 +456,11 @@ export function FamilyWidget(_: { widget: Widget }) {
             <p className="muted">Months need a tradebook (the statement has no dates). Download it from Console → Reports → Tradebook for the same period and add it in <b>Files and people</b>.</p>
           ) : (
             <>
-              <table className="fam-table">
+              <section className="fam-card">
+                <MonthChart months={monthly.months} hide={hide} />
+                <p className="fam-legend"><i className="fam-up" /> month <i className="fam-line" /> running total</p>
+              </section>
+              <div className="fam-scroll"><table className="fam-table">
                 <thead>
                   <tr>
                     <th>Month</th>
@@ -343,16 +486,11 @@ export function FamilyWidget(_: { widget: Widget }) {
                     ));
                   })()}
                 </tbody>
-              </table>
+              </table></div>
               <p className="muted">Realised is exact, from the dated trades (first in, first out). Charges are the statement's total spread over the months by traded value: an estimate by month, exact in total.</p>
             </>
           )}
-          {monthly.reconciliation.map((r) => (
-            <p key={r.importId} className={r.ok ? "up" : "down"}>
-              {r.ok ? "✓ The tradebook adds up to the statement, symbol by symbol." : `✗ The tradebook and the statement differ on ${r.differences.length} symbol${r.differences.length === 1 ? "" : "s"}: ${hide ? "hidden" : r.differences.map((d) => `${d.symbol} ${inr(d.difference)}`).join(", ")}. A position carried in from before the period or still open shows this way.`}
-            </p>
-          ))}
-          {monthly.withoutTradebook.length > 0 && !hide && <p className="muted">No tradebook yet for {monthly.withoutTradebook.map((w) => `${w.periodFrom} to ${w.periodTo}`).join(", ")}.</p>}
+          {monthly.reconciliation.filter((r) => r.ok).length > 0 && <p className="up">✓ {monthly.reconciliation.filter((r) => r.ok).length} statement{monthly.reconciliation.filter((r) => r.ok).length === 1 ? "" : "s"} add{monthly.reconciliation.filter((r) => r.ok).length === 1 ? "s" : ""} up to the tradebook, symbol by symbol.</p>}
         </>
       )}
 
@@ -362,7 +500,22 @@ export function FamilyWidget(_: { widget: Widget }) {
           <p className="muted">
             Zerodha Console: <b>Reports → P&amp;L</b> and <b>Reports → Tradebook</b>, downloaded as Excel. Each file finds its account by client id; the statement gives the totals and charges, the tradebook gives the months.
           </p>
-          <input ref={input} type="file" accept=".xlsx" multiple disabled={busy} onChange={(e) => void upload(e.target.files)} aria-label="Choose statement or tradebook files" />
+          <div
+            className={`fam-drop no-drag${dragging ? " over" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (!busy) void upload(e.dataTransfer.files);
+            }}
+          >
+            <p>{busy ? "Reading…" : "Drop Excel files here, or"}</p>
+            <input ref={input} type="file" accept=".xlsx" multiple disabled={busy} onChange={(e) => void upload(e.target.files)} aria-label="Choose statement or tradebook files" />
+          </div>
           {outcomes.map((o) => (
             <p key={o.file} className={o.skipped ? "muted" : o.ok ? "up" : "down"}>
               {o.skipped ? "•" : o.ok ? "✓" : "✗"} {hide ? "file" : o.file}: {o.text}
