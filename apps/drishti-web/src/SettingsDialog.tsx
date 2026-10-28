@@ -225,12 +225,12 @@ export function SettingsDialog() {
             <TvChannels />
           </section>
 
-          <section>
+          <section className="wide">
             <h3>Instruments</h3>
             <InstrumentsSettings />
           </section>
 
-          <section>
+          <section className="wide">
             <h3>Data feeds</h3>
             <Feeds />
           </section>

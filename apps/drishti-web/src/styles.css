@@ -208,11 +208,12 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .gear { font-size: 16px; color: var(--muted); }
 .gear:hover { color: var(--accent); }
 
-.settings { width: min(560px, calc(100% - 32px)); max-height: 85vh; padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.settings { width: min(1000px, calc(100% - 32px)); max-height: 85vh; padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .settings::backdrop { background: rgb(0 0 0 / 0.55); }
 .settings > header { position: sticky; top: 0; display: flex; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .settings > header .close { margin-left: auto; color: var(--muted); }
-.settings-body { padding: 4px 16px 16px; }
+.settings-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); column-gap: 32px; align-items: start; padding: 4px 16px 16px; }
+.settings-body > .wide, .settings-body > footer { grid-column: 1 / -1; }
 .settings h3 { margin: 16px 0 6px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .field > span { display: flex; flex-direction: column; }
