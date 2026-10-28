@@ -159,3 +159,11 @@ describe("a file finds its account by client id", () => {
     expect(err.message).toContain("***999");
   });
 });
+
+test("main.ts imports nothing at run time that the API does not depend on directly (express broke startup once: every route answered 500 through the proxy)", async () => {
+  const main = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+  const runtime = [...main.matchAll(/^import\s+(?!type\b)[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]).filter((m) => !m.startsWith(".") && !m.startsWith("@drishti/"));
+  const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  for (const m of runtime) expect(Object.keys(deps).includes(m) || m === "reflect-metadata").toBe(true);
+});

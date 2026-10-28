@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import compression from "compression";
-import { raw, type NextFunction, type Request, type Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { allowedOrigins, RateLimiter } from "@drishti/shared";
 import { AppModule } from "./app.module";
 
@@ -13,7 +13,27 @@ const limiter = new RateLimiter(600, 60_000); // a full workspace load is ~10 re
 
 const app = await NestFactory.create(AppModule);
 app.enableCors({ origin: origins }); // only our web app / Tauri may read responses in a browser
-app.use("/family/import", raw({ type: () => true, limit: "30mb" })); // a broker statement upload: the .xlsx bytes as they are
+// a broker statement upload: the .xlsx bytes as they are, collected here because the JSON parser would ignore them (and `express` is not a direct dependency to import a raw parser from)
+const UPLOAD_MAX = 30 * 1024 * 1024;
+app.use("/family/import", (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== "POST") return next();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  req.on("data", (c: Buffer) => {
+    size += c.length;
+    if (size > UPLOAD_MAX) {
+      req.destroy();
+      if (!res.headersSent) res.status(413).json({ statusCode: 413, message: "the file is too big to be a broker statement" });
+      return;
+    }
+    chunks.push(c);
+  });
+  req.on("end", () => {
+    (req as Request & { body: unknown }).body = Buffer.concat(chunks);
+    next();
+  });
+  req.on("error", next);
+});
 app.use(compression()); // chart history is ~450 KB of JSON uncompressed
 app.use((req: Request, res: Response, next: NextFunction) => {
   const key = req.ip ?? "unknown";
