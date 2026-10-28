@@ -101,7 +101,7 @@ export function TimeProfileView() {
                       {w.avgRange.toFixed(1)} <small className="muted">({pct(w.avgRangePct, 2)})</small>
                     </td>
                     <td>
-                      <span className="tp-bar" style={{ display: "inline-block", width: `${top > 0 ? Math.round((w.avgBarRangePct / top) * 60) : 0}px`, height: "8px", background: "var(--accent)", marginRight: 6 }} />
+                      <span className="tp-bar" style={{ display: "inline-block", width: `${top > 0 ? Math.round((w.avgBarRangePct / top) * 60) : 0}px`, height: "8px", background: "var(--accent-fill)", marginRight: 6 }} />
                       {pct(w.avgBarRangePct)}
                     </td>
                     <td>{w.volumePerMin.toFixed(1)}</td>

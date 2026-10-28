@@ -195,7 +195,7 @@ function PriceTester({ widget }: { widget: Widget }) {
               </tbody>
             </table>
             <svg className="bt-chart" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Equity curve">
-              <polyline points={sparkPoints(out.result.equity, 600, 90)} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <polyline points={sparkPoints(out.result.equity, 600, 90)} fill="none" stroke="var(--accent-fill)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             </svg>
             <h2>Is it luck?</h2>
             <p>

@@ -92,7 +92,7 @@ export function CurveWidget({ widget }: { widget: Widget }) {
               )}
             </div>
             <svg className="curve-chart" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Futures price by delivery month">
-              <polyline points={line} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <polyline points={line} fill="none" stroke="var(--accent-fill)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             </svg>
             <table>
               <thead>

@@ -307,3 +307,43 @@ describe("months for statements without dates", () => {
     expect(v.months.reduce((a, m) => a + m.realized + m.est.realized, 0)).toBeCloseTo(250 - 2731.25, 6);
   });
 });
+
+describe("results by day", () => {
+  const members: FamilyMember[] = [{ id: 1, nickname: "A", relation: "", hidden: false, note: "" }];
+  const accounts: FamilyAccount[] = [{ id: 10, memberId: 1, broker: "kotak", label: "k", clientCode: "XYZ123" }, { id: 11, memberId: 1, broker: "zerodha", label: "z", clientCode: "AB1234" }];
+  const line = (symbol: string, realized: number, charges?: number) => ({ symbol, quantity: 25, buyValue: 1000, sellValue: 1000 + realized, realized, openQuantity: 0, unrealized: 0, ...(charges !== undefined ? { charges } : {}) });
+  const stmt = (id: number, accountId: number, lines: ReturnType<typeof line>[], charge: number, over: Partial<ImportRecord> = {}): ImportRecord => ({
+    id, accountId, kind: "pnl", segment: "fno", periodFrom: "2024-04-01", periodTo: "2025-03-31", fileName: `s${id}.xlsx`, importedAt: "", summary: { charges: charge, otherCreditDebit: 0, realized: lines.reduce((a, l) => a + l.realized, 0), unrealized: 0 },
+    lines, charges: [{ head: "Brokerage", amount: charge }], fills: [], problems: [], ...over,
+  });
+  const fill = (symbol: string, date: string, side: "buy" | "sell", price: number, id: string, charges?: number) => ({ symbol, date, time: null, side, quantity: 25, price, tradeId: id, exchange: "NSE", ...(charges !== undefined ? { charges } : {}) }) as const;
+
+  test("an exact day is the day a position closed, an estimated day is a contract's expiry date, and the days add up to the months", () => {
+    const k = stmt(1, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20), line("NIFTY 24DEC24 PE 24000", -200, 10), line("SENSEX 26NOV24 PE 80000", -100, 5)], 35);
+    const v = monthlyView(members, accounts, [k]);
+    expect(v.days.map((d) => [d.date, d.est.realized, d.est.charges, d.est.contracts, d.net])).toEqual([["2024-11-26", -100, 5, 1, -105], ["2024-12-24", 300, 30, 2, 270]]);
+    expect(v.days.every((d) => d.closes === 0)).toBe(true);
+    for (const m of v.months) expect(v.days.filter((d) => d.date.startsWith(m.month)).reduce((a, d) => a + d.net, 0)).toBeCloseTo(m.net, 6);
+  });
+
+  test("a tradebook gives exact days: the close date for the result and the trade date for each fill's charges", () => {
+    const book: ImportRecord = { ...stmt(2, 11, [], 0), kind: "tradebook", fills: [fill("NIFTY2461923000CE", "2024-06-18", "buy", 40, "a", 12), fill("NIFTY2461923000CE", "2024-06-19", "sell", 50, "b", 13)] };
+    const st = stmt(3, 11, [line("NIFTY2461923000CE", 250)], 25);
+    const v = monthlyView(members, accounts, [st, book]);
+    expect(v.days.map((d) => [d.date, d.realized, d.charges, d.closes, d.net])).toEqual([["2024-06-18", 0, 12, 0, -12], ["2024-06-19", 250, 13, 1, 237]]);
+    expect(v.days.reduce((a, d) => a + d.net, 0)).toBeCloseTo(v.months.reduce((a, m) => a + m.net, 0), 6);
+  });
+
+  test("a monthly name has no day, so it is placed on the month's last day; a contract is never placed after its statement or its import", () => {
+    expect(monthlyView(members, accounts, [stmt(1, 11, [line("NIFTY24JUL23000CE", 50, 5)], 5)]).days.map((d) => d.date)).toEqual(["2024-07-31"]);
+    const k = stmt(2, 10, [line("NIFTY 26DEC26 CE 24000", 500, 20)], 20, { periodTo: "2027-03-31", importedAt: "2026-10-28T04:00:00Z" });
+    expect(monthlyView(members, accounts, [k]).days.map((d) => d.date)).toEqual(["2026-10-28"]);
+  });
+
+  test("the year filter keeps only the days in that financial year", () => {
+    const k = stmt(1, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20), line("NIFTY 25MAY25 CE 24000", 100, 5)], 25, { periodTo: "2026-03-31" });
+    expect(monthlyView(members, accounts, [k], { period: "2024-25" }).days.map((d) => d.date)).toEqual(["2024-12-24"]);
+    expect(monthlyView(members, accounts, [k], { period: "2025-26" }).days.map((d) => d.date)).toEqual(["2025-05-25"]);
+  });
+});
+

@@ -37,6 +37,11 @@ const report = {
   },
   monthly: {
     months: [{ month: "2024-06", realized: 250, charges: 20, net: 230, closes: 2, est: { realized: 0, charges: 0, contracts: 0 } }, { month: "2024-07", realized: -1250, charges: 80, net: -1100, closes: 3, est: { realized: 400, charges: 50, contracts: 2 } }],
+    days: [
+      { date: "2024-06-12", realized: 250, charges: 20, net: 230, closes: 2, est: { realized: 0, charges: 0, contracts: 0 } },
+      { date: "2024-07-10", realized: -1250, charges: 80, net: -1100, closes: 3, est: { realized: 400, charges: 50, contracts: 2 } },
+      { date: "2024-07-25", realized: 0, charges: 0, net: -300, closes: 0, est: { realized: -300, charges: 0, contracts: 1 } },
+    ],
     reconciliation: [{ importId: 1, fileName: "pnl-AB1234.xlsx", ok: false, differences: [{ symbol: "NIFTY24JUL23900PE", statement: -2731.25, tradebook: null, difference: 2731.25, ok: false }] }],
     withoutTradebook: [{ importId: 1, fileName: "pnl-AB1234.xlsx", periodFrom: "2024-04-01", periodTo: "2025-03-31" }],
     unplaced: { contracts: 0, realized: 0 },
@@ -188,20 +193,36 @@ test("an API that has not been restarted since the update still shows the screen
   await waitFor(() => expect(screen.getAllByRole("alert").some((a) => /Cannot GET \/family\/contracts/.test(a.textContent ?? ""))).toBe(true)); // said plainly, the rest of the screen still works
 });
 
-test("the months tab separates what a tradebook proves from what is placed by contract expiry, and says which is which", async () => {
+test("the months tab draws every day of the financial year as a square, coloured by the result, with the estimates marked, above the month table", async () => {
   await open();
-  // the overview carries the month chart too, with both kinds of bar
+  // the overview keeps the month bars with the running total
   expect(screen.getAllByRole("img", { name: /Net by month, 2 months/ }).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Months" }));
-  expect(screen.getByText("exact (dated trades)")).toBeTruthy();
-  expect(screen.getByText("estimate (by contract expiry month)")).toBeTruthy();
+  const cal = screen.getByRole("img", { name: /Daily results for 2024-25: 1 profit days, 2 loss days/ });
+  expect(cal.querySelectorAll("rect.fam-hm")).toHaveLength(365); // April 2024 to March 2025, a square for every day
+  expect(cal.querySelectorAll("rect.fam-hm.up")).toHaveLength(1);
+  expect(cal.querySelectorAll("rect.fam-hm.down")).toHaveLength(2);
+  expect(cal.querySelectorAll("rect.fam-hm.est")).toHaveLength(2); // two days carry contracts placed by expiry
+  expect(cal.querySelectorAll("rect.fam-hm.none").length).toBe(362);
+  expect([...cal.querySelectorAll("text")].map((x) => x.textContent)).toEqual(["APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "JAN", "FEB", "MAR"]);
+  const day = [...cal.querySelectorAll("rect.fam-hm")].find((r) => r.textContent?.startsWith("2024-07-10"))!;
+  expect(day.textContent).toMatch(/-1,100.00 · 3 closed and 2 placed by expiry/);
+  expect(screen.getByText(/placed by contract expiry date \(an estimate\)/)).toBeTruthy();
+  // the table below still splits what a tradebook proves from what is placed by expiry
   const jul = screen.getByText("2024-07").closest("tr")!;
-  expect(within(jul).getByText("-1,250.00")).toBeTruthy(); // exact
-  expect(within(jul).getByText("400.00")).toBeTruthy(); // estimate
-  expect(within(jul).getByText("-1,100.00")).toBeTruthy(); // net after both and all charges
-  const jun = screen.getByText("2024-06").closest("tr")!;
-  expect(within(jun).getAllByText("—").length).toBe(1); // no estimate in June
+  expect(within(jul).getByText("-1,250.00")).toBeTruthy();
+  expect(within(jul).getByText("400.00")).toBeTruthy();
+  expect(within(jul).getByText("-1,100.00")).toBeTruthy();
   expect(screen.getByText(/The months add up to the totals/)).toBeTruthy();
+});
+
+test("with amounts hidden the calendar still shows where the days are, but no figure or tooltip", async () => {
+  localStorage.setItem("drishti-family-hide", "1");
+  const { container } = await open();
+  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  const cal = screen.getByRole("img", { name: /Daily results for 2024-25 \(values hidden\)/ });
+  expect(cal.querySelectorAll("title")).toHaveLength(0);
+  expect(container.textContent).not.toMatch(/-1,100|profit days/);
 });
 
 test("the contracts are fetched only when their tab is open, and the files and people are not read again when a filter changes", async () => {

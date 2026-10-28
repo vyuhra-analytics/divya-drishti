@@ -377,8 +377,17 @@ export interface MonthRow {
    */
   est: { realized: number; charges: number; contracts: number };
 }
+/** One day's result: the same exact and estimated parts as a month, keyed by the date. */
+export interface DayRow extends Omit<MonthRow, "month"> {
+  date: string;
+}
 export interface MonthlyView {
   months: MonthRow[];
+  /**
+   * The same results by day: an exact day is one on which a tradebook's dated trades closed a position, an estimated day is the expiry date of a contract of a
+   * statement without dates (capped at the statement's end and import day; for a monthly name the expiry day is the month end). Days with nothing are absent.
+   */
+  days: DayRow[];
   /** per statement that has a tradebook covering its period: do the dated fills add up to the statement symbol by symbol? */
   reconciliation: { importId: number; fileName: string; ok: boolean; differences: Reconciliation[] }[];
   /** statements with no tradebook: their months are placed by contract expiry (`MonthRow.est`) */
@@ -401,6 +410,23 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
   });
   const months = new Map<string, MonthRow>();
   const row = (m: string) => months.get(m) ?? (months.set(m, { month: m, realized: 0, charges: 0, net: 0, closes: 0, est: { realized: 0, charges: 0, contracts: 0 } }), months.get(m)!);
+  const days = new Map<string, DayRow>();
+  const dayRow = (d: string) => days.get(d) ?? (days.set(d, { date: d, realized: 0, charges: 0, net: 0, closes: 0, est: { realized: 0, charges: 0, contracts: 0 } }), days.get(d)!);
+  // every result lands in its month and its day together, so the two views cannot drift apart
+  const exactAt = (date: string, realized: number, charges: number, closes: number) => {
+    for (const r of [row(date.slice(0, 7)), dayRow(date)]) {
+      r.realized += realized;
+      r.charges += charges;
+      r.closes += closes;
+    }
+  };
+  const estAt = (date: string, realized: number, charges: number) => {
+    for (const r of [row(date.slice(0, 7)), dayRow(date)]) {
+      r.est.realized += realized;
+      r.est.charges += charges;
+      r.est.contracts++;
+    }
+  };
   const reconciliation: MonthlyView["reconciliation"] = [];
   const withoutTradebook: MonthlyView["withoutTradebook"] = [];
   const unplaced = { contracts: 0, realized: 0 };
@@ -410,21 +436,18 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
     if (/^\d{4}-\d{2}$/.test(filter.period)) return fyOf(`${month}-01`) === filter.period;
     return month >= filter.period.slice(0, 7) && month <= filter.period.slice(-10, -3);
   };
-  // a closed contract cannot have been realised after its statement ends or after the statement was imported, whatever month it expires in
-  const capOf = (st: ImportRecord) => [st.periodTo.slice(0, 7), /^\d{4}-\d{2}/.test(st.importedAt) ? st.importedAt.slice(0, 7) : ""].filter(Boolean).sort()[0];
+  // a closed contract cannot have been realised after its statement ends or after the statement was imported, whatever day it expires on
+  const capOf = (st: ImportRecord) => [st.periodTo, /^\d{4}-\d{2}-\d{2}/.test(st.importedAt) ? st.importedAt.slice(0, 10) : ""].filter(Boolean).sort()[0];
   const place = (symbol: string, realized: number, charges: number, cap: string) => {
-    const expiry = parseSymbol(symbol).expiryMonth;
+    const expiry = parseSymbol(symbol).expiryDate;
     if (!expiry) {
       unplaced.contracts++;
       unplaced.realized += realized;
       return;
     }
-    const month = expiry > cap ? cap : expiry;
-    if (!inYear(month)) return;
-    const r = row(month);
-    r.est.realized += realized;
-    r.est.charges += charges;
-    r.est.contracts++;
+    const date = expiry > cap ? cap : expiry;
+    if (!inYear(date.slice(0, 7))) return;
+    estAt(date, realized, charges);
   };
   const keys = new Set(sel.map((i) => `${i.accountId}|${i.segment}`));
   for (const key of keys) {
@@ -435,11 +458,7 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
     for (const b of books) for (const f of b.fills) fills.set(f.tradeId, f);
     const matched = matchWithExpiry(fills.values(), books.map(knownUntil).sort().at(-1) ?? "0000-00-00");
     const closed = filter.period ? matched.closed.filter((c) => fyOf(c.closeDate) === filter.period) : matched.closed;
-    for (const c of closed) {
-      const r = row(c.closeDate.slice(0, 7));
-      r.realized += c.pnl;
-      r.closes++;
-    }
+    for (const c of closed) exactAt(c.closeDate, c.pnl, 0, 1);
     for (const st of stmts) {
       const covering = books.filter((b) => b.periodFrom <= st.periodFrom && b.periodTo >= st.periodTo);
       if (covering.length === 0) {
@@ -463,19 +482,22 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
         const ownSum = own.reduce((a, f) => a + (f.charges ?? 0), 0);
         const stSum = st.charges.reduce((a, c) => a + c.amount, 0);
         const scale = ownSum > 0 && stSum > 0 ? stSum / ownSum : 1;
-        for (const f of own) if (inYear(f.date.slice(0, 7))) row(f.date.slice(0, 7)).charges += (f.charges ?? 0) * scale;
+        for (const f of own) if (inYear(f.date.slice(0, 7))) exactAt(f.date, 0, (f.charges ?? 0) * scale, 0);
         continue;
       }
       const weight = (c: (typeof inPeriod)[number]) => (c.openPrice + c.closePrice) * c.quantity;
       const total = inPeriod.reduce((a, c) => a + weight(c), 0);
       const charges = st.charges.reduce((a, c) => a + c.amount, 0);
-      if (total > 0) for (const c of inPeriod) if (!filter.period || fyOf(c.closeDate) === filter.period) row(c.closeDate.slice(0, 7)).charges += (charges * weight(c)) / total;
+      if (total > 0) for (const c of inPeriod) if (!filter.period || fyOf(c.closeDate) === filter.period) exactAt(c.closeDate, 0, (charges * weight(c)) / total, 0);
     }
   }
   const out = [...months.values()]
     .sort((a, b) => (a.month < b.month ? -1 : 1))
     .map((m) => ({ ...m, realized: r2(m.realized), charges: r2(m.charges), net: r2(m.realized - m.charges + m.est.realized - m.est.charges), est: { realized: r2(m.est.realized), charges: r2(m.est.charges), contracts: m.est.contracts } }));
-  return { months: out, reconciliation, withoutTradebook, unplaced: { contracts: unplaced.contracts, realized: r2(unplaced.realized) } };
+  const dayOut = [...days.values()]
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .map((d) => ({ ...d, realized: r2(d.realized), charges: r2(d.charges), net: r2(d.realized - d.charges + d.est.realized - d.est.charges), est: { realized: r2(d.est.realized), charges: r2(d.est.charges), contracts: d.est.contracts } }));
+  return { months: out, days: dayOut, reconciliation, withoutTradebook, unplaced: { contracts: unplaced.contracts, realized: r2(unplaced.realized) } };
 }
 
 const csvCell = (v: string | number): string => {

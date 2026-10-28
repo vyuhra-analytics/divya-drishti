@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BROKER_LABELS, familyCsv, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
+import { BROKER_LABELS, familyCsv, fyOf, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type DayRow, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import type { Widget } from "./workspace";
 
@@ -160,6 +160,86 @@ function MonthChart({ months, hide }: { months: MonthRow[]; hide: boolean }) {
   );
 }
 
+/**
+ * One square per day of a financial year, April to March, a block of week columns per month, rows Monday to Sunday: green where the day's result was a profit,
+ * red where it was a loss, the shade by how big it was against the other days shown, grey where nothing was closed. A day placed by a contract's expiry date
+ * (from a statement without dates) is an estimate and is drawn with a dashed edge. Amounts are left out of the tooltips while they are hidden.
+ */
+function CalendarHeat({ days, hide }: { days: DayRow[]; hide: boolean }) {
+  const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
+  const fys = useMemo(() => [...new Set(days.map((d) => fyOf(d.date)))].sort(), [days]);
+  // shade by rank among the days shown: a few huge days must not turn every other day pale
+  const sizes = useMemo(() => days.map((d) => Math.abs(d.net)).filter((v) => v > 0).sort((a, b) => a - b), [days]);
+  const level = (v: number) => {
+    const at = sizes.findIndex((x) => x >= Math.abs(v));
+    const q = (at < 0 ? sizes.length - 1 : at) / Math.max(1, sizes.length - 1);
+    return q <= 0.25 ? 1 : q <= 0.5 ? 2 : q <= 0.75 ? 3 : 4;
+  };
+  const cell = 12;
+  const step = 15;
+  const monthGap = 14;
+  return (
+    <div className="fam-heat">
+      {fys.map((fy) => {
+        const y0 = Number(fy.slice(0, 4));
+        let x = 0;
+        const blocks: { label: string; x: number; cells: { date: string; col: number; row: number }[] }[] = [];
+        for (let i = 0; i < 12; i++) {
+          const m = (3 + i) % 12;
+          const year = m >= 3 ? y0 : y0 + 1;
+          const offset = (new Date(Date.UTC(year, m, 1)).getUTCDay() + 6) % 7; // Monday is the first row
+          const count = new Date(Date.UTC(year, m + 1, 0)).getUTCDate();
+          const cols = Math.ceil((offset + count) / 7);
+          const cells = Array.from({ length: count }, (_, d) => ({ date: `${year}-${String(m + 1).padStart(2, "0")}-${String(d + 1).padStart(2, "0")}`, col: Math.floor((offset + d) / 7), row: (offset + d) % 7 }));
+          blocks.push({ label: MON[m], x, cells });
+          x += cols * step + monthGap;
+        }
+        const W = x - monthGap;
+        const H = 7 * step + 20;
+        const mine = days.filter((d) => fyOf(d.date) === fy);
+        const gain = mine.filter((d) => d.net > 0).length;
+        const loss = mine.filter((d) => d.net < 0).length;
+        const estimated = mine.filter((d) => d.est.contracts > 0).length;
+        return (
+          <section key={fy} className="fam-heat-year">
+            <header>
+              <b>{fy}</b>
+              <small className="muted">
+                {hide ? "••" : `${gain} profit days, ${loss} loss days${estimated > 0 ? `, ${estimated} placed by expiry` : ""}`} · {fy.slice(0, 4)}-04-01 to {y0 + 1}-03-31
+              </small>
+            </header>
+            <svg className="fam-heat-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMinYMin meet" role="img" aria-label={hide ? `Daily results for ${fy} (values hidden)` : `Daily results for ${fy}: ${gain} profit days, ${loss} loss days`}>
+              {blocks.map((b) => (
+                <g key={b.label} transform={`translate(${b.x},2)`}>
+                  {b.cells.map((c) => {
+                    const d = byDate.get(c.date);
+                    const cls = d && d.net !== 0 ? `${d.net > 0 ? "up" : "down"} l${level(d.net)}${d.est.contracts > 0 ? " est" : ""}` : "none";
+                    return (
+                      <rect key={c.date} x={c.col * step} y={c.row * step} width={cell} height={cell} rx="2" className={`fam-hm ${cls}`}>
+                        {!hide && <title>{d ? `${c.date}: ${inr(d.net)} · ${d.est.contracts > 0 && d.closes === 0 ? `estimated, ${d.est.contracts} contract${d.est.contracts === 1 ? "" : "s"} expiring` : d.est.contracts > 0 ? `${d.closes} closed and ${d.est.contracts} placed by expiry` : `${d.closes} closed`}` : `${c.date}: nothing closed`}</title>}
+                      </rect>
+                    );
+                  })}
+                  <text x="0" y={7 * step + 12} className="fam-axis">{b.label.toUpperCase()}</text>
+                </g>
+              ))}
+            </svg>
+          </section>
+        );
+      })}
+      <p className="fam-legend">
+        <span>loss</span>
+        {[4, 3, 2, 1].map((l) => <i key={`d${l}`} className={`fam-hmkey down l${l}`} />)}
+        <i className="fam-hmkey none" />
+        {[1, 2, 3, 4].map((l) => <i key={`u${l}`} className={`fam-hmkey up l${l}`} />)}
+        <span>profit</span>
+        <span><i className="fam-hmkey up l4 est" /> dashed: placed by contract expiry date (an estimate)</span>
+        <span><i className="fam-hmkey none" /> nothing closed</span>
+      </p>
+    </div>
+  );
+}
+
 /** The net of each financial year as bars, one per segment, side by side. Values are left out of the picture while amounts are hidden. */
 function GroupedChart({ tab, hide }: { tab: CrossTab; hide: boolean }) {
   const n = tab.rows.length;
@@ -275,7 +355,7 @@ export function FamilyWidget(_: { widget: Widget }) {
     try {
       const r = await call<Report>(`/summary${query}`, { signal: ac.signal });
       if (mine !== seq.current.report) return;
-      const monthly = { ...r.monthly, months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
+      const monthly = { ...r.monthly, days: r.monthly.days ?? [], months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
       setReport({ ...r, monthly, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
       setError(null);
     } catch (e) {
@@ -314,8 +394,11 @@ export function FamilyWidget(_: { widget: Widget }) {
   }, [loadReport]);
   useEffect(() => {
     if (tab === "contracts" && contractsData?.query !== query) void loadContracts();
-    setShown(FIRST_ROWS);
   }, [tab, query, contractsData?.query, loadContracts]);
+  // the list starts again from its first rows when the selection changes, not when its contracts arrive (that would undo a press of "Show more")
+  useEffect(() => {
+    setShown(FIRST_ROWS);
+  }, [query]);
   // a remembered member or year that no longer exists would show an empty screen with nothing to explain it
   useEffect(() => {
     if (!data) return;
@@ -891,12 +974,8 @@ export function FamilyWidget(_: { widget: Widget }) {
           ) : (
             <>
               <section className="fam-card">
-                <MonthChart months={monthly.months} hide={hide} />
-                <p className="fam-legend">
-                  <span><i className="fam-up" /> exact (dated trades)</span>
-                  <span><i className="fam-up fam-est" /> estimate (by contract expiry month)</span>
-                  <span><i className="fam-line" /> running total</span>
-                </p>
+                <h2>Day by day</h2>
+                <CalendarHeat days={monthly.days} hide={hide} />
               </section>
               <div className="fam-scroll"><table className="fam-table">
                 <thead>

@@ -99,7 +99,7 @@ export function CotWidget({ widget }: { widget: Widget }) {
             </div>
             <svg className="cot-chart" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Managed money net position history">
               <line x1="0" x2="600" y1={zeroY} y2={zeroY} stroke="var(--line)" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-              <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <polyline points={pts} fill="none" stroke="var(--accent-fill)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             </svg>
             <table>
               <thead>

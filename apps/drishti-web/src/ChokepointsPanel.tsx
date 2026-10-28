@@ -80,7 +80,7 @@ export function ChokepointsWidget(_: { widget: Widget }) {
               {CHOKEPOINTS.find((c) => c.id === active)?.name} · 7-day average of tankers per day · data to <b>{day(s.asOf)}</b> (published weekly, a few days behind) <Outdated kind="transits" asOf={Date.parse(`${s.asOf}T00:00:00Z`)} />
             </p>
             <svg className="chk-chart" viewBox="0 0 600 90" preserveAspectRatio="none" role="img" aria-label="Tankers per day, 7-day average">
-              <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <polyline points={pts} fill="none" stroke="var(--accent-fill)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             </svg>
             <p className="muted chk-scale">
               peak {nf.format(top)} · last 7 days {s.avg7 === undefined ? "—" : nf.format(s.avg7)} · a year ago {s.avg30YearAgo === undefined ? "—" : nf.format(s.avg30YearAgo)} tankers/day
