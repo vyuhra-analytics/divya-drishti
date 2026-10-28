@@ -106,24 +106,24 @@ test("the insights say why the result is what it is: the sentence, the sizes, th
 
 test("the break-down tabs switch what is shown, including the year and member tables and charges known only in part", async () => {
   await open();
-  fireEvent.click(screen.getByRole("tab", { name: "Underlying" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Underlying" }));
   const nifty = screen.getByText("NIFTY").closest("tr")!;
   expect(within(nifty).getByText("—")).toBeTruthy(); // no net where only some charges are known
   expect(within(nifty).getByText("0.00*")).toBeTruthy();
   const crude = screen.getByText("CRUDE").closest("tr")!;
   expect(within(crude).getByText("40.00")).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "Year × segment" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Year × segment" }));
   expect(screen.getByText("-5,150")).toBeTruthy();
   expect(screen.getByText("1,950")).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "Member × year" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Member × year" }));
   expect(screen.getAllByText("-4,100").length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("tab", { name: "Charges and taxes" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Charges and taxes" }));
   expect(screen.getByText("Brokerage")).toBeTruthy();
 });
 
 test("the contracts tab lists every contract, searches it, sorts by a column and marks charges the statement does not give", async () => {
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Contracts" }));
   await waitFor(() => expect(screen.getByText("3 of 3 contracts")).toBeTruthy()); // fetched when the tab opens
   const body = () => [...document.querySelectorAll(".fam-table tbody tr")].map((r) => r.querySelector("td")!.textContent);
   expect(body()).toEqual(["NIFTY24JUN23100PE", "NIFTY24JUN23000CE", "CRUDEOIL 15NOV24 CE 5900"]); // worst realised first
@@ -139,7 +139,7 @@ test("the contracts tab lists every contract, searches it, sorts by a column and
 
 test("files and people shows what is loaded for every account and year, with the partial ones marked", async () => {
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Files and people" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Files and people" }));
   expect(screen.getByText("What is loaded")).toBeTruthy();
   const cover = document.querySelector(".fam-cover")!;
   expect(within(cover as HTMLElement).getByText("✓ F&O")).toBeTruthy();
@@ -189,7 +189,7 @@ test("an API that has not been restarted since the update still shows the screen
   await open();
   expect(screen.getByText("Net after charges")).toBeTruthy();
   expect(screen.queryByText("Why the result is what it is")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Contracts" }));
   await waitFor(() => expect(screen.getAllByRole("alert").some((a) => /Cannot GET \/family\/contracts/.test(a.textContent ?? ""))).toBe(true)); // said plainly, the rest of the screen still works
 });
 
@@ -197,7 +197,7 @@ test("the months tab draws every day of the financial year as a square, coloured
   await open();
   // the overview keeps the month bars with the running total
   expect(screen.getAllByRole("img", { name: /Net by month, 2 months/ }).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Months" }));
   const cal = screen.getByRole("img", { name: /Daily results for 2024-25: 1 profit days, 2 loss days/ });
   expect(cal.querySelectorAll("rect.fam-hm")).toHaveLength(365); // April 2024 to March 2025, a square for every day
   expect(cal.querySelectorAll("rect.fam-hm.up")).toHaveLength(1);
@@ -219,7 +219,7 @@ test("the months tab draws every day of the financial year as a square, coloured
 test("with amounts hidden the calendar still shows where the days are, but no figure or tooltip", async () => {
   localStorage.setItem("drishti-family-hide", "1");
   const { container } = await open();
-  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Months" }));
   const cal = screen.getByRole("img", { name: /Daily results for 2024-25 \(values hidden\)/ });
   expect(cal.querySelectorAll("title")).toHaveLength(0);
   expect(container.textContent).not.toMatch(/-1,100|profit days/);
@@ -234,7 +234,7 @@ test("the contracts are fetched only when their tab is open, and the files and p
   fireEvent.change(topBar().getByLabelText("Year"), { target: { value: "2024-25" } });
   await waitFor(() => expect(count("/family/summary")).toBe(2));
   expect(requests.filter((r) => r.endsWith("/family")).length).toBe(overviewReads); // members and files did not change, so they are not asked again
-  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Contracts" }));
   await waitFor(() => expect(count("/family/contracts")).toBe(1));
   expect(requests.some((r) => r.includes("/family/contracts?period=2024-25"))).toBe(true); // with the filter that is on
   fireEvent.change(topBar().getByLabelText("Year"), { target: { value: "" } });
@@ -271,7 +271,7 @@ test("the view the owner left is remembered: the tab, the year, the member and t
   expect((topBar().getByLabelText("Year") as HTMLSelectElement).value).toBe("2024-25");
   expect((topBar().getByLabelText("Member") as HTMLSelectElement).value).toBe("1");
   expect(requests.some((r) => r.includes("/family/contracts?period=2024-25&member=1&segment=fno"))).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Months" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Months" }));
   expect(JSON.parse(localStorage.getItem("drishti-family-view")!)).toMatchObject({ tab: "months", period: "2024-25", memberId: "1" });
   cleanup();
   // a remembered member that no longer exists is dropped instead of leaving an empty screen
@@ -288,7 +288,7 @@ test("a long list of contracts is drawn in pieces, with the rest one press away,
     return { ok: true, json: async () => (u.includes("/family/summary") ? report : overview) };
   }) as never;
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Contracts" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Contracts" }));
   await waitFor(() => expect(screen.getByText("450 of 450 contracts")).toBeTruthy());
   const rowsShown = () => document.querySelectorAll(".fam-contracts tbody tr").length;
   expect(rowsShown()).toBe(100);

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BROKER_LABELS, familyCsv, fyOf, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type DayRow, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
 import { apiUrl } from "./settings";
+import { Button, Input, Select, Switch, Tabs, TabsList, TabsTrigger } from "./ui";
 import type { Widget } from "./workspace";
 
 // The household's broker statements: upload a Zerodha Console P&L or tradebook and the file finds its account by client id (a new one is created under an
@@ -543,8 +544,8 @@ export function FamilyWidget(_: { widget: Widget }) {
         <b>{a.title}</b>
         <p>{a.text}</p>
       </div>
-      {a.key !== "est-months" && <button className="tf" onClick={() => setTab("months")}>See months</button>}
-      {a.key === "est-months" && <button className="tf" onClick={() => setTab("setup")}>Add files</button>}
+      {a.key !== "est-months" && <Button size="sm" onClick={() => setTab("months")}>See months</Button>}
+      {a.key === "est-months" && <Button size="sm" onClick={() => setTab("setup")}>Add files</Button>}
     </div>
   );
   // one thing to check is shown as it is; several fold into one line that opens, so the numbers stay at the top
@@ -613,53 +614,52 @@ export function FamilyWidget(_: { widget: Widget }) {
     URL.revokeObjectURL(url);
   };
 
-  const tabButton = (id: Tab, text: string) => (
-    <button key={id} className={`tf${active === id ? " active" : ""}`} aria-pressed={active === id} onClick={() => setTab(id)}>{text}</button>
-  );
 
   return (
     <div className={`family${pending > 0 ? " fam-updating" : ""}`} aria-busy={pending > 0}>
       <div className="fam-top no-drag">
-        <span className="fam-tabs">
-          {tabButton("overview", "Overview")}
-          {tabButton("contracts", "Contracts")}
-          {tabButton("months", "Months")}
-          {tabButton("setup", "Files and people")}
-        </span>
+        <Tabs value={active} onValueChange={(v) => setTab(v as Tab)} className="fam-tabs">
+          <TabsList aria-label="Family sections">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="contracts">Contracts</TabsTrigger>
+            <TabsTrigger value="months">Months</TabsTrigger>
+            <TabsTrigger value="setup">Files and people</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <label>
           Year
-          <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+          <Select value={period} onChange={(e) => setPeriod(e.target.value)}>
             <option value="">All years</option>
             {(data.statementPeriods.length > 0 ? data.statementPeriods : s.byPeriod.map((p) => p.key)).map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label>
           Member
-          <select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+          <Select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
             <option value="">Everyone</option>
             {data.members.map((m) => (
               <option key={m.id} value={m.id}>{memberName(m.id)}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label>
           Segment
-          <select value={segment} onChange={(e) => setSegment(e.target.value)}>
+          <Select value={segment} onChange={(e) => setSegment(e.target.value)}>
             <option value="">All</option>
             {(Object.keys(SEGMENT_LABELS) as Segment[]).map((k) => (
               <option key={k} value={k}>{SEGMENT_LABELS[k]}</option>
             ))}
-          </select>
+          </Select>
         </label>
         {hasData && (
-          <button className="tf" onClick={download} disabled={hide} title={hide ? "Turn off Hide names and amounts to export (the file carries names and amounts)" : "Download what is on screen as a CSV file"}>
+          <Button size="sm" onClick={download} disabled={hide} title={hide ? "Turn off Hide names and amounts to export (the file carries names and amounts)" : "Download what is on screen as a CSV file"}>
             Download CSV
-          </button>
+          </Button>
         )}
         <label className="fam-hide" title="Hides names and amounts on screen. It is not encryption.">
-          <input type="checkbox" checked={hide} onChange={toggleHide} /> Hide names and amounts
+          <Switch checked={hide} onCheckedChange={() => toggleHide()} aria-label="Hide names and amounts" /> Hide names and amounts
         </label>
       </div>
       {error && <p className="down" role="alert">{error}</p>}
@@ -811,7 +811,7 @@ export function FamilyWidget(_: { widget: Widget }) {
                   <span><i className="fam-up" /> exact</span>
                   <span><i className="fam-up fam-est" /> estimated by contract expiry month</span>
                   <span><i className="fam-line" /> running total</span>
-                  <button className="tf" onClick={() => setTab("months")}>Details</button>
+                  <Button size="sm" onClick={() => setTab("months")}>Details</Button>
                 </p>
               </section>
             )}
@@ -819,14 +819,16 @@ export function FamilyWidget(_: { widget: Widget }) {
             <section className="fam-card">{rowsTable("Financial year", s.byPeriod, (r) => r.label)}</section>
 
             <section className="fam-card">
-              <div className="fam-cuts no-drag" role="tablist" aria-label="Break the numbers down by">
+              <Tabs value={cut} onValueChange={(v) => setCut(v as Cut)} className="fam-cuts no-drag">
                 <span className="muted">Break down by</span>
-                {(["account", "segment", "underlying", "charges", "yearseg", "memberyear"] as Cut[]).map((c) => (
-                  <button key={c} role="tab" aria-selected={cut === c} className={`tf${cut === c ? " active" : ""}`} onClick={() => setCut(c)}>
-                    {c === "charges" ? "Charges and taxes" : c === "yearseg" ? "Year × segment" : c === "memberyear" ? "Member × year" : c[0].toUpperCase() + c.slice(1)}
-                  </button>
-                ))}
-              </div>
+                <TabsList aria-label="Break the numbers down by" className="flex-wrap">
+                  {(["account", "segment", "underlying", "charges", "yearseg", "memberyear"] as Cut[]).map((c) => (
+                    <TabsTrigger key={c} value={c}>
+                      {c === "charges" ? "Charges and taxes" : c === "yearseg" ? "Year × segment" : c === "memberyear" ? "Member × year" : c[0].toUpperCase() + c.slice(1)}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
               {cut === "account" &&
                 rowsTable("", s.byAccount, (r) => {
                   const a = data.accounts.find((x) => x.id === Number(r.key));
@@ -901,22 +903,22 @@ export function FamilyWidget(_: { widget: Widget }) {
                 <div className="fam-add">
                   <label>
                     Member
-                    <select value={stMemberId} onChange={(e) => setStMember(e.target.value)}>
+                    <Select value={stMemberId} onChange={(e) => setStMember(e.target.value)}>
                       {data.members.filter((m) => data.accounts.some((a) => a.memberId === m.id)).map((m) => (
                         <option key={m.id} value={m.id}>{memberName(m.id)}</option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <label>
                     Year
-                    <select value={stPeriod} onChange={(e) => setStYear(e.target.value)}>
+                    <Select value={stPeriod} onChange={(e) => setStYear(e.target.value)}>
                       {data.statementPeriods.map((y) => (
                         <option key={y} value={y}>{y}</option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
-                  <button className="tf" disabled={busy || hide || !stMemberId} onClick={() => void statement("page")} title={hide ? "Turn off Hide names and amounts first" : "Open a printable page (print it or save it as PDF)"}>Open printable page</button>
-                  <button className="tf" disabled={busy || hide || !stMemberId} onClick={() => void statement("csv")} title={hide ? "Turn off Hide names and amounts first" : "Download as CSV"}>Download CSV</button>
+                  <Button size="sm" disabled={busy || hide || !stMemberId} onClick={() => void statement("page")} title={hide ? "Turn off Hide names and amounts first" : "Open a printable page (print it or save it as PDF)"}>Open printable page</Button>
+                  <Button size="sm" disabled={busy || hide || !stMemberId} onClick={() => void statement("csv")} title={hide ? "Turn off Hide names and amounts first" : "Download as CSV"}>Download CSV</Button>
                 </div>
               </section>
             )}
@@ -934,9 +936,9 @@ export function FamilyWidget(_: { widget: Widget }) {
           ) : (
             <>
               <div className="fam-cuts">
-                <input className="fam-search" type="search" placeholder="Search contract or underlying" aria-label="Search contracts" value={q} onChange={(e) => { setQ(e.target.value); setShown(FIRST_ROWS); }} />
+                <Input className="fam-search" type="search" placeholder="Search contract or underlying" aria-label="Search contracts" value={q} onChange={(e) => { setQ(e.target.value); setShown(FIRST_ROWS); }} />
                 <span className="muted">{contractList.length} of {contractsData.total} contracts</span>
-                <button className="tf" onClick={downloadContracts} disabled={hide} title={hide ? "Turn off Hide names and amounts to export" : "Download the contracts on screen as CSV"}>Download CSV</button>
+                <Button size="sm" onClick={downloadContracts} disabled={hide} title={hide ? "Turn off Hide names and amounts to export" : "Download the contracts on screen as CSV"}>Download CSV</Button>
               </div>
               <div className="fam-scroll">
                 <table className="fam-table fam-contracts">
@@ -959,7 +961,7 @@ export function FamilyWidget(_: { widget: Widget }) {
                   </tbody>
                 </table>
               </div>
-              {contractList.length > shown && <button className="tf" onClick={() => setShown((n) => n + MORE_ROWS)}>Show {Math.min(MORE_ROWS, contractList.length - shown)} more ({contractList.length - shown} not shown)</button>}
+              {contractList.length > shown && <Button size="sm" onClick={() => setShown((n) => n + MORE_ROWS)}>Show {Math.min(MORE_ROWS, contractList.length - shown)} more ({contractList.length - shown} not shown)</Button>}
               {contractsData.total > contractsData.rows.length && <p className="muted">Only the first {contractsData.rows.length} contracts are loaded; narrow the year, member or segment above to see the rest.</p>}
               <p className="muted">Charges and net appear only where the statement gives charges per contract (Kotak's). Zerodha's statement gives one total for the period.</p>
             </>
@@ -1042,7 +1044,7 @@ export function FamilyWidget(_: { widget: Widget }) {
             <p key={o.file} className={o.skipped ? "muted" : o.ok ? "up" : "down"}>
               {o.skipped ? "•" : o.ok ? "✓" : "✗"} {hide ? "file" : o.file}: {o.text}
               {o.canAccept && (
-                <button className="tf" disabled={busy} onClick={() => void upload(null, true, o)}>Import anyway</button>
+                <Button size="sm" disabled={busy} onClick={() => void upload(null, true, o)}>Import anyway</Button>
               )}
             </p>
           ))}
@@ -1067,7 +1069,7 @@ export function FamilyWidget(_: { widget: Widget }) {
                       {hide ? (
                         memberName(a.memberId)
                       ) : (
-                        <input
+                        <Input
                           defaultValue={m?.nickname}
                           key={`${m?.id}-${m?.nickname}`}
                           aria-label={`Name of member ${a.memberId}`}
@@ -1083,8 +1085,7 @@ export function FamilyWidget(_: { widget: Widget }) {
                     </td>
                     <td>
                       {a.clientCode ? (
-                        <button
-                          className="tf"
+                        <Button size="sm"
                           onClick={() =>
                             setReveal((r) => {
                               const n = new Set(r);
@@ -1096,19 +1097,19 @@ export function FamilyWidget(_: { widget: Widget }) {
                           title="Show or hide the client id"
                         >
                           {hide || !reveal.has(a.id) ? maskCode(a.clientCode) : a.clientCode}
-                        </button>
+                        </Button>
                       ) : (
                         <span className="muted">not set</span>
                       )}
                     </td>
                     <td className="num muted">{data.imports.filter((i) => i.accountId === a.id).length}</td>
                     <td>
-                      <select value="" disabled={busy || hide} aria-label={`Move account ${a.id} to another member`} onChange={(e) => e.target.value && void act(() => patch(`/accounts/${a.id}`, { memberId: Number(e.target.value) }))}>
+                      <Select value="" disabled={busy || hide} aria-label={`Move account ${a.id} to another member`} onChange={(e) => e.target.value && void act(() => patch(`/accounts/${a.id}`, { memberId: Number(e.target.value) }))}>
                         <option value="">…</option>
                         {data.members.filter((x) => x.id !== a.memberId).map((x) => (
                           <option key={x.id} value={x.id}>{x.nickname}</option>
                         ))}
-                      </select>
+                      </Select>
                     </td>
                   </tr>
                 );
@@ -1133,8 +1134,8 @@ export function FamilyWidget(_: { widget: Widget }) {
                   });
               }}
             >
-              <input value={newMember} onChange={(e) => setNewMember(e.target.value)} placeholder="New member's name" aria-label="New member's name" />
-              <button className="tf" disabled={busy || !newMember.trim()}>Add member</button>
+              <Input value={newMember} onChange={(e) => setNewMember(e.target.value)} placeholder="New member's name" aria-label="New member's name" />
+              <Button size="sm" disabled={busy || !newMember.trim()}>Add member</Button>
               {data.members.filter((m) => !data.accounts.some((a) => a.memberId === m.id)).map((m) => (
                 <button key={m.id} type="button" className="tf" title="Remove a member who has no accounts" onClick={() => void act(() => call(`/members/${m.id}`, { method: "DELETE" }))}>Remove {m.nickname}</button>
               ))}
@@ -1199,15 +1200,14 @@ export function FamilyWidget(_: { widget: Widget }) {
                       <td>{i.periodFrom} to {i.periodTo}</td>
                       <td className="num muted">{i.rows}{i.problems.length ? ` · ${i.problems.length} problem${i.problems.length === 1 ? "" : "s"}` : ""}</td>
                       <td>
-                        <button
-                          className="tf"
+                        <Button size="sm"
                           disabled={busy}
                           onClick={() => {
                             if (window.confirm("Remove this import? Its numbers leave every total. The file itself is not kept, so upload it again to bring it back.")) void act(() => call(`/imports/${i.id}`, { method: "DELETE" }));
                           }}
                         >
                           Remove
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
