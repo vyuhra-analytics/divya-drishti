@@ -415,3 +415,4 @@ export * from "./fifo";
 export * from "./family";
 export * from "./familyInsights";
 export * from "./familyHabits";
+export * from "./autoTrade";

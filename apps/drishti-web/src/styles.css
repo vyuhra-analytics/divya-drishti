@@ -947,3 +947,8 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .settings .field select { width: auto; min-width: 240px; max-width: 100%; text-overflow: clip; }
 .settings.help { width: min(760px, calc(100% - 32px)); }
 .settings.help .settings-body { display: block; }
+.rd-auto { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.rd-auto-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rd-auto-head h2 { margin: 0; }
+.rd-auto-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.rd-auto p { margin: 6px 0 0; font-size: 12px; }

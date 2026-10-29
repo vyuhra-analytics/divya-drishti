@@ -4,6 +4,7 @@ import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
 import { notify } from "./alertEngine";
+import { AutoPaper } from "./AutoPaper";
 import { ReportDayTrade } from "./ReportDayTrade";
 import { StrikeBlock } from "./StrikeBlock";
 import { usePublishLevels } from "./strategyLevels";
@@ -171,6 +172,17 @@ export function UsibWidget(_: { widget: Widget }) {
           An EIA {reportDay} report is scheduled today: the report-day strategy is the day's trade. Open the Report day desk (F7).
         </p>
       )}
+
+      <AutoPaper
+        strategy="usib"
+        recordKey={`usib:${openAt}`}
+        releaseAt={openAt}
+        chartSymbol={symbol}
+        signal={signal && !reportDay ? { side: signal.side, candleTime: signal.candleTime, rPoints: signal.rPoints, tp2: signal.tp2, trail: signal.trail } : undefined}
+        timeStop={{ fromMin: USIB_RULES.timeStopFromMin, toMin: USIB_RULES.timeStopToMin }}
+        bars={bars}
+        onEvent={(m) => say(`auto:${m}`, m)}
+      />
 
       <ReportDayTrade
         releaseAt={openAt}

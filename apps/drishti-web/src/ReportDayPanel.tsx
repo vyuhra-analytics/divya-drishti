@@ -4,6 +4,7 @@ import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
 import { notify } from "./alertEngine";
+import { AutoPaper } from "./AutoPaper";
 import { ReportDayTrade } from "./ReportDayTrade";
 import { StrikeBlock } from "./StrikeBlock";
 import { usePublishLevels } from "./strategyLevels";
@@ -277,6 +278,16 @@ export function ReportDayWidget(_: { widget: Widget }) {
         ))}
         <span className="muted rd-note">trades {cfg.underlying} options</span>
       </div>
+
+      <AutoPaper
+        strategy="report-day"
+        recordKey={String(release.at)}
+        releaseAt={release.at}
+        chartSymbol={cfg.symbol}
+        signal={signal ? { side: signal.side, candleTime: signal.candleTime, rPoints: signal.rPoints } : undefined}
+        bars={bars}
+        onEvent={(m) => say(`auto:${m}`, m)}
+      />
 
       <ReportDayTrade
         releaseAt={release.at}
