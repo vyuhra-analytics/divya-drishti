@@ -416,3 +416,4 @@ export * from "./family";
 export * from "./familyInsights";
 export * from "./familyHabits";
 export * from "./autoTrade";
+export * from "./signalLog";

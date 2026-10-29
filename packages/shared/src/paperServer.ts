@@ -56,7 +56,13 @@ export function parsePlan(body: any): { plan?: ManagePlan } | { error: string } 
   const closeAt = typeof raw.close_at === "string" ? Date.parse(raw.close_at) : NaN;
   if (!Number.isFinite(tp1) || tp1 <= 0) return { error: "plan.tp1 must be a positive price" };
   if (!Number.isFinite(closeAt)) return { error: "plan.close_at must be an ISO 8601 time" };
-  return { plan: { tp1, closeAt } };
+  if (raw.trail === undefined && raw.tp2 === undefined) return { plan: { tp1, closeAt } };
+  const tp2 = typeof raw.tp2 === "number" ? raw.tp2 : NaN;
+  const trail = typeof raw.trail === "number" ? raw.trail : NaN;
+  const candleSec = raw.candle_sec === undefined ? 300 : raw.candle_sec;
+  if (!Number.isFinite(tp2) || tp2 <= 0 || !Number.isFinite(trail) || trail <= 0) return { error: "plan.tp2 and plan.trail must both be positive numbers (the trail is in price points)" };
+  if (!Number.isInteger(candleSec) || candleSec < 60 || candleSec > 3600) return { error: "plan.candle_sec must be a whole number of seconds from 60 to 3600" };
+  return { plan: { tp1, closeAt, tp2, trail, candleSec } };
 }
 
 /** Does the order name an entry price (a limit order)? */
@@ -850,6 +856,37 @@ export class PaperEngine {
     });
   }
 
+  /**
+   * The trailing stop of a plan that has one (USIB). Candles are built from live quotes: the last price in a 5-minute bucket is its close. TP2 touched in or
+   * before a candle starts the trail from that candle's close; at each later close the stop moves to `trail` points beyond the best close, only toward profit.
+   * Returns the changed position and whether it must be stored (a candle closed or TP2 was touched; the last price of an open candle is kept in memory only).
+   */
+  private stepTrail(p: PaperPosition, price: number): { next: PaperPosition; save: boolean } | undefined {
+    const plan = p.plan;
+    if (!plan || plan.trail === undefined || plan.tp2 === undefined) return undefined;
+    const long = p.side === "buy";
+    const dir = long ? 1 : -1;
+    const bucket = Math.floor(this.d.now() / 1000 / (plan.candleSec ?? 300));
+    let next: ManagePlan = { ...plan };
+    let stop = p.stop;
+    let save = false;
+    if (next.bucket !== undefined && bucket !== next.bucket && next.bucketLast !== undefined) {
+      // the candle that was being built has closed at the last price seen in it
+      if (next.tp2Done) {
+        next.bestClose = next.bestClose === undefined ? next.bucketLast : long ? Math.max(next.bestClose, next.bucketLast) : Math.min(next.bestClose, next.bucketLast);
+        const want = next.bestClose - dir * plan.trail;
+        stop = stop === undefined ? want : long ? Math.max(stop, want) : Math.min(stop, want);
+      }
+      save = true;
+    }
+    if (!next.tp2Done && (long ? price >= plan.tp2 : price <= plan.tp2)) {
+      next.tp2Done = true;
+      save = true;
+    }
+    next = { ...next, bucket, bucketLast: price };
+    return { next: { ...p, plan: next, ...(stop !== undefined ? { stop } : {}) }, save };
+  }
+
   /** Is the position's plan due: past its close time, or TP1 reached and the stop not yet at the entry? */
   private planDue(p: PaperPosition): boolean {
     if (!p.plan) return false;
@@ -891,10 +928,35 @@ export class PaperEngine {
       const q = this.quoteOf(position);
       return !this.expired(position) && q && this.liveOf(position) && exitHit(position, q.price);
     });
+    const trailing: Promise<void>[] = [];
+    for (const { account, position } of this.open.values()) {
+      const price = position.plan?.trail !== undefined && !position.option && this.liveOf(position) ? this.quoteOf(position)?.price : undefined;
+      if (price === undefined) continue;
+      const step = this.stepTrail(position, price);
+      if (!step) continue;
+      if (!step.save) this.open.set(position.id, { account, position: step.next }); // only the open candle's last price changed: memory only
+      else
+        trailing.push(
+          this.serial(async () => {
+            const cur = (await this.d.store.positions(account)).find((x) => x.id === position.id);
+            if (!cur?.plan) return;
+            // the stored copy lacks the open candle's last price (memory only): take it from the copy this tick started from
+            const again = this.stepTrail({ ...cur, plan: { ...cur.plan, bucket: position.plan?.bucket, bucketLast: position.plan?.bucketLast } }, price);
+            if (!again) return;
+            await this.d.store.savePosition(account, again.next);
+            this.open.set(again.next.id, { account, position: again.next });
+            if (again.next.stop !== cur.stop) {
+              await this.audit("engine", "plan_trail", account, { positionId: cur.id }, { ok: true }, `stop ${cur.stop} -> ${again.next.stop}`);
+              this.d.publish({ account, event: "updated", actor: "engine", text: `Trailing stop on ${cur.symbol} moved to ${again.next.stop}` });
+            }
+          }),
+        );
+    }
     const planned = [...this.open.values()].filter(({ position }) => position.plan && !position.option && this.quoteOf(position) && this.liveOf(position) && this.planDue(position));
-    if (due.length === 0 && lapsed.length === 0 && planned.length === 0) return filling;
+    if (due.length === 0 && lapsed.length === 0 && planned.length === 0 && trailing.length === 0) return filling;
     return Promise.all([
       filling,
+      ...trailing,
       ...planned.map(({ account, position }) => this.runPlan(account, position.id)),
       ...lapsed.map(({ account, position }) => this.close(account, position.id, "engine", "expired").then(() => undefined)),
       ...due.map(({ account, position }) => {

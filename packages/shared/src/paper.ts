@@ -58,6 +58,19 @@ export interface ManagePlan {
   closeAt: number;
   /** the stop has been moved to the entry */
   tp1Done?: boolean;
+  /**
+   * USIB's trailing stop: once price has touched `tp2` the stop trails `trail` points under the best 5-minute close (a long; over it for a short), moved at each
+   * candle's close and never loosened. The candles are built from the live quotes (`candleSec` long); no target closes the trade.
+   */
+  tp2?: number;
+  trail?: number;
+  candleSec?: number;
+  /** TP2 has been touched */
+  tp2Done?: boolean;
+  /** the candle being built (its start, epoch seconds / candleSec), the last price seen in it, and the best close so far */
+  bucket?: number;
+  bucketLast?: number;
+  bestClose?: number;
 }
 
 /** An option contract a position is in (paper option trading, buy only): the Upstox key, what to call it, and the premium's price step in rupees. */

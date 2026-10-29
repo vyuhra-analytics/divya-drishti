@@ -133,7 +133,7 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
         signal_time: new Date((s.candleTime + DAY_RULES.candleSec) * 1000).toISOString(),
         r_points: plan.rPoints,
         // the server moves the stop to the entry at TP1 and closes at the time window, with this browser closed; this panel's own checks are the backup
-        plan: { tp1: plan.tp1, close_at: new Date(L.releaseAt + (L.timeStop ?? TIME_STOP).fromMin * 60_000).toISOString() },
+        plan: { tp1: plan.tp1, close_at: new Date(L.releaseAt + (L.timeStop ?? TIME_STOP).fromMin * 60_000).toISOString(), ...(L.strategy === "usib" && s.trail ? { tp2: plan.tp2, trail: s.trail, candle_sec: DAY_RULES.candleSec } : {}) }, // USIB: the server trails the stop too
       });
       if (!r.ok) return r.status === 0 ? undefined : skip(`the paper order was refused: ${r.error}`);
       const pos = r.data.position;
