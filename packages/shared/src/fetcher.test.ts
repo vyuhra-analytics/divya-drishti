@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createRunner, SourceError, type FetchIO, type Fetcher } from "./fetcher";
+import { createRunner, SourceError, SourceMiss, type FetchIO, type Fetcher } from "./fetcher";
 
 /** a controllable clock and a fake network: tests never touch the internet */
 function setup(env: Record<string, string> = {}) {
@@ -90,4 +90,24 @@ test("missing credentials give a how-to-get-a-key error without calling the sour
   expect(calls).toHaveLength(0);
   const { io: io2, calls: c2 } = setup({ DEMO_KEY: "abc" });
   expect((await createRunner(io2)({ ...make(c2), credentials: ["DEMO_KEY"] as const }, { id: "x" })).data).toEqual([1]);
+});
+
+test("a SourceMiss is a nodata answer: no stale copy, no pause, and the next request still reaches the source", async () => {
+  const { io, calls, tick } = setup();
+  const run = createRunner(io);
+  await run(make(calls), { id: "x" }); // a good copy exists
+  tick(2000);
+  const miss: Fetcher<{ id: string }, number, number[]> = {
+    ...make(calls),
+    async extract(q) {
+      calls.push(q.id);
+      throw new SourceMiss("not listed");
+    },
+  };
+  const err = await run(miss, { id: "x" }).catch((e) => e);
+  expect(err).toBeInstanceOf(SourceError);
+  expect(err.kind).toBe("nodata");
+  expect(err.message).toContain("not listed");
+  await run(miss, { id: "x" }).catch(() => undefined); // no 5-minute pause was set: the source is asked again at once
+  expect(calls.filter((c) => c === "x")).toHaveLength(3);
 });

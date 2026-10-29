@@ -30,7 +30,11 @@ export interface Fetcher<Q, Raw, R> {
   isUsable(r: R): boolean;
 }
 
-export type SourceErrorKind = "credentials" | "unavailable";
+export type SourceErrorKind = "credentials" | "unavailable" | "nodata";
+
+/** Thrown by `extract` or `transform` when the source answered normally but has nothing for THIS query (an unlisted contract, a symbol it does not carry).
+ * Unlike a failure it does not pause the source, serve a stale copy or count against it; the caller gets a `nodata` SourceError. */
+export class SourceMiss extends Error {}
 
 export class SourceError extends Error {
   constructor(
@@ -66,6 +70,7 @@ export function createRunner(io: FetchIO = { fetch: (input, init) => fetch(input
       cache.set(k, { at, data });
       return { data, fetchedAt: at };
     } catch (e) {
+      if (e instanceof SourceMiss) throw new SourceError("nodata", `${f.label} has no data for this request: ${e.message}`);
       if (hit) {
         cache.set(k, { at: hit.at, data: hit.data, nextTry: io.now() + RETRY_MS }); // keep the real fetch time; pause before the next attempt
         return { data: hit.data, fetchedAt: hit.at, stale: true };
