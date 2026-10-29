@@ -3,6 +3,7 @@ import {
   applyEiaActuals,
   createRunner,
   eiaGasFetcher,
+  eiaScheduleFetcher,
   eiaWpsrFetcher,
   fredFetcher,
   decorateEvents,
@@ -12,13 +13,10 @@ import {
   fredSeriesFor,
   applyEiaSchedule,
   CALENDAR_SOURCES,
-  EIA_SCHEDULE_URLS,
   LruCache,
   mcxHolidays,
   mergeSourceRows,
   mergeForexFactory,
-  parseEiaGasSchedule,
-  parseEiaPetroleumSchedule,
   planEvents,
   recordPlanned,
   releasePending,
@@ -35,7 +33,8 @@ import {
 } from "@drishti/shared";
 import { Db } from "./db";
 
-const runSource = createRunner(); // the Fetcher runner for the calendar's actuals
+const runSource = createRunner(); // the Fetcher runner for the calendar's actuals and the EIA schedule pages
+const got = async <T,>(p: Promise<{ data: T }>): Promise<T | undefined> => p.then((r) => r.data).catch(() => undefined);
 import { PgEventStore } from "./calendar.store";
 import { PgEiaReportStore } from "./eia-report.store";
 
@@ -149,23 +148,15 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
   async eiaSchedule(now = Date.now()): Promise<EiaScheduleException[]> {
     const s = this.schedule;
     if (now - s.at < SCHEDULE_TTL_MS || now < s.retryAt) return s.list;
-    const [petroleum, gas] = await Promise.all([this.text(EIA_SCHEDULE_URLS.WPSR), this.text(EIA_SCHEDULE_URLS.WNGSR)]);
-    const list = [...(petroleum ? parseEiaPetroleumSchedule(petroleum) : []), ...(gas ? parseEiaGasSchedule(gas) : [])];
+    // through the Fetcher runner: a page that cannot be read now serves its last good copy (marked stale), and none at all is a failure
+    const [petroleum, gas] = await Promise.all([got(runSource(eiaScheduleFetcher, { report: "WPSR" })), got(runSource(eiaScheduleFetcher, { report: "WNGSR" }))]);
+    const list = [...(petroleum ?? []), ...(gas ?? [])];
     if (petroleum && gas && list.length) this.schedule = { list, at: now, retryAt: 0 };
     else {
       this.schedule = { ...s, retryAt: now + SCHEDULE_RETRY_MS };
       if (!s.list.length) console.warn("EIA schedule pages could not be read: using the standard days and Forex Factory's shifts");
     }
     return this.schedule.list;
-  }
-
-  private async text(url: string) {
-    try {
-      const res = await fetch(url, { ...withUserAgent(url), signal: AbortSignal.timeout(10_000) });
-      return res.ok ? await res.text() : undefined;
-    } catch {
-      return undefined; // an unreachable source just means nothing yet
-    }
   }
 
   async events(days: number): Promise<CalEvent[]> {
@@ -193,7 +184,6 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const due = events.filter((e) => e.at <= now && e.actual === undefined && e.kind !== "holiday");
     if (due.length === 0) return events;
     // through the Fetcher runner: a shared cache, one request at a time per file, and the last good copy when a source is briefly down
-    const got = async <T,>(p: Promise<{ data: T }>): Promise<T | undefined> => p.then((r) => r.data).catch(() => undefined);
     const needOil = due.some((e) => e.id.startsWith("eia-oil-"));
     const needGas = due.some((e) => e.id.startsWith("eia-gas-"));
     const [wpsr, wngsr] = await Promise.all([needOil ? got(runSource(eiaWpsrFetcher, {})) : undefined, needGas ? got(runSource(eiaGasFetcher, {})) : undefined]);

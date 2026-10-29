@@ -1,6 +1,9 @@
 // The sources that follow the Fetcher contract (fetcher.ts), plus a registry of every external source we use.
 // Each fetcher is plain data and functions: the API controllers only validate the query and call the runner.
 import { parseFredCsv, parseWngsr, parseWpsr, type SeriesPoint, type Wngsr, type Wpsr } from "./actuals";
+import { EIA_SERIES, parseEia, summarizeEia, type EiaSummary } from "./eia";
+import { EIA_SCHEDULE_URLS, parseEiaGasSchedule, parseEiaPetroleumSchedule, type EiaScheduleException } from "./eiaSchedule";
+import { parseRss, type NewsItem, type NewsTag } from "./news";
 import { CHOKEPOINT_PORTNAME, parseTransits, type ChokepointId, type TransitDay } from "./chokepoints";
 import { COT_DATASET, COT_MARKETS, parseCot, type CotMarketId, type CotRow } from "./cot";
 import { curveCodes, curveInstruments, parseCurve, type CurvePoint } from "./curve";
@@ -131,6 +134,60 @@ export const fredFetcher: Fetcher<{ seriesId: string }, string, SeriesPoint[]> =
   isUsable: (pts) => pts.length > 0,
 };
 
+/** EIA Open Data v2, one series by id from our own table (never a caller-supplied route). Needs the user's free key; the shared DEMO_KEY is never used. */
+export const eiaSeriesFetcher: Fetcher<{ id: string }, unknown, EiaSummary> = {
+  id: "eia-v2-series",
+  label: "EIA open data",
+  website: "https://www.eia.gov/opendata/",
+  credentials: ["EIA_API_KEY"],
+  instructions: "free key at https://www.eia.gov/opendata/",
+  ttlMs: HOUR, // weekly data (spot prices daily): an hourly look is plenty, and far under EIA's limits
+  key: (q) => q.id,
+  async extract(q, io) {
+    const s = EIA_SERIES.find((x) => x.id === q.id)!;
+    const url = new URL(`https://api.eia.gov/v2/seriesid/${s.route}`);
+    url.searchParams.set("api_key", io.env.EIA_API_KEY!.trim());
+    url.searchParams.set("length", String(s.freq === "weekly" ? 320 : 400)); // ~6 weekly years for the five-year average, ~1.5 daily years
+    const res = await io.fetch(url, { signal: timeout(90_000) }); // EIA's routes take 1 to 45 s for the same call
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  transform: (raw, q) => summarizeEia(q.id, parseEia(raw)),
+  isUsable: (s) => s.latest !== undefined,
+};
+
+/** EIA's holiday exceptions for one of the two weekly reports, from its schedule page. */
+export const eiaScheduleFetcher: Fetcher<{ report: "WPSR" | "WNGSR" }, string, EiaScheduleException[]> = {
+  id: "eia-schedule",
+  label: "EIA release schedule",
+  website: "https://www.eia.gov",
+  ttlMs: 24 * HOUR, // EIA changes its holiday list a few times a year
+  key: (q) => q.report,
+  async extract(q, io) {
+    const res = await io.fetch(EIA_SCHEDULE_URLS[q.report], { signal: timeout(10_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+  },
+  transform: (html, q) => (q.report === "WPSR" ? parseEiaPetroleumSchedule(html) : parseEiaGasSchedule(html)),
+  isUsable: (list) => list.length > 0, // a page that lists no exception is a layout we no longer read
+};
+
+/** One news feed. Filtering to energy headlines (`strict`) is the caller's, so a feed that is up but off-topic is not read as down. */
+export const rssFetcher: Fetcher<{ url: string; name: string; tags: readonly NewsTag[] }, string, NewsItem[]> = {
+  id: "rss",
+  label: "News feed",
+  website: "",
+  ttlMs: 30_000, // under the shortest poll interval (60 s)
+  key: (q) => q.url,
+  async extract(q, io) {
+    const res = await io.fetch(q.url, { signal: timeout(15_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+  },
+  transform: (xml, q) => parseRss(xml, q.name, [...q.tags]),
+  isUsable: (items) => items.length > 0,
+};
+
 export type SourceRisk = "low" | "medium" | "high";
 
 export interface SourceInfo {
@@ -157,13 +214,13 @@ export const SOURCES: readonly SourceInfo[] = [
   { id: "yahoo", label: "Yahoo Finance", website: "https://finance.yahoo.com", kind: "NYMEX prices and history, calendar release times and actuals", credentials: [], fetcher: "yahoo-calendar (calendar only)", risk: "medium", fallback: "auto", note: "unofficial, 10 minutes delayed; its continuous history has roll jumps" },
   { id: "cftc-cot", label: "CFTC positioning", website: cotFetcher.website, kind: "weekly positioning", credentials: [], fetcher: "cftc-cot", risk: "low", fallback: "auto", note: "official government data" },
   { id: "imf-portwatch", label: "IMF PortWatch", website: chokepointFetcher.website, kind: "chokepoint transits", credentials: [], fetcher: "imf-portwatch", risk: "low", fallback: "auto", note: "official public dataset" },
-  { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: false, risk: "low", fallback: "auto", note: "official API with a free key; the shared DEMO_KEY is never used" },
+  { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: "eia-v2-series", risk: "low", fallback: "auto", note: "official API with a free key; the shared DEMO_KEY is never used" },
   { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: "eia-wpsr-csv, eia-wngsr-csv (weekly files only)", risk: "low", fallback: "auto", note: "official files" },
   { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: "fred-series", risk: "low", fallback: "auto", note: "official keyless CSV" },
   { id: "forex-factory", label: "Forex Factory calendar", website: "https://nfs.faireconomy.media", kind: "forecast and previous", credentials: [], fetcher: false, risk: "high", fallback: "auto", note: "answers HTTP 429 after a few requests: cached 30 minutes, last good copy kept, 5-minute back-off" },
   { id: "investing-forecasts", label: "Investing.com economic calendar (EIA and API forecasts)", website: "https://www.investing.com", kind: "consensus forecasts of the weekly EIA crude, gasoline and distillate changes and the API's crude change", credentials: [], fetcher: false, risk: "high", fallback: "auto", note: "unofficial and its terms forbid automated access: four event pages read a few times a day at most, everything stops for 12 hours at the first block; INVESTING_FORECASTS=off disables it" },
   { id: "finance-calendar", label: "Finance Calendar", website: "https://www.financecalendar.com", kind: "calendar release times and actuals (official publishers)", credentials: [], fetcher: "finance-calendar", risk: "medium", fallback: "auto", note: "keyless free API: 2,000 requests a day per address, a visible link to the site is required where its data is shown; consensus is empty on every event tested" },
-  { id: "rss", label: "News feeds (Google News, OilPrice, CNBC...)", website: "", kind: "headlines", credentials: [], fetcher: false, risk: "medium", fallback: "auto", note: "public feeds, polled every 1 to 5 minutes; Google News is the most likely to throttle" },
+  { id: "rss", label: "News feeds (Google News, OilPrice, CNBC...)", website: "", kind: "headlines", credentials: [], fetcher: "rss", risk: "medium", fallback: "auto", note: "public feeds, polled every 1 to 5 minutes; Google News is the most likely to throttle" },
   { id: "anthropic", label: "Anthropic API", website: "https://www.anthropic.com", kind: "AI briefing", credentials: ["ANTHROPIC_API_KEY"], fetcher: false, risk: "low", fallback: "explicit", note: "costs money: only ever called when you press the button, never as a silent fallback" },
 ];
 

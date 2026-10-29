@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaWpsrFetcher, fredFetcher, SOURCES } from "./fetchers";
+import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaScheduleFetcher, eiaSeriesFetcher, eiaWpsrFetcher, fredFetcher, rssFetcher, SOURCES } from "./fetchers";
 import { createRunner, SourceError, type FetchIO } from "./fetcher";
 
 /** a fake network keyed by URL substring: returns the recorded-style body for the first match, 404 otherwise */
@@ -93,4 +93,38 @@ test("the EIA weekly files: a file we cannot read is a failed fetch, never an em
 test("the registry names the fetchers behind the EIA files and FRED", () => {
   expect(SOURCES.find((s) => s.id === "fred")!.fetcher).toBe("fred-series");
   expect(String(SOURCES.find((s) => s.id === "eia-csv")!.fetcher)).toContain("eia-wpsr-csv");
+});
+
+test("eiaSeriesFetcher: no key means no request and a hint; with a key it reads the series from our own table and summarises it", async () => {
+  const none = net({});
+  const e = await createRunner(none.io)(eiaSeriesFetcher, { id: "WCESTUS1" }).catch((x) => x);
+  expect((e as SourceError).kind).toBe("credentials");
+  expect(e.message).toContain("eia.gov/opendata");
+  expect(none.urls).toHaveLength(0);
+  const data = Array.from({ length: 12 }, (_, i) => ({ period: `2026-0${(i % 9) + 1}-${String(1 + i).padStart(2, "0")}`, value: 400000 + i * 100 }));
+  const { io, urls } = net({ "api.eia.gov": { response: { data } } });
+  const withKey: FetchIO = { ...io, env: { EIA_API_KEY: " k123 " } };
+  const r = await createRunner(withKey)(eiaSeriesFetcher, { id: "WCESTUS1" });
+  expect(r.data.id).toBe("WCESTUS1");
+  expect(r.data.latest).toBeDefined();
+  expect(urls[0]).toContain("/v2/seriesid/PET.WCESTUS1.W");
+  expect(urls[0]).toContain("api_key=k123");
+  expect(urls[0]).toContain("length=320");
+  const empty = net({ "api.eia.gov": { response: { data: [] } } });
+  const bad = await createRunner({ ...empty.io, env: { EIA_API_KEY: "k" } })(eiaSeriesFetcher, { id: "WCESTUS1" }).catch((x) => x);
+  expect((bad as SourceError).kind).toBe("unavailable"); // no readings: a failed fetch, never an empty series
+});
+
+test("rssFetcher parses a feed with the given outlet and tags; a feed with no items is a failed fetch; eiaScheduleFetcher reads the page for its report", async () => {
+  const xml = `<?xml version="1.0"?><rss><channel>${Array.from({ length: 3 }, (_, i) => `<item><title>Oil rises ${i}</title><link>https://x.test/${i}</link><pubDate>Wed, 21 Oct 2026 10:0${i}:00 GMT</pubDate></item>`).join("")}</channel></rss>`;
+  const { io } = net({ "feed.test/a": xml, "feed.test/empty": "<rss><channel></channel></rss>" });
+  const run = createRunner(io);
+  const { data } = await run(rssFetcher, { url: "https://feed.test/a", name: "Test Wire", tags: ["oil"] });
+  expect(data).toHaveLength(3);
+  expect(data[0].source).toBe("Test Wire");
+  expect((await run(rssFetcher, { url: "https://feed.test/empty", name: "T", tags: [] }).catch((x) => x)) as SourceError).toBeInstanceOf(SourceError);
+  const sched = net({ "schedule.php": "<html>no holidays here</html>" });
+  const s = await createRunner(sched.io)(eiaScheduleFetcher, { report: "WPSR" }).catch((x) => x);
+  expect((s as SourceError).kind).toBe("unavailable"); // a page that lists no exception is a layout we no longer read
+  expect(sched.urls[0]).toContain("eia.gov/petroleum/supply/weekly/schedule.php");
 });

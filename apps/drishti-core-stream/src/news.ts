@@ -1,5 +1,5 @@
 import type { RedisClient, SQL } from "bun";
-import { dedupeNews, NEWS_MAX, newsFromRow, parseRss, tagNews, uaHeader, type NewsItem, type NewsRow, type NewsTag } from "@drishti/shared";
+import { createRunner, dedupeNews, NEWS_MAX, newsFromRow, rssFetcher, tagNews, type NewsItem, type NewsRow, type NewsTag } from "@drishti/shared";
 import { newStats, poll, type ProviderStats } from "./providers/provider";
 
 // Energy news from free RSS feeds, polled here once and pushed to every client (not polled per panel).
@@ -34,6 +34,7 @@ const FEEDS: { name: string; url: string; tags: NewsTag[]; everyMs: number; stri
 ];
 
 
+const run = createRunner(undefined, 64); // the Fetcher runner for the feeds
 export const newsStats: Record<string, ProviderStats> = {};
 /** Postgres archive writes (shows "Failed to connect" in /health when running without a database) */
 export const archiveStats = newStats();
@@ -83,9 +84,10 @@ export function startNews(redis: RedisClient, sql: SQL, publish: (fresh: NewsIte
     let stop = () => {};
     const timer = setTimeout(() => {
       stop = poll(feed.everyMs, stats, async () => {
-        const res = await fetch(feed.url, { headers: uaHeader(feed.url), signal: AbortSignal.timeout(15_000) });
-        if (!res.ok) throw new Error(`${res.status}`);
-        const parsed = parseRss(await res.text(), feed.name, feed.tags).filter((n) => !feed.strict || tagNews(n.title).length > 0);
+        const got = await run(rssFetcher, { url: feed.url, name: feed.name, tags: feed.tags });
+        // the runner serves the last good copy when a feed is down; that must not read as a healthy poll in /health
+        if (got.stale) throw new Error("feed unreachable: last copy kept");
+        const parsed = got.data.filter((n) => !feed.strict || tagNews(n.title).length > 0);
         const known = new Set(items.map((n) => n.id));
         items = dedupeNews(items, parsed);
         const fresh = items.filter((n) => !known.has(n.id));

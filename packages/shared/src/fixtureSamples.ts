@@ -2,14 +2,12 @@
 // `bun run fixtures:refresh` records them; the contract test replays them. A failing check after a refresh means the provider changed.
 import { parseWpsrReport } from "./eiaReport";
 import { financeCalendar, SOURCE_WINDOW, yahooCalendar } from "./calendarSources";
-import { EIA_SCHEDULE_URLS, parseEiaGasSchedule, parseEiaPetroleumSchedule } from "./eiaSchedule";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
-import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaWpsrFetcher, fredFetcher } from "./fetchers";
+import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaScheduleFetcher, eiaWpsrFetcher, fredFetcher, rssFetcher } from "./fetchers";
 import { parseEia } from "./eia";
 import type { shrink } from "./fixtures";
 import { parseYahooCandles } from "./index";
-import { parseRss } from "./news";
 
 type ShrinkOpts = NonNullable<Parameters<typeof shrink>[1]>;
 
@@ -66,7 +64,10 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
   {
     id: "eia-schedule",
     source: "eia-csv",
-    run: async (io) => ({ wpsr: parseEiaPetroleumSchedule((await text(io, EIA_SCHEDULE_URLS.WPSR)) ?? ""), wngsr: parseEiaGasSchedule((await text(io, EIA_SCHEDULE_URLS.WNGSR)) ?? "") }),
+    run: async (io) => {
+      const run = createRunner(io);
+      return { wpsr: (await run(eiaScheduleFetcher, { report: "WPSR" })).data, wngsr: (await run(eiaScheduleFetcher, { report: "WNGSR" })).data };
+    },
     check: (r) => (r.wpsr.length >= 4 && r.wngsr.length >= 4 && [...r.wpsr, ...r.wngsr].every((x: any) => x.holiday && Number.isFinite(x.at) && x.at !== x.normalAt) ? undefined : "expected 4+ holiday exceptions on each EIA schedule page"),
   },
   {
@@ -121,7 +122,7 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
       id,
       source: "rss",
       shrink: { maxItems: 15 },
-      run: async (io) => parseRss(await text(io, url), name),
+      run: (io) => createRunner(io)(rssFetcher, { url, name, tags: [] }).then((r) => r.data),
       check: (items) => (items.length >= 5 && items.every((i: any) => i.title && i.url && num(i.publishedAt)) ? undefined : "expected 5+ items with a title, link and time"),
     }),
   ),
