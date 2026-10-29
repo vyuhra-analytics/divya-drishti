@@ -9,7 +9,7 @@ import { sendWatch, useStore } from "./store";
 import { useWidgetSymbol, type Widget } from "./workspace";
 import { Button, Input, Select } from "./ui";
 
-const REASON = { manual: "Closed by hand", stop: "Stop hit", target: "Target hit", expired: "Expired, settled at the last premium" } as const;
+const REASON = { manual: "Closed by hand", stop: "Stop hit", target: "Target hit", expired: "Expired, settled at the last premium", time: "Time exit" } as const;
 const ACCOUNT_KEY = "drishti-paper-account";
 const LEGACY_KEY = "drishti-paper"; // the account this browser kept before paper trading moved to the server
 const IMPORTED_KEY = "drishti-paper-imported";

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AUTO_ACCOUNT, AUTO_CAPITAL, AUTO_EVENT_TEXT, asManualTrade, autoSymbol, DAY_RULES, decideAuto, planAutoOrder, signalFresh, trackTrade, type AutoRecord, type DayBar, type DaySide } from "@drishti/shared";
+import { AUTO_ACCOUNT, AUTO_CAPITAL, AUTO_EVENT_TEXT, asManualTrade, autoSymbol, DAY_RULES, decideAuto, planAutoOrder, signalFresh, TIME_STOP, trackTrade, type AutoRecord, type DayBar, type DaySide } from "@drishti/shared";
 import { paperCall } from "./paperClient";
 import { useClock } from "./settings";
 import { useStore } from "./store";
@@ -132,6 +132,8 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
         strategy: L.strategy,
         signal_time: new Date((s.candleTime + DAY_RULES.candleSec) * 1000).toISOString(),
         r_points: plan.rPoints,
+        // the server moves the stop to the entry at TP1 and closes at the time window, with this browser closed; this panel's own checks are the backup
+        plan: { tp1: plan.tp1, close_at: new Date(L.releaseAt + (L.timeStop ?? TIME_STOP).fromMin * 60_000).toISOString() },
       });
       if (!r.ok) return r.status === 0 ? undefined : skip(`the paper order was refused: ${r.error}`);
       const pos = r.data.position;
@@ -186,7 +188,7 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
         const st = await paperCall<{ state: { positions: { id: string }[]; trades: { id: string; closedAt: number; exit: number; net: number; reason: string }[] } }>(`/accounts/${AUTO_ACCOUNT}`);
         if (st.ok && !st.data.state.positions.some((p) => p.id === rec.positionId)) {
           const t = st.data.state.trades.find((x) => x.id === rec.positionId);
-          const why = t ? (t.reason === "stop" ? (rec.events.some((e) => e.kind === "tp1") ? "stopped at the entry" : "stopped out") : t.reason === "target" ? "target (TP2)" : t.reason) : "closed";
+          const why = t ? (t.reason === "stop" ? (rec.events.some((e) => e.kind === "tp1") ? "stopped at the entry" : "stopped out") : t.reason === "target" ? "target (TP2)" : t.reason === "time" ? "time exit" : t.reason) : "closed";
           commit({ ...rec, status: "closed", reason: why, ...(t ? { exit: { at: t.closedAt, price: t.exit, net: t.net, reason: why } } : {}) });
           L.onEvent(`${L.label}: auto paper trade closed: ${why}${t ? `, net ${rs(t.net)}` : ""}`);
         }

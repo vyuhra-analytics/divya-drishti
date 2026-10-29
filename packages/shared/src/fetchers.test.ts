@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { chokepointFetcher, cotFetcher, curveFetcher, SOURCES } from "./fetchers";
-import { createRunner, type FetchIO } from "./fetcher";
+import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaWpsrFetcher, fredFetcher, SOURCES } from "./fetchers";
+import { createRunner, SourceError, type FetchIO } from "./fetcher";
 
 /** a fake network keyed by URL substring: returns the recorded-style body for the first match, 404 otherwise */
 function net(routes: Record<string, unknown>) {
@@ -59,4 +59,38 @@ test("every source in the registry names its credentials and any fetcher that se
   expect(new Set(ids).size).toBe(ids.length);
   expect(SOURCES.find((s) => s.id === "eia")?.credentials).toEqual(["EIA_API_KEY"]);
   for (const s of SOURCES) expect(s.label.length).toBeGreaterThan(0);
+});
+
+test("fredFetcher asks for the series id it is given and parses the points; the id is encoded", async () => {
+  const csv = ["observation_date,CPIAUCSL", ...Array.from({ length: 30 }, (_, i) => `2024-${String((i % 12) + 1).padStart(2, "0")}-01,${300 + i}`)].join("\n");
+  const { io, urls } = net({ "fredgraph.csv": csv });
+  const { data } = await createRunner(io)(fredFetcher, { seriesId: "CPIAUCSL" });
+  expect(data.length).toBeGreaterThan(20);
+  expect(urls[0]).toBe("https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL");
+  await createRunner(io)(fredFetcher, { seriesId: "A&B" }).catch(() => undefined);
+  expect(urls.at(-1)).toContain("id=A%26B");
+});
+
+test("the EIA weekly files: a file we cannot read is a failed fetch, never an empty actual, and a good copy is served stale when the file goes away", async () => {
+  const garbage = net({ "wpsr/table1.csv": "<html>maintenance</html>", "wngsr.csv": "" });
+  const run = createRunner(garbage.io);
+  for (const f of [eiaWpsrFetcher, eiaGasFetcher]) {
+    const e = await run(f as never, {}).catch((x) => x);
+    expect(e).toBeInstanceOf(SourceError);
+    expect((e as SourceError).kind).toBe("unavailable");
+  }
+  // a good copy, then the file disappears: the last good copy comes back marked stale
+  const good = net({ "fredgraph.csv": ["DATE,X", ...Array.from({ length: 5 }, (_, i) => `2026-0${i + 1}-01,${i + 1}`)].join(String.fromCharCode(10)) });
+  let t = Date.UTC(2026, 9, 21);
+  let down = false;
+  const run2 = createRunner({ ...good.io, fetch: ((u: string, i?: RequestInit) => (down ? Promise.resolve(new Response("", { status: 503 })) : good.io.fetch(u, i))) as never, now: () => t });
+  expect((await run2(fredFetcher, { seriesId: "X" })).stale).toBeUndefined();
+  t += 60_000;
+  down = true;
+  expect((await run2(fredFetcher, { seriesId: "X" })).stale).toBe(true);
+});
+
+test("the registry names the fetchers behind the EIA files and FRED", () => {
+  expect(SOURCES.find((s) => s.id === "fred")!.fetcher).toBe("fred-series");
+  expect(String(SOURCES.find((s) => s.id === "eia-csv")!.fetcher)).toContain("eia-wpsr-csv");
 });

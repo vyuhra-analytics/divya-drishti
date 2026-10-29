@@ -1,5 +1,6 @@
 // The sources that follow the Fetcher contract (fetcher.ts), plus a registry of every external source we use.
 // Each fetcher is plain data and functions: the API controllers only validate the query and call the runner.
+import { parseFredCsv, parseWngsr, parseWpsr, type SeriesPoint, type Wngsr, type Wpsr } from "./actuals";
 import { CHOKEPOINT_PORTNAME, parseTransits, type ChokepointId, type TransitDay } from "./chokepoints";
 import { COT_DATASET, COT_MARKETS, parseCot, type CotMarketId, type CotRow } from "./cot";
 import { curveCodes, curveInstruments, parseCurve, type CurvePoint } from "./curve";
@@ -89,6 +90,47 @@ export const curveFetcher: Fetcher<{ symbol: string }, unknown, CurvePoint[]> = 
   isUsable: (pts) => pts.length >= 2, // a curve needs two contracts
 };
 
+// ---- EIA weekly files and FRED series (official, keyless) -> the calendar's actuals
+async function csvText(url: string, io: Parameters<Fetcher<unknown, string, unknown>["extract"]>[1]): Promise<string> {
+  const res = await io.fetch(url, { signal: timeout(10_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+export const eiaWpsrFetcher: Fetcher<Record<string, never>, string, Wpsr> = {
+  id: "eia-wpsr-csv",
+  label: "EIA weekly petroleum file",
+  website: "https://ir.eia.gov",
+  ttlMs: 30_000, // read every minute while a release is due or just out
+  key: () => "table1",
+  extract: (_q, io) => csvText("https://ir.eia.gov/wpsr/table1.csv", io),
+  transform: (csv) => parseWpsr(csv)!, // undefined (a layout we cannot read) fails isUsable below
+  isUsable: (w) => w !== undefined && Number.isFinite(w.weekEnding),
+};
+
+export const eiaGasFetcher: Fetcher<Record<string, never>, string, Wngsr> = {
+  id: "eia-wngsr-csv",
+  label: "EIA weekly gas storage file",
+  website: "https://ir.eia.gov",
+  ttlMs: 30_000,
+  key: () => "wngsr",
+  extract: (_q, io) => csvText("https://ir.eia.gov/ngs/wngsr.csv", io),
+  transform: (csv) => parseWngsr(csv)!,
+  isUsable: (w) => w !== undefined && Number.isFinite(w.weekEnding),
+};
+
+/** One FRED series by id (e.g. CPIAUCSL), the last 60 points. The id comes from our own matcher table, never from the caller. */
+export const fredFetcher: Fetcher<{ seriesId: string }, string, SeriesPoint[]> = {
+  id: "fred-series",
+  label: "FRED",
+  website: "https://fred.stlouisfed.org",
+  ttlMs: 30_000,
+  key: (q) => q.seriesId,
+  extract: (q, io) => csvText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(q.seriesId)}`, io),
+  transform: (csv) => parseFredCsv(csv),
+  isUsable: (pts) => pts.length > 0,
+};
+
 export type SourceRisk = "low" | "medium" | "high";
 
 export interface SourceInfo {
@@ -116,8 +158,8 @@ export const SOURCES: readonly SourceInfo[] = [
   { id: "cftc-cot", label: "CFTC positioning", website: cotFetcher.website, kind: "weekly positioning", credentials: [], fetcher: "cftc-cot", risk: "low", fallback: "auto", note: "official government data" },
   { id: "imf-portwatch", label: "IMF PortWatch", website: chokepointFetcher.website, kind: "chokepoint transits", credentials: [], fetcher: "imf-portwatch", risk: "low", fallback: "auto", note: "official public dataset" },
   { id: "eia", label: "EIA open data", website: "https://www.eia.gov/opendata/", kind: "weekly stocks, spot prices", credentials: ["EIA_API_KEY"], fetcher: false, risk: "low", fallback: "auto", note: "official API with a free key; the shared DEMO_KEY is never used" },
-  { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official files" },
-  { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: false, risk: "low", fallback: "auto", note: "official keyless CSV" },
+  { id: "eia-csv", label: "EIA weekly CSVs", website: "https://ir.eia.gov", kind: "calendar actuals", credentials: [], fetcher: "eia-wpsr-csv, eia-wngsr-csv (weekly files only)", risk: "low", fallback: "auto", note: "official files" },
+  { id: "fred", label: "FRED", website: "https://fred.stlouisfed.org", kind: "calendar actuals (US macro)", credentials: [], fetcher: "fred-series", risk: "low", fallback: "auto", note: "official keyless CSV" },
   { id: "forex-factory", label: "Forex Factory calendar", website: "https://nfs.faireconomy.media", kind: "forecast and previous", credentials: [], fetcher: false, risk: "high", fallback: "auto", note: "answers HTTP 429 after a few requests: cached 30 minutes, last good copy kept, 5-minute back-off" },
   { id: "investing-forecasts", label: "Investing.com economic calendar (EIA and API forecasts)", website: "https://www.investing.com", kind: "consensus forecasts of the weekly EIA crude, gasoline and distillate changes and the API's crude change", credentials: [], fetcher: false, risk: "high", fallback: "auto", note: "unofficial and its terms forbid automated access: four event pages read a few times a day at most, everything stops for 12 hours at the first block; INVESTING_FORECASTS=off disables it" },
   { id: "finance-calendar", label: "Finance Calendar", website: "https://www.financecalendar.com", kind: "calendar release times and actuals (official publishers)", credentials: [], fetcher: "finance-calendar", risk: "medium", fallback: "auto", note: "keyless free API: 2,000 requests a day per address, a visible link to the site is required where its data is shown; consensus is empty on every event tested" },

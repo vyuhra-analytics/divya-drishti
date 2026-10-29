@@ -5,7 +5,7 @@
 import { UPSTOX_MCX_RATES, type CostRates, type Side } from "./costs";
 import { lotUnits } from "./costs";
 import { instrument } from "./index";
-import { closePaper, describeFill, describeLimitFill, exitHit, limitFill, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type OptionRef, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade, type PendingOrder } from "./paper";
+import { closePaper, describeFill, describeLimitFill, exitHit, limitFill, openPaper, summarizeAccount, unrealisedNet, type Account, type ExitReason, type ManagePlan, type OptionRef, type OrderMeta, type PaperPosition, type PaperQuote, type PaperTrade, type PendingOrder } from "./paper";
 
 export type Actor = "ui" | "mcp";
 
@@ -44,6 +44,19 @@ export interface OrderInput extends OrderMeta {
   target?: number;
   /** a limit price: the order waits for the market to reach it (absent = at the market) */
   entry?: number;
+  /** what the engine does by itself once filled (see ManagePlan); market orders only */
+  plan?: ManagePlan;
+}
+
+/** `plan: { tp1, close_at }` on an order: tp1 a positive price, close_at an ISO 8601 time. Absent means no plan. */
+export function parsePlan(body: any): { plan?: ManagePlan } | { error: string } {
+  const raw = body?.plan;
+  if (raw === undefined || raw === null) return {};
+  const tp1 = typeof raw.tp1 === "number" ? raw.tp1 : NaN;
+  const closeAt = typeof raw.close_at === "string" ? Date.parse(raw.close_at) : NaN;
+  if (!Number.isFinite(tp1) || tp1 <= 0) return { error: "plan.tp1 must be a positive price" };
+  if (!Number.isFinite(closeAt)) return { error: "plan.close_at must be an ISO 8601 time" };
+  return { plan: { tp1, closeAt } };
 }
 
 /** Does the order name an entry price (a limit order)? */
@@ -99,10 +112,13 @@ export function parseOrderInput(body: any): { order: OrderInput } | { error: str
   const num = (v: unknown, name: string) => (v === undefined || v === null || v === "" ? undefined : Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : (() => { throw new Error(`${name} must be a positive price`); })());
   const m = parseOrderMeta(body);
   if ("error" in m) return m;
+  const pl = parsePlan(body);
+  if ("error" in pl) return pl;
   try {
     const entry = parseEntry(body.entry);
     if (entry instanceof Error) return { error: entry.message };
-    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta } };
+    if (pl.plan && entry !== undefined) return { error: "plan is for market orders: a limit order cannot carry one" };
+    return { order: { symbol, side: body.side, lots, stop: num(body.stop, "stop"), target: num(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta, ...(pl.plan ? { plan: pl.plan } : {}) } };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -480,6 +496,7 @@ export class PaperEngine {
       ...(order.strategy ? { strategy: order.strategy } : {}),
       ...(order.signalTime !== undefined ? { signalTime: order.signalTime } : {}),
       ...(order.rPoints !== undefined ? { rPoints: order.rPoints } : {}),
+      ...(order.plan ? { plan: order.plan } : {}),
     };
     await this.d.store.savePosition(accountId, position);
     this.open.set(position.id, { account: accountId, position });
@@ -674,7 +691,7 @@ export class PaperEngine {
     return this.serial(async () => {
       const r = await this.closeNow(accountId, positionId, actor, reason);
       if (actor !== "engine") await this.audit(actor, "close", accountId, { positionId }, r, r.ok ? `net ${r.trade.net.toFixed(0)}` : "");
-      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? (reason === "expired" ? "Expired, settled: " : `${reason === "stop" ? "Stop" : "Target"} hit: `) : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.option?.label ?? r.trade.symbol} ${r.trade.option ? "" : r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
+      if (r.ok) this.d.publish({ account: accountId, event: "closed", actor, text: `${actor === "engine" ? (reason === "expired" ? "Expired, settled: " : reason === "time" ? "Time exit: " : `${reason === "stop" ? "Stop" : "Target"} hit: `) : actor === "mcp" ? "Claude closed " : "You closed "}${r.trade.option?.label ?? r.trade.symbol} ${r.trade.option ? "" : r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
       return r;
     });
   }
@@ -833,6 +850,34 @@ export class PaperEngine {
     });
   }
 
+  /** Is the position's plan due: past its close time, or TP1 reached and the stop not yet at the entry? */
+  private planDue(p: PaperPosition): boolean {
+    if (!p.plan) return false;
+    if (this.d.now() >= p.plan.closeAt) return true;
+    const price = this.quoteOf(p)?.price;
+    return !p.plan.tp1Done && price !== undefined && (p.side === "buy" ? price >= p.plan.tp1 : price <= p.plan.tp1);
+  }
+
+  /** Carry out a due plan: the time exit closes at the market; TP1 moves the stop to the entry unless it is already tighter. */
+  private runPlan(accountId: string, positionId: string): Promise<void> {
+    return this.serial(async () => {
+      const pos = (await this.d.store.positions(accountId)).find((p) => p.id === positionId);
+      if (!pos?.plan || !this.planDue(pos)) return;
+      if (this.d.now() >= pos.plan.closeAt) {
+        const r = await this.closeNow(accountId, positionId, "engine", "time");
+        if (r.ok) this.d.publish({ account: accountId, event: "closed", actor: "engine", text: `Time exit: ${r.trade.symbol} ${r.trade.side === "buy" ? "long" : "short"}, net ${r.trade.net >= 0 ? "+" : "-"}₹${Math.abs(Math.round(r.trade.net)).toLocaleString("en-IN")}` });
+        await this.audit("engine", "plan_time_exit", accountId, { positionId }, r, r.ok ? `net ${r.trade.net.toFixed(0)}` : "");
+        return;
+      }
+      const long = pos.side === "buy";
+      const next: PaperPosition = { ...pos, plan: { ...pos.plan, tp1Done: true }, ...(pos.stop === undefined || (long ? pos.stop < pos.entry : pos.stop > pos.entry) ? { stop: pos.entry } : {}) };
+      await this.d.store.savePosition(accountId, next);
+      this.open.set(next.id, { account: accountId, position: next });
+      await this.audit("engine", "plan_tp1", accountId, { positionId }, { ok: true }, `stop to ${next.stop}`);
+      this.d.publish({ account: accountId, event: "updated", actor: "engine", text: `TP1 reached on ${pos.symbol}: stop moved to the entry ${next.stop}` });
+    });
+  }
+
   /** Close positions whose stop or target a LIVE price has reached. Call after every accepted quote; cheap (no query unless something fires). */
   onQuotes(): Promise<void> {
     const fills = [...this.waiting.values()].filter(({ order }) => {
@@ -846,9 +891,11 @@ export class PaperEngine {
       const q = this.quoteOf(position);
       return !this.expired(position) && q && this.liveOf(position) && exitHit(position, q.price);
     });
-    if (due.length === 0 && lapsed.length === 0) return filling;
+    const planned = [...this.open.values()].filter(({ position }) => position.plan && !position.option && this.quoteOf(position) && this.liveOf(position) && this.planDue(position));
+    if (due.length === 0 && lapsed.length === 0 && planned.length === 0) return filling;
     return Promise.all([
       filling,
+      ...planned.map(({ account, position }) => this.runPlan(account, position.id)),
       ...lapsed.map(({ account, position }) => this.close(account, position.id, "engine", "expired").then(() => undefined)),
       ...due.map(({ account, position }) => {
         const q = this.quoteOf(position)!;

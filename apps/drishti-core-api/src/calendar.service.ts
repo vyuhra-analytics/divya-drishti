@@ -1,6 +1,10 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import {
   applyEiaActuals,
+  createRunner,
+  eiaGasFetcher,
+  eiaWpsrFetcher,
+  fredFetcher,
   decorateEvents,
   energyReleases,
   fillEiaPrevious,
@@ -15,9 +19,6 @@ import {
   mergeForexFactory,
   parseEiaGasSchedule,
   parseEiaPetroleumSchedule,
-  parseFredCsv,
-  parseWngsr,
-  parseWpsr,
   planEvents,
   recordPlanned,
   releasePending,
@@ -33,6 +34,8 @@ import {
   type HolidayRow,
 } from "@drishti/shared";
 import { Db } from "./db";
+
+const runSource = createRunner(); // the Fetcher runner for the calendar's actuals
 import { PgEventStore } from "./calendar.store";
 import { PgEiaReportStore } from "./eia-report.store";
 
@@ -189,16 +192,17 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     const due = events.filter((e) => e.at <= now && e.actual === undefined && e.kind !== "holiday");
     if (due.length === 0) return events;
-    const text = (url: string) => this.text(url);
+    // through the Fetcher runner: a shared cache, one request at a time per file, and the last good copy when a source is briefly down
+    const got = async <T,>(p: Promise<{ data: T }>): Promise<T | undefined> => p.then((r) => r.data).catch(() => undefined);
     const needOil = due.some((e) => e.id.startsWith("eia-oil-"));
     const needGas = due.some((e) => e.id.startsWith("eia-gas-"));
-    const [oil, gas] = await Promise.all([needOil ? text("https://ir.eia.gov/wpsr/table1.csv") : undefined, needGas ? text("https://ir.eia.gov/ngs/wngsr.csv") : undefined]);
-    let out = applyEiaActuals(events, { wpsr: oil ? parseWpsr(oil) : undefined, wngsr: gas ? parseWngsr(gas) : undefined }, now);
+    const [wpsr, wngsr] = await Promise.all([needOil ? got(runSource(eiaWpsrFetcher, {})) : undefined, needGas ? got(runSource(eiaGasFetcher, {})) : undefined]);
+    let out = applyEiaActuals(events, { wpsr, wngsr }, now);
 
     // macro events: titles carry a " (US)" suffix from the merge
     const macro = due.filter((e) => e.kind === "macro" && fredSeriesFor(e.title.replace(/ \(US\)$/, "")));
     const ids = [...new Set(macro.map((e) => fredSeriesFor(e.title.replace(/ \(US\)$/, ""))!.seriesId))];
-    const series = new Map(await Promise.all(ids.map(async (id) => [id, parseFredCsv((await text(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`)) ?? "")] as const)));
+    const series = new Map(await Promise.all(ids.map(async (id) => [id, (await got(runSource(fredFetcher, { seriesId: id }))) ?? []] as const)));
     out = out.map((e) => {
       if (e.kind !== "macro" || e.actual !== undefined || e.at > now) return e;
       const title = e.title.replace(/ \(US\)$/, "");

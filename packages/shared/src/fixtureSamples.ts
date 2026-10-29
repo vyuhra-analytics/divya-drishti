@@ -1,12 +1,11 @@
 // The sources whose real responses are recorded as fixtures, each with the check a good response must pass.
 // `bun run fixtures:refresh` records them; the contract test replays them. A failing check after a refresh means the provider changed.
-import { parseWngsr, parseWpsr, parseFredCsv } from "./actuals";
 import { parseWpsrReport } from "./eiaReport";
 import { financeCalendar, SOURCE_WINDOW, yahooCalendar } from "./calendarSources";
 import { EIA_SCHEDULE_URLS, parseEiaGasSchedule, parseEiaPetroleumSchedule } from "./eiaSchedule";
 import { summarizeTransits } from "./chokepoints";
 import { createRunner, type FetchIO } from "./fetcher";
-import { chokepointFetcher, cotFetcher, curveFetcher } from "./fetchers";
+import { chokepointFetcher, cotFetcher, curveFetcher, eiaGasFetcher, eiaWpsrFetcher, fredFetcher } from "./fetchers";
 import { parseEia } from "./eia";
 import type { shrink } from "./fixtures";
 import { parseYahooCandles } from "./index";
@@ -61,7 +60,7 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
   {
     id: "eia-wpsr-csv",
     source: "eia-csv",
-    run: async (io) => parseWpsr(await text(io, "https://ir.eia.gov/wpsr/table1.csv")),
+    run: (io) => createRunner(io)(eiaWpsrFetcher, {}).then((r) => r.data),
     check: (w) => (w && num(w.weekEnding) && Object.keys(w.change).length > 5 ? undefined : "expected a week ending and 5+ rows of changes"),
   },
   {
@@ -95,13 +94,13 @@ export const FIXTURE_SAMPLES: FixtureSample[] = [
   {
     id: "eia-wngsr-csv",
     source: "eia-csv",
-    run: async (io) => parseWngsr(await text(io, "https://ir.eia.gov/ngs/wngsr.csv")),
+    run: (io) => createRunner(io)(eiaGasFetcher, {}).then((r) => r.data),
     check: (w) => (w && num(w.weekEnding) && num(w.netChange) ? undefined : "expected a week ending and a net change"),
   },
   {
     id: "fred-cpi-csv",
     source: "fred",
-    run: async (io) => parseFredCsv(await text(io, "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL")),
+    run: (io) => createRunner(io)(fredFetcher, { seriesId: "CPIAUCSL" }).then((r) => r.data),
     check: (pts) => (pts.length >= 24 && pts.every((p: any) => num(p.value)) ? undefined : "expected 24+ monthly points"),
   },
   {
