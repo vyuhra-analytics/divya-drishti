@@ -36,14 +36,38 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
   expect(await names(client)).toEqual([
-    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_eia_release_context", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
+    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_eia_arrivals", "get_eia_forecasts", "get_eia_release_context", "get_eia_report", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
   ].sort());
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "place_paper_option_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(23);
+  expect((await names(client)).length).toBe(26);
+});
+
+test("the EIA report tools trim what they return and pass their choices through; the prompts name the right tools", async () => {
+  const releases = Array.from({ length: 30 }, (_, i) => ({ id: i }));
+  const { call, calls, client } = await connect({}, (url) => {
+    if (url.includes("/eia-report/forecasts")) return { body: { releases, stats: { crude: { weeks: 30 } }, threshold: 3 } };
+    if (url.includes("/eia-report/arrivals")) return { body: Array.from({ length: 20 }, (_, i) => ({ id: i })) };
+    return { body: { weekEnding: "2026-10-16", rows: new Array(880).fill({}), analysis: { lines: [] } } };
+  });
+  const rep = JSON.parse((await call("get_eia_report", { report: "WPSR", week: "2026-10-16", forecast: -1.5 })).text);
+  expect(calls.at(-1)!.url).toBe("http://api.test/eia-report?report=WPSR&week=2026-10-16&forecast=-1.5");
+  expect(rep.rows).toBeUndefined();
+  expect(rep.rowCount).toBe(880);
+  const fc = JSON.parse((await call("get_eia_forecasts", { report: "WNGSR", weeks: 100, rows_shown: 5 })).text);
+  expect(calls.at(-1)!.url).toBe("http://api.test/eia-report/forecasts?weeks=100&report=WNGSR");
+  expect(fc.releases).toHaveLength(5);
+  expect(fc.threshold).toBe(3);
+  expect(JSON.parse((await call("get_eia_arrivals")).text)).toHaveLength(10);
+  expect((await call("get_eia_report", { report: "OTHER" })).isError).toBe(true);
+  const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
+  expect(prompts).toEqual(["briefing", "eia-article"]);
+  const p: any = await client.getPrompt({ name: "eia-article", arguments: { report: "WNGSR" } });
+  expect(p.messages[0].content.text).toContain("get_eia_release_context");
+  expect(p.messages[0].content.text).toContain("submit_eia_article");
 });
 
 test("placing an order calls the paper API as the agent (the header that selects the agent's caps) and returns the fill", async () => {

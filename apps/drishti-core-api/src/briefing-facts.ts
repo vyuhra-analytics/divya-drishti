@@ -1,4 +1,4 @@
-import { agreement, buildContext, buildRecap, completedBars, freshness, fxSession, instrument, mcxSession, nymexSession, recapExtras, SYMBOLS, TIMEFRAMES, TOPIC_TAGS, type Bar, type CotRow, type CurveSummary, type EiaSummary, type BriefingContext, type CalEvent, type DayOverride, type NewsItem, type Quote, type Timeframe } from "@drishti/shared";
+import { agreement, buildContext, chainProvenance, buildRecap, completedBars, freshness, fxSession, instrument, mcxSession, nymexSession, recapExtras, SYMBOLS, TIMEFRAMES, TOPIC_TAGS, type Bar, type CotRow, type CurveSummary, type EiaSummary, type BriefingContext, type CalEvent, type Chain, type DayOverride, type NewsItem, type Quote, type Timeframe } from "@drishti/shared";
 
 export interface StreamHealth {
   active?: Record<string, string>;
@@ -41,7 +41,7 @@ export async function gatherServerContext(symbol: string, tf: string, s: Sources
     s.api<Bar[]>(`/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}`),
     s.api<NewsItem[]>(`/news?limit=15${tags.length ? `&tags=${tags.join(",")}` : ""}`),
     s.api<CalEvent[]>("/calendar?days=2"),
-    inst.exchange === "MCX" && inst.upstox ? s.api<{ expiry: string; pcr?: number; maxPain?: number; spot?: number }>(`/options?underlying=${inst.upstox}`) : Promise.resolve(undefined),
+    inst.exchange === "MCX" && inst.upstox ? s.api<Chain>(`/options?underlying=${inst.upstox}`) : Promise.resolve(undefined),
     s.health(),
     inst.exchange === "MCX" ? s.api<{ mcx: DayOverride | null }>("/market/sessions") : Promise.resolve(undefined),
   ]);
@@ -61,6 +61,7 @@ export async function gatherServerContext(symbol: string, tf: string, s: Sources
     news: news ?? [],
     events: events ?? [],
     options: chain ? { expiry: chain.expiry, pcr: chain.pcr, maxPain: chain.maxPain, spot: chain.spot } : undefined,
+    optionsProvenance: chain ? chainProvenance(chain, freshness(open, heardAt, now), now) : undefined,
     now,
   });
 }

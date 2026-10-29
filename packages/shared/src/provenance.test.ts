@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { computedProvenance, describeProvenance, FRESHNESS_BUDGET_MS, quoteProvenance, withinBudget } from "./provenance";
+import { chainProvenance, computedProvenance, describeProvenance, FRESHNESS_BUDGET_MS, quoteProvenance, withinBudget } from "./provenance";
 
 const NOW = 1_800_000_000_000;
 const q = { source: "upstox" as const, time: NOW - 2000, delayedBy: 0 };
@@ -33,4 +33,14 @@ test("describeProvenance reads in plain words", () => {
   expect(describeProvenance({ source: "eia", quality: "published", asOf: NOW - 3 * 86_400_000 }, NOW)).toBe("eia, published, as of 3d ago");
   expect(describeProvenance({ source: "upstox", quality: "live", asOf: NOW, conflict: { between: ["tradingview", "upstox"], pct: 0.2, ticks: 19 } }, NOW)).toBe("upstox, live, as of 0s ago; tradingview and upstox differ by 0.20% (19 ticks)");
   expect(computedProvenance(5)).toEqual({ source: "computed", quality: "computed", asOf: 5 });
+});
+
+test("chainProvenance: a live chain is stale past the options budget, closed with the exchange, delayed when its feed lags, and a recorded one says so", () => {
+  const chain = { source: "combined" as const, updatedAt: NOW - 3000, delayedBy: 0 };
+  expect(chainProvenance(chain, "live", NOW)).toEqual({ source: "tradingview+upstox", quality: "live", asOf: NOW - 3000 });
+  expect(chainProvenance({ ...chain, updatedAt: NOW - 60_000 }, "live", NOW).quality).toBe("stale");
+  expect(chainProvenance(chain, "closed", NOW).quality).toBe("closed"); // a closed market wins over a fresh read
+  expect(chainProvenance(chain, "stale", NOW).quality).toBe("stale");
+  expect(chainProvenance({ ...chain, source: "upstox", delayedBy: 600 }, "live", NOW)).toMatchObject({ source: "upstox", quality: "delayed" });
+  expect(chainProvenance({ ...chain, asOf: NOW - 86_400_000 }, "closed", NOW)).toEqual({ source: "recorded snapshot", quality: "published", asOf: NOW - 86_400_000 });
 });

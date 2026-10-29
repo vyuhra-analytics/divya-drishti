@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { instrument, rowPcr, type ChainRow, type OptionLeg } from "@drishti/shared";
+import { chainProvenance, describeProvenance, instrument, rowPcr, type ChainRow, type OptionLeg } from "@drishti/shared";
+import { useFreshness } from "./market";
 import { useChain, useRecordedChain, type ChainFeed } from "./chainClient";
 import { useLiveChain } from "./optionFeed";
 import { makeFormat, useClock, useSettings } from "./settings";
@@ -61,6 +62,7 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
   // null = live; a number = the chain as our snapshots recorded it at that moment (epoch ms)
   const [asOf, setAsOf] = useState<number | null>(null);
   const clock = useClock();
+  const fresh = useFreshness(symbol);
   const { chain: polled, error: liveError, reload } = useChain(underlying, expiry, feed, strikes, asOf === null);
   const { chain: liveChain, live } = useLiveChain(polled);
   const recorded = useRecordedChain(underlying, expiry, asOf, strikes);
@@ -201,6 +203,7 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
       </div>
     );
   if (!chain) return <p className="empty muted">{error ?? "Loading option chain…"}</p>;
+  const prov = chainProvenance(chain, fresh, Date.now());
   const span = shown.length * 2 + 1;
   return (
     <div className="ocx">
@@ -264,9 +267,10 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
           </span>
         )}
         {asOf === null && chain.source && (
-          <span className={`badge src-${chain.source}`} title={FEED_NOTE[chain.source]}>
+          <span className={`badge src-${chain.source}`} title={`${FEED_NOTE[chain.source]}. ${describeProvenance(prov, Date.now())}`}>
             {chain.source === "combined" ? "TV + UPSTOX" : chain.source === "tradingview" ? "TV" : "UPSTOX"}
             {chain.delayedBy ? ` ${Math.round(chain.delayedBy / 60)}m delay` : ""}
+            {prov.quality === "stale" || prov.quality === "closed" ? ` ${prov.quality.toUpperCase()}` : ""}
           </span>
         )}
         <span className="ocx-tools">

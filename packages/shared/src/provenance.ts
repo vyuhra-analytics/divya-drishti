@@ -2,6 +2,7 @@
 // to the facts the AI briefing receives, and used for freshness budgets: how old each kind of data may be before it is "outdated".
 // Pure and tested.
 import type { Quote } from "./index";
+import type { Chain } from "./options";
 import type { Freshness } from "./sessions";
 
 export type Quality = "live" | "delayed" | "stale" | "closed" | "computed" | "published";
@@ -43,6 +44,18 @@ export const withinBudget = (kind: DataKind, asOf: number, now: number) => now -
 export function quoteProvenance(q: Pick<Quote, "source" | "time" | "delayedBy" | "drift">, fresh: Freshness): Provenance {
   const quality: Quality = fresh === "closed" ? "closed" : fresh === "stale" ? "stale" : (q.delayedBy ?? 0) > 0 ? "delayed" : "live";
   return { source: q.source, quality, asOf: q.time, ...(q.drift ? { conflict: { between: q.drift.between, pct: q.drift.pct, ticks: q.drift.ticks } } : {}) };
+}
+
+/**
+ * Provenance of an options chain. A chain read back from our snapshots is "published" at the snapshot's time. A live one is closed when the exchange is
+ * shut, stale when it is older than the options budget, delayed when its feed lags the exchange, else live. The source names every feed behind it: a
+ * combined chain has TradingView prices and greeks with Upstox open interest and volume.
+ */
+export function chainProvenance(chain: Pick<Chain, "source" | "delayedBy" | "updatedAt" | "asOf">, fresh: Freshness, now: number): Provenance {
+  if (chain.asOf !== undefined) return { source: "recorded snapshot", quality: "published", asOf: chain.asOf };
+  const source = chain.source === "combined" ? "tradingview+upstox" : (chain.source ?? "unknown");
+  const quality: Quality = fresh === "closed" ? "closed" : fresh === "stale" || !withinBudget("options", chain.updatedAt, now) ? "stale" : (chain.delayedBy ?? 0) > 0 ? "delayed" : "live";
+  return { source, quality, asOf: chain.updatedAt };
 }
 
 /** Facts computed here from bars (indicators, volatility): their as-of is the close of the last bar used. */

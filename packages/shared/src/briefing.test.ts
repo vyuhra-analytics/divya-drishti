@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { briefingPrompt, buildContext, scoreBriefing, type ContextInput } from "./briefing";
 import type { Bar, Quote } from "./index";
+import { citableFields } from "./grounding";
 
 const T0 = 1_760_000_000;
 const bars: Bar[] = Array.from({ length: 80 }, (_, i) => {
@@ -70,4 +71,14 @@ test("a shared position is carried into the context; without one the field is ab
   const position = { status: "open" as const, contract: "CRUDEOIL 19 NOV 26 FUT", side: "long" as const, netQty: 100, pnl: 8400 };
   expect(buildContext(input({ position })).position).toEqual(position);
   expect(briefingPrompt(buildContext(input({ position })))).toContain('"side":"long"');
+});
+
+test("options positioning carries its own provenance, so a stale or closed chain is not described as live", () => {
+  const options = { expiry: "2026-11-17", pcr: 0.9, maxPain: 9400, spot: 9420 };
+  const stale = { source: "upstox", quality: "stale" as const, asOf: 1 };
+  const ctx = buildContext(input({ options, optionsProvenance: stale }));
+  expect(ctx.provenance.options).toEqual(stale);
+  expect(citableFields(ctx)["provenance.options.quality"]).toBe("stale");
+  expect(buildContext(input({ options })).provenance.options).toBeUndefined(); // no provenance given: none invented
+  expect(buildContext(input({ optionsProvenance: stale })).provenance.options).toBeUndefined(); // no options: nothing to describe
 });

@@ -96,6 +96,62 @@ export function createServer(cfg: McpConfig) {
     },
   );
 
+  server.registerTool(
+    "get_eia_report",
+    {
+      description:
+        "The official EIA report as the app stored it (published figures, not later revisions) with the app's rule-based analysis: headline change, surprise against the forecast and the side the report-day rule allows, crude and product stocks, flows, refining, consistency checks (gas: build against the 5-year average, regions). Rows are left out to keep it small; every analysis line lists its cites. Says when the forecast is typed in, recorded, or Investing.com's consensus.",
+      inputSchema: { report: z.enum(["WPSR", "WNGSR"]), week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("week ending, YYYY-MM-DD; the newest stored if left out"), forecast: z.number().min(-10_000).max(10_000).optional().describe("your own forecast to measure the surprise against") },
+    },
+    async ({ report, week, forecast }) => {
+      const r = await call(cfg.api, `/eia-report?report=${report}${week ? `&week=${week}` : ""}${forecast !== undefined ? `&forecast=${forecast}` : ""}`);
+      if (!r.ok) return err(r.error);
+      const { rows, ...rest } = r.json;
+      return ok({ ...rest, rowCount: Array.isArray(rows) ? rows.length : 0 });
+    },
+  );
+
+  server.registerTool(
+    "get_eia_forecasts",
+    {
+      description:
+        "Consensus forecasts against what came out, one row per EIA release, newest first (the next release on top with its forecast only): forecast, actual and surprise for crude, gasoline, distillates and the API's report the day before (gas storage for WNGSR), plus the forecasts' average miss and bias and how often the report-day threshold was reached. Forecasts are third-party (Investing.com); actuals are the published reports.",
+      inputSchema: { report: z.enum(["WPSR", "WNGSR"]).optional().describe("default WPSR"), weeks: z.number().int().min(1).max(600).optional().describe("history to compute the statistics over (default 52)"), rows_shown: z.number().int().min(1).max(60).optional().describe("releases to return (default 12); the statistics always cover all `weeks`") },
+    },
+    async ({ report, weeks, rows_shown }) => {
+      const r = await call(cfg.api, `/eia-report/forecasts?weeks=${weeks ?? 52}&report=${report ?? "WPSR"}`);
+      if (!r.ok) return err(r.error);
+      const { releases, ...rest } = r.json;
+      return ok({ ...rest, releases: Array.isArray(releases) ? releases.slice(0, rows_shown ?? 12) : [] });
+    },
+  );
+
+  server.registerTool(
+    "get_eia_arrivals",
+    { description: "How long after EIA's official release time the app stored each report (the delay log), newest first, and whether it was stored later (backfilled).", inputSchema: { limit: z.number().int().min(1).max(50).optional().describe("default 10") } },
+    async ({ limit }) => {
+      const r = await call(cfg.api, "/eia-report/arrivals");
+      return r.ok ? ok(Array.isArray(r.json) ? r.json.slice(0, limit ?? 10) : r.json) : err(r.error);
+    },
+  );
+
+  // ---- prompts: the two workflows the INSTRUCTIONS describe, one click away in clients that list prompts
+  server.registerPrompt(
+    "eia-article",
+    { description: "Write the article for an EIA release from the app's checked facts and hand it back.", argsSchema: { report: z.enum(["WPSR", "WNGSR"]), week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() } },
+    ({ report, week }) => ({
+      messages: [{ role: "user", content: { type: "text", text: `Write the article for the ${report === "WPSR" ? "weekly petroleum status report" : "natural gas storage report"}${week ? ` of the week ending ${week}` : " (newest stored)"}. Call get_eia_release_context, write only from its facts, cite fields from "citable", say "estimated" for any order-flow figure, then call submit_eia_article with the same context_id (if offered). The app checks every figure and tells you which paragraphs are wrong: correct them and submit again. No trade advice.` } }],
+    }),
+  );
+
+  server.registerPrompt(
+    "briefing",
+    { description: "Write a research briefing on one instrument from the app's checked facts and hand it back.", argsSchema: { symbol: z.string(), timeframe: z.enum(["1m", "5m", "15m", "1h", "1d"]).optional() } },
+    ({ symbol, timeframe }) => ({
+      messages: [{ role: "user", content: { type: "text", text: `Write a research briefing on ${symbol}. Call get_briefing_context (timeframe ${timeframe || "5m"}), write only from its facts, cite fields from "citable", never call delayed, stale or closed data live, then call submit_briefing (if offered) with the same context_id and correct any point the app marks wrong. A research note, not advice.` } }],
+    }),
+  );
+
   // ---- read tools: the rest of what the app knows (all read-only, always on)
   const MCX_UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"] as const;
   const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86_400 };

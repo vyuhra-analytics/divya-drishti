@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   buildContext,
+  chainProvenance,
   completedBars,
   instrument,
   positionContext,
@@ -12,6 +13,7 @@ import {
   type Bar,
   type BriefingResult,
   type CalEvent,
+  type Chain,
   type GroundingReport,
   type PointCheck,
   type OpenPosition,
@@ -97,7 +99,7 @@ export async function gatherContext(symbol: string, tf: string, withPosition = f
   const [bars, events, chain, held] = await Promise.all([
     json<Bar[]>(`/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}`),
     json<CalEvent[]>("/calendar?days=2"),
-    inst?.exchange === "MCX" && inst.upstox ? json<{ expiry: string; pcr?: number; maxPain?: number; spot?: number }>(`/options?underlying=${inst.upstox}`) : Promise.resolve(undefined),
+    inst?.exchange === "MCX" && inst.upstox ? json<Chain>(`/options?underlying=${inst.upstox}`) : Promise.resolve(undefined),
     withPosition && inst?.exchange === "MCX" ? json<{ positions: OpenPosition[] }>("/positions") : Promise.resolve(undefined),
   ]);
   const news = useStore.getState().news;
@@ -114,6 +116,7 @@ export async function gatherContext(symbol: string, tf: string, withPosition = f
     // opted in: a failed read is "unavailable", not "flat". Not opted in (or NYMEX, which Upstox does not carry): nothing is sent
     position: withPosition && inst?.exchange === "MCX" ? positionContext(symbol, held?.positions) : undefined,
     options: chain ? { expiry: chain.expiry, pcr: chain.pcr, maxPain: chain.maxPain, spot: chain.spot } : undefined,
+    optionsProvenance: chain ? chainProvenance(chain, symbolFreshness(symbol), Date.now()) : undefined,
     now: Date.now(),
   });
 }
