@@ -10,6 +10,8 @@ import type { StoredReport } from "./eia-report.store";
 const FACTS_TTL_MS = 30_000; // the panel asks again every minute; one gather per half minute is plenty
 const FEED_BEFORE_MS = 6 * 60_000;
 const FEED_AFTER_MS = 16 * 60_000;
+const SAVE_AFTER_MS = 61 * 60_000; // the first hour is over (one minute of margin for the last candle)
+const SAVE_UNTIL_MS = 5 * 24 * 3600_000;
 
 /** Where the facts come from outside the report itself. The live ones are the default; tests pass fakes. */
 export interface ArticleSources {
@@ -94,21 +96,7 @@ export class EiaArticleService {
     if (releaseAt < Date.now()) {
       await Promise.all(
         REACTION_INSTRUMENTS[report].map(async (i) => {
-          const saved = await this.savedReaction(report, stored.weekEnding, i.key);
-          if (saved) {
-            reactions[i.key] = { label: i.label, decimals: i.decimals, ...saved }; // a complete hour was saved at the time: the candles may be gone by now
-            return;
-          }
-          const bars = await this.sources.bars(i.symbol).catch(() => [] as Bar[]);
-          const reaction = releaseReaction(i.symbol, bars, releaseAt);
-          if (!reaction) {
-            reactions[i.key] = { label: i.label, decimals: i.decimals }; // kept as missing, so the article can say why there is nothing
-            return;
-          }
-          // the recorded feed exists for the MCX contracts only (the NYMEX feeds are delayed and not recorded)
-          const micro = i.symbol.startsWith("MCX:") ? releaseMicrostructure(await this.sources.feed(i.symbol, releaseAt - FEED_BEFORE_MS, releaseAt + FEED_AFTER_MS).catch(() => []), releaseAt) : undefined;
-          reactions[i.key] = { label: i.label, decimals: i.decimals, reaction, micro };
-          if (reaction.minutesCovered >= 60) await this.saveReaction(report, stored.weekEnding, i.key, i.label, i.decimals, reaction, micro);
+          reactions[i.key] = await this.reactionFor(report, stored.weekEnding, releaseAt, i);
         }),
       );
     }
@@ -126,6 +114,59 @@ export class EiaArticleService {
     });
     this.cache.set(cacheKey, { at: Date.now(), facts: built });
     return { stored, facts: built };
+  }
+
+  /** One instrument's reaction: the one saved at the time, else rebuilt from candles (and saved for good once its first hour is complete). */
+  private async reactionFor(report: EiaReportCode, weekEnding: string, releaseAt: number, i: (typeof REACTION_INSTRUMENTS)[EiaReportCode][number]): Promise<{ label: string; decimals: number; reaction?: ReturnType<typeof releaseReaction>; micro?: ReturnType<typeof releaseMicrostructure> }> {
+    const saved = await this.savedReaction(report, weekEnding, i.key);
+    if (saved) return { label: i.label, decimals: i.decimals, ...saved }; // a complete hour was saved at the time: the candles may be gone by now
+    const bars = await this.sources.bars(i.symbol).catch(() => [] as Bar[]);
+    const reaction = releaseReaction(i.symbol, bars, releaseAt);
+    if (!reaction) return { label: i.label, decimals: i.decimals }; // kept as missing, so the article can say why there is nothing
+    // the recorded feed exists for the MCX contracts only (the NYMEX feeds are delayed and not recorded)
+    const micro = i.symbol.startsWith("MCX:") ? releaseMicrostructure(await this.sources.feed(i.symbol, releaseAt - FEED_BEFORE_MS, releaseAt + FEED_AFTER_MS).catch(() => []), releaseAt) : undefined;
+    if (reaction.minutesCovered >= 60) await this.saveReaction(report, weekEnding, i.key, i.label, i.decimals, reaction, micro);
+    return { label: i.label, decimals: i.decimals, reaction, micro };
+  }
+
+  private readonly lastTry = new Map<string, number>();
+  private saver?: ReturnType<typeof setInterval>;
+
+  onModuleInit() {
+    if (process.env.EIA_REACTION_SAVER === "off") return;
+    // the first sweep soon after start covers a release that happened while the app was off (Yahoo keeps one-minute NYMEX candles for about five sessions)
+    setTimeout(() => void this.saveDueReactions().catch(() => undefined), 45_000).unref?.();
+    this.saver = setInterval(() => void this.saveDueReactions().catch(() => undefined), 60_000);
+    this.saver.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.saver) clearInterval(this.saver);
+  }
+
+  /**
+   * Saves the first-hour reaction of the newest stored release of each report once that hour is over, without anyone opening the article: it used to be
+   * saved only when somebody asked for the facts after the hour, so a release nobody looked at in time lost its NYMEX candles. Tries every 5 minutes for
+   * the first 8 hours, then every 6 hours, and stops after 5 days. Returns how many it saved.
+   */
+  async saveDueReactions(now = Date.now()): Promise<number> {
+    let saved = 0;
+    for (const report of ["WPSR", "WNGSR"] as const) {
+      const stored = await this.reports.store.latest(report).catch(() => undefined);
+      if (!stored) continue;
+      const releaseAt = stored.officialReleaseAt ?? stored.scheduledAt;
+      const age = now - releaseAt;
+      if (age < SAVE_AFTER_MS || age > SAVE_UNTIL_MS) continue;
+      for (const i of REACTION_INSTRUMENTS[report]) {
+        const key = `${report}|${stored.weekEnding}|${i.key}`;
+        if (now - (this.lastTry.get(key) ?? 0) < (age < 8 * 3600_000 ? 5 * 60_000 : 6 * 3600_000)) continue;
+        this.lastTry.set(key, now);
+        if (await this.savedReaction(report, stored.weekEnding, i.key)) continue;
+        const r = await this.reactionFor(report, stored.weekEnding, releaseAt, i);
+        if (r.reaction && r.reaction.minutesCovered >= 60) saved++;
+      }
+    }
+    return saved;
   }
 
   /** The reaction saved when its first hour was complete, or undefined. */

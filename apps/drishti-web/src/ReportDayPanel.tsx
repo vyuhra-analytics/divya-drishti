@@ -30,7 +30,25 @@ interface Release {
   report: ReportCode;
   at: number;
   /** the newest forecast recorded for this release and where it came from */
-  forecast?: { value: number; source: string };
+  forecast?: { value: number; source: string; at: number };
+  /** every figure recorded for it, newest first, one per change (a source that repeats the same figure is listed once) */
+  forecasts?: { value: number; source: string; at: number }[];
+}
+
+/** The forecast figures of a release, newest first, a repeat of the figure the same source gave before left out. */
+export function forecastHistory(obs: { kind: string; num: number | null; source: string; observedAt: string }[]): { value: number; source: string; at: number }[] {
+  const all = obs
+    .filter((o) => o.kind === "forecast" && o.num !== null)
+    .map((o) => ({ value: Number(o.num), source: o.source, at: Date.parse(o.observedAt) }))
+    .filter((o) => Number.isFinite(o.at))
+    .sort((a, b) => b.at - a.at);
+  const seen = new Set<string>();
+  return all.filter((o) => {
+    const k = `${o.source}|${o.value}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 const STAGE_NAME: Record<DayStage, string> = { prep: "Prep", range: "Range", print: "Print", window: "Window", after: "Entry window closed" };
@@ -55,8 +73,8 @@ function pickRelease(events: StoredEvent[], now: number, force?: ReportCode): Re
   const next = list.filter((x) => x.at > now).sort((a, b) => a.at - b.at)[0];
   const x = recent ?? next;
   if (!x) return undefined;
-  const f = x.e.observations.filter((o) => o.kind === "forecast" && o.num !== null).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
-  return { report: x.e.series_code, at: x.at, forecast: f ? { value: Number(f.num), source: f.source } : undefined };
+  const forecasts = forecastHistory(x.e.observations);
+  return { report: x.e.series_code, at: x.at, forecast: forecasts[0], forecasts };
 }
 
 export function ReportDayWidget(_: { widget: Widget }) {
@@ -66,6 +84,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [typed, setTyped] = useState("");
   const [consensus, setConsensus] = useState<{ value: number; source: string } | undefined>(undefined);
+  /** when the Investing.com reader is paused after a block (epoch ms), so a missing consensus is explained */
+  const [consensusPaused, setConsensusPaused] = useState<number | undefined>(undefined);
   const [print, setPrint] = useState<{ change: number; unit: string; officialAt?: number } | undefined>(undefined);
   const [bars, setBars] = useState<DayBar[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +133,10 @@ export function ReportDayWidget(_: { widget: Widget }) {
         setConsensus(typeof v === "number" ? { value: v, source: "Investing.com consensus" } : undefined);
       })
       .catch(() => undefined);
+    fetch(`${apiUrl()}/eia-report/forecasts/status`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => setConsensusPaused(typeof s?.blockedUntil === "number" && s.blockedUntil > Date.now() ? s.blockedUntil : undefined))
+      .catch(() => undefined);
     return () => ctrl.abort();
   }, [release?.at, report]);
 
@@ -120,6 +144,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
   useEffect(() => setTyped(release ? (loadRecord(release.at).forecast ?? "") : ""), [release?.at]);
   const typedValue = typed.trim() !== "" && Number.isFinite(Number(typed)) ? Number(typed) : undefined;
   const forecast = typedValue !== undefined ? { value: typedValue, source: "typed in" } : (release?.forecast ?? consensus);
+  /** when the forecast on show was recorded: only a figure a feed recorded has a time (a typed one and the consensus have none) */
+  const forecastAt = typedValue === undefined ? release?.forecast?.at : undefined;
 
   // the number: the stored report of THIS release, looked at every 3 s from the print and once a minute otherwise
   const fast = stage === "print" || stage === "window";
@@ -184,7 +210,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
 
   // the range and the signal's levels on the chart (the trade's own levels are published by the trade block)
   const tradingNow = release ? !!loadRecord(release.at).trade : false;
-  usePublishLevels("reportday:range", range ? [{ price: range.high, title: "Range high", color: "#42a5f5", style: "solid" }, { price: range.low, title: "Range low", color: "#42a5f5", style: "solid" }] : []);
+  const rangeFrom = releaseSec - DAY_RULES.rangeMin * 60;
+  usePublishLevels("reportday:range", range ? [{ price: range.high, title: "Range high", color: "#42a5f5", style: "solid", from: rangeFrom }, { price: range.low, title: "Range low", color: "#42a5f5", style: "solid", from: rangeFrom }] : []);
   usePublishLevels(
     "reportday:signal",
     signal && !tradingNow ? [
@@ -290,6 +317,25 @@ export function ReportDayWidget(_: { widget: Widget }) {
                 setTyped(e.target.value);
                 if (release) saveRecord(release.at, { forecast: e.target.value });
               }} placeholder={forecast ? `${signed(forecast.value, 2)} ${forecast.source !== "typed in" ? `(${forecast.source})` : ""}` : "type the number"} aria-label="Forecast of the change" />
+            {forecast && (
+              <div className="rd-forecast-note" data-testid="forecast-note">
+                <strong>{signed(forecast.value, 2)}</strong>{" "}
+                <span className="muted">
+                  {forecast.source}
+                  {forecastAt !== undefined ? `, recorded ${clock.stamp(forecastAt)}` : ""}
+                </span>
+              </div>
+            )}
+            {(release?.forecasts?.length ?? 0) > 1 && (
+              <div className="muted" title="every figure recorded for this release, newest first">
+                changed: {release!.forecasts!.map((f) => `${signed(f.value, 2)} (${f.source}, ${clock.time(f.at)})`).join(" ← ")}
+              </div>
+            )}
+            {consensusPaused !== undefined && (
+              <div className="muted" title="Investing.com answered HTTP 403, so the app stopped asking for 12 hours and does not retry">
+                Investing.com consensus paused until {clock.time(consensusPaused)}
+              </div>
+            )}
           </div>
           <div>
             <div className="muted">Actual</div>

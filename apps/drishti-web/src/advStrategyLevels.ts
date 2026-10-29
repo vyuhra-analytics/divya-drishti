@@ -1,5 +1,5 @@
-import type { IndicatorDescriptor } from "openalgo-charts";
-import { useLevels } from "./strategyLevels";
+import type { IndicatorDescriptor, IndicatorDrawing } from "openalgo-charts";
+import { useLevels, type LevelInput } from "./strategyLevels";
 
 // The "Strategy levels" study of the advanced chart: draws, as price lines, the levels the Report day and USIB panels publish (strategyLevels.ts). It has no
 // data of its own; it recomputes whenever a panel publishes. The report-day and USIB desks add it to their chart on their own.
@@ -19,8 +19,30 @@ export function strategyLevelsIndicator(): IndicatorDescriptor {
     levels: () =>
       Object.values(useLevels.getState().sources)
         .flat()
+        .filter((l) => l.from === undefined)
         .map((l) => ({ price: l.price, title: l.title, color: l.color, lineStyle: l.style ?? "dashed", lineWidth: 1 })),
+    draws: ({ bars }) => rangeDrawings(useLevels.getState().sources, bars.length ? Number(bars[bars.length - 1].time) : undefined),
   };
+}
+
+/** The levels that carry a start time, as drawings: two or more in one source make a shaded box with its label, a single one a line from its start. */
+export function rangeDrawings(sources: Record<string, LevelInput[]>, lastTime: number | undefined) {
+  if (lastTime === undefined) return [];
+  const out: IndicatorDrawing[] = [];
+  for (const levels of Object.values(sources)) {
+    const part = levels.filter((l) => l.from !== undefined && l.from < lastTime);
+    if (!part.length) continue;
+    const from = Math.min(...part.map((l) => l.from!));
+    const color = part[0].color;
+    if (part.length === 1) {
+      out.push({ kind: "line", from: { time: from, price: part[0].price }, to: { time: lastTime, price: part[0].price }, color, lineWidth: 1, lineStyle: part[0].style ?? "solid" });
+      continue;
+    }
+    const hi = Math.max(...part.map((l) => l.price));
+    const lo = Math.min(...part.map((l) => l.price));
+    out.push({ kind: "box", from: { time: from, price: hi }, to: { time: lastTime, price: lo }, color, fillColor: color, opacity: 0.06, lineWidth: 1, text: part.map((l) => `${l.title} ${l.price}`).join("\n"), fontSize: 10, verticalAlign: "top", align: "left" });
+  }
+  return out;
 }
 
 export function registerStrategyLevels(register: (d: IndicatorDescriptor) => void, has: (id: string) => boolean): void {

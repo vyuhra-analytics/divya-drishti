@@ -6,7 +6,7 @@ import { ForecastService, type ForecastIO } from "./forecast.service";
 const page = (rows: object[]) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { state: { economicCalendarEventStore: { occurrences: rows } } } } })}</script>`;
 const occ = (id: number, time: string, over: object = {}) => ({ occurrence_id: id, occurrence_time: time, forecast: -0.1, previous: -8.5, unit: "M", ...over });
 
-function setup(opts: { respond?: (url: string) => { status: number; text: string }; lastFetched?: Date | null; next?: Date | null; around?: object[] } = {}) {
+function setup(opts: { respond?: (url: string) => { status: number; text: string }; lastFetched?: Date | null; next?: Date | null; around?: object[]; kv?: string } = {}) {
   const queries: { text: string; values: unknown[] }[] = [];
   const sql = Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -15,6 +15,7 @@ function setup(opts: { respond?: (url: string) => { status: number; text: string
       if (text.includes("max(fetched_at) AS t")) return Promise.resolve([{ t: opts.lastFetched ?? null }]);
       if (text.includes("min(release_at) AS t")) return Promise.resolve([{ t: opts.next ?? null }]);
       if (text.includes("abs(extract(epoch FROM release_at)")) return Promise.resolve(opts.around ?? []);
+      if (text.includes("FROM kv WHERE key = 'investing_block'")) return Promise.resolve(opts.kv ? [{ value: opts.kv }] : []);
       return Promise.resolve([]);
     },
     {},
@@ -86,6 +87,28 @@ describe("ForecastService.tick", () => {
     advance(12 * 3600_000);
     expect((await svc.tick()).length).toBe(0); // the block is over: it asks again (and is blocked again by this fake)
     expect(requests).toHaveLength(2);
+  });
+
+  it("keeps the pause across a restart: a block is saved, and a new instance that finds it asks nobody until it has run out", async () => {
+    const first = setup({ respond: () => ({ status: 403, text: "blocked" }) });
+    await first.svc.tick();
+    const saved = first.queries.find((q) => q.text.includes("INSERT INTO kv") && q.text.includes("investing_block"))!;
+    const value = String(saved.values.find((v) => typeof v === "string" && String(v).includes("until")));
+    expect(JSON.parse(value).until).toBe(Date.parse("2026-10-27T09:00:00Z") + 12 * 3600_000);
+    expect(JSON.parse(value).error).toContain("403");
+
+    const restarted = setup({ kv: value }); // the app was restarted: memory is empty, the database remembers
+    expect(await restarted.svc.tick()).toEqual([]);
+    expect(restarted.requests).toHaveLength(0);
+    expect((await restarted.svc.status()).blockedUntil).toBe(JSON.parse(value).until);
+    restarted.advance(12 * 3600_000 + 1000); // the twelve hours are over: it may read again
+    expect((await restarted.svc.tick()).length).toBe(5);
+  });
+
+  it("ignores a saved pause that has already run out, and an unreadable one", async () => {
+    const old = JSON.stringify({ until: Date.parse("2026-10-27T08:00:00Z"), error: "x" });
+    expect((await setup({ kv: old }).svc.tick()).length).toBe(5);
+    expect((await setup({ kv: "not json" }).svc.tick()).length).toBe(5);
   });
 
   it("treats a bot check page and a changed layout the same way as a block", async () => {

@@ -10,6 +10,11 @@ export interface LevelInput {
   title: string;
   color: string;
   style?: "solid" | "dashed" | "dotted";
+  /**
+   * Epoch seconds. A level that has one is not a full-width price line: it starts at that time and runs to the latest bar, and the levels of one source that
+   * have it (a range's high and low) are drawn as a shaded box with a label, so a range reads as the hour it was built in and not as a line through earlier candles.
+   */
+  from?: number;
 }
 
 interface LevelsState {

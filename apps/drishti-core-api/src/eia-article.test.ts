@@ -123,6 +123,31 @@ describe("EiaArticleService.facts", () => {
     expect(hour.savedReactions[0].slice(0, 3)).toEqual(["WPSR", "2026-10-16", "cl"]);
   });
 
+  it("saves the first hour on its own once it is over, without anyone asking for the facts, and does not hammer the providers", async () => {
+    const hourBars = () => [...Array.from({ length: 40 }, (_, i) => bar(i - 40, 100)), ...Array.from({ length: 60 }, (_, i) => bar(i, 100 + i / 10))];
+    let asked = 0;
+    const early = setup({ bars: () => (asked++, hourBars()) });
+    expect(await early.service.saveDueReactions(RELEASE + 30 * 60_000)).toBe(0); // the hour is not over
+    expect(asked).toBe(0);
+    const { service, savedReactions } = setup({ bars: () => (asked++, hourBars()) });
+    // the fake store answers every report with the same stored week, so both reports' two instruments are saved
+    expect(await service.saveDueReactions(RELEASE + 2 * 3600_000)).toBe(4);
+    expect(savedReactions).toHaveLength(4);
+    const before = asked;
+    await service.saveDueReactions(RELEASE + 2 * 3600_000 + 60_000); // a minute later: inside the 5-minute pause
+    expect(asked).toBe(before);
+    expect(await setup({ bars: () => hourBars() }).service.saveDueReactions(RELEASE + 6 * 24 * 3600_000)).toBe(0); // older than five days: no longer chased
+  });
+
+  it("does not rebuild a reaction that is already saved", async () => {
+    const saved = { reaction: { symbol: "NYMEX:CL", releaseAt: RELEASE, basePrice: 58.4, moves: [], maxUp15: 0, maxDown15: 0, firstSwing15: "up", high60: 0, low60: 0, volumeFirst5: 1, volumeBefore5: 1, volumeRatio: 1, minutesCovered: 60 }, micro: null };
+    let asked = 0;
+    const { service, savedReactions } = setup({ bars: () => (asked++, []), savedReaction: saved });
+    expect(await service.saveDueReactions(RELEASE + 2 * 3600_000)).toBe(0);
+    expect(asked).toBe(0);
+    expect(savedReactions).toHaveLength(0);
+  });
+
   it("uses the reaction saved at the time when the candles are no longer available", async () => {
     const saved = { reaction: { symbol: "NYMEX:CL", releaseAt: RELEASE, basePrice: 58.4, moves: [{ minutes: 5, price: 58.8, change: 0.4, pct: 0.68 }], maxUp15: 0.6, maxDown15: 0.1, firstSwing15: "up", high60: 0.8, low60: -0.1, volumeFirst5: 900, volumeBefore5: 300, volumeRatio: 3, minutesCovered: 60 }, micro: null };
     const { service } = setup({ bars: () => [], savedReaction: saved });

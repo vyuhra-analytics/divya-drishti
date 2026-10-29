@@ -56,11 +56,13 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
   private blockedUntil = 0;
   private lastError?: string;
   private running = false;
+  private blockLoaded?: Promise<void>;
   private readonly lastFetch = new Map<InvestingSeries, number>();
 
   constructor(private readonly db: Db) {}
 
   onModuleInit() {
+    void this.loadBlock();
     if (!this.enabled()) return;
     setTimeout(() => void this.tick(), 45_000);
     this.timer = setInterval(() => void this.tick(), CHECK_EVERY_MS);
@@ -74,8 +76,32 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
     return process.env.INVESTING_FORECASTS?.trim().toLowerCase() !== "off";
   }
 
+  /** The pause after a block is kept in the database: a restart of the app must not forget it and ask the site again at once. Loaded once. */
+  private loadBlock(): Promise<void> {
+    this.blockLoaded ??= (async () => {
+      const rows = (await this.db.sql`SELECT value FROM kv WHERE key = 'investing_block'`.catch(() => [])) as { value: string }[];
+      try {
+        const saved = rows[0] ? (JSON.parse(rows[0].value) as { until?: number; error?: string }) : undefined;
+        if (saved && typeof saved.until === "number" && saved.until > this.blockedUntil && saved.until > this.io.now()) {
+          this.blockedUntil = saved.until;
+          this.lastError = saved.error;
+        }
+      } catch {
+        /* an unreadable value is no block */
+      }
+    })();
+    return this.blockLoaded;
+  }
+
+  private async saveBlock(): Promise<void> {
+    await this.db.sql`
+      INSERT INTO kv (key, value) VALUES ('investing_block', ${JSON.stringify({ until: this.blockedUntil, error: this.lastError })})
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.catch(() => undefined);
+  }
+
   /** One pass: read the pages that are due, store what they hold. Returns the pages read. */
   async tick(): Promise<InvestingSeries[]> {
+    await this.loadBlock();
     if (this.running) return [];
     this.running = true;
     const read: InvestingSeries[] = [];
@@ -103,6 +129,7 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
       this.blockedUntil = this.io.now() + INVESTING_BLOCK_MS;
       this.lastError = problem ?? "the page no longer has the event data: its layout changed";
       this.io.log(`Investing.com forecasts paused for ${INVESTING_BLOCK_MS / 3600_000} h: ${this.lastError}`);
+      await this.saveBlock();
       return false;
     }
     this.lastFetch.set(page.series, this.io.now());
@@ -201,6 +228,7 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
   }
 
   async status(): Promise<ForecastStatus> {
+    await this.loadBlock();
     const rows = (await this.db.sql`
       SELECT series, count(*)::int AS n, count(forecast)::int AS f, max(fetched_at) AS last, min(release_at) FILTER (WHERE release_at > now()) AS next FROM release_forecasts GROUP BY series`.catch(() => [])) as { series: InvestingSeries; n: number; f: number; last: Date | null; next: Date | null }[];
     return {

@@ -104,7 +104,8 @@ export function UsibWidget(_: { widget: Widget }) {
 
   // the range and the signal's levels on the chart (the trade's own levels are published by the trade block)
   const tradingNow = !!loadRecord(`usib:${openAt}`).trade;
-  usePublishLevels("usib:range", range ? [{ price: range.high, title: "USIB range high", color: "#42a5f5", style: "solid" }, { price: range.low, title: "USIB range low", color: "#42a5f5", style: "solid" }] : []);
+  const rangeFrom = openSec - USIB_RULES.rangeMin * 60;
+  usePublishLevels("usib:range", range ? [{ price: range.high, title: "USIB range high", color: "#42a5f5", style: "solid", from: rangeFrom }, { price: range.low, title: "USIB range low", color: "#42a5f5", style: "solid", from: rangeFrom }] : []);
   usePublishLevels(
     "usib:signal",
     signal && !tradingNow ? [
