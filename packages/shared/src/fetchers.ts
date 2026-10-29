@@ -3,7 +3,7 @@
 import { CHOKEPOINT_PORTNAME, parseTransits, type ChokepointId, type TransitDay } from "./chokepoints";
 import { COT_DATASET, COT_MARKETS, parseCot, type CotMarketId, type CotRow } from "./cot";
 import { curveCodes, curveInstruments, parseCurve, type CurvePoint } from "./curve";
-import type { Fetcher } from "./fetcher";
+import { SourceMiss, type Fetcher } from "./fetcher";
 import { userAgentFor } from "./userAgents";
 
 const HOUR = 3600_000;
@@ -80,7 +80,12 @@ export const curveFetcher: Fetcher<{ symbol: string }, unknown, CurvePoint[]> = 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
-  transform: (raw, _q, io) => parseCurve(raw, io.now()),
+  transform: (raw, _q, io) => {
+    const pts = parseCurve(raw, io.now());
+    // the scanner answered with rows but fewer than two live contracts: this instrument is thinly listed, which is no outage (an empty answer still is one)
+    if (pts.length < 2 && Array.isArray((raw as any)?.data) && (raw as any).data.length > 0) throw new SourceMiss(`only ${pts.length} live contract(s) listed`);
+    return pts;
+  },
   isUsable: (pts) => pts.length >= 2, // a curve needs two contracts
 };
 

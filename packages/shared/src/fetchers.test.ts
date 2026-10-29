@@ -47,7 +47,11 @@ test("curveFetcher posts the dated contract codes and needs two contracts", asyn
   expect(data.map((p) => p.code)).toEqual(["NYMEX:CLZ2026", "NYMEX:CLF2027"]);
   expect(urls[0]).toContain("NYMEX:CLX2026"); // codes built from the injected clock: October 2026 onwards
   const one = net({ "scanner.tradingview.com": { data: [scan.data[0]] } });
-  await expect(createRunner(one.io)(curveFetcher, { symbol: "NYMEX:CL" })).rejects.toThrow(/TradingView futures curve unavailable/);
+  const thin = await createRunner(one.io)(curveFetcher, { symbol: "NYMEX:CL" }).catch((e) => e);
+  expect(thin).toMatchObject({ kind: "nodata" }); // rows came back but only one live contract: a thin listing, not an outage
+  expect(thin.message).toContain("only 1 live contract");
+  const empty = net({ "scanner.tradingview.com": { data: [] } });
+  await expect(createRunner(empty.io)(curveFetcher, { symbol: "NYMEX:CL" })).rejects.toThrow(/TradingView futures curve unavailable/); // nothing at all is still an outage
 });
 
 test("every source in the registry names its credentials and any fetcher that serves it", () => {
