@@ -140,6 +140,8 @@ export interface OptionOrderInput extends OrderMeta {
   target?: number;
   /** a limit premium: the order waits for the option's ask to fall to it */
   entry?: number;
+  /** what the engine does by itself once filled, in PREMIUM (see ManagePlan); market orders only */
+  plan?: ManagePlan;
 }
 
 /** An order carries an `option` when it is an option order: { option: { key }, side: "buy", lots, stop?, target? } with stop and target in PREMIUM. Option paper trading is buy only. */
@@ -158,10 +160,13 @@ export function parseOptionOrder(body: any): { order: OptionOrderInput } | { err
   };
   const m = parseOrderMeta(body);
   if ("error" in m) return m;
+  const pl = parsePlan(body);
+  if ("error" in pl) return pl;
   try {
     const entry = parseEntry(body.entry);
     if (entry instanceof Error) return { error: entry.message };
-    return { order: { key, lots, stop: price(body.stop, "stop"), target: price(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta } };
+    if (pl.plan && entry !== undefined) return { error: "plan is for market orders: a limit order cannot carry one" };
+    return { order: { key, lots, stop: price(body.stop, "stop"), target: price(body.target, "target"), ...(entry !== undefined ? { entry } : {}), ...m.meta, ...(pl.plan ? { plan: pl.plan } : {}) } };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -458,6 +463,7 @@ export class PaperEngine {
       ...(order.strategy ? { strategy: order.strategy } : {}),
       ...(order.signalTime !== undefined ? { signalTime: order.signalTime } : {}),
       ...(order.rPoints !== undefined ? { rPoints: order.rPoints } : {}),
+      ...(order.plan ? { plan: order.plan } : {}),
     };
     await this.d.store.savePosition(accountId, position);
     this.open.set(position.id, { account: accountId, position });
@@ -930,7 +936,7 @@ export class PaperEngine {
     });
     const trailing: Promise<void>[] = [];
     for (const { account, position } of this.open.values()) {
-      const price = position.plan?.trail !== undefined && !position.option && this.liveOf(position) ? this.quoteOf(position)?.price : undefined;
+      const price = position.plan?.trail !== undefined && this.liveOf(position) ? this.quoteOf(position)?.price : undefined;
       if (price === undefined) continue;
       const step = this.stepTrail(position, price);
       if (!step) continue;
@@ -952,7 +958,7 @@ export class PaperEngine {
           }),
         );
     }
-    const planned = [...this.open.values()].filter(({ position }) => position.plan && !position.option && this.quoteOf(position) && this.liveOf(position) && this.planDue(position));
+    const planned = [...this.open.values()].filter(({ position }) => position.plan && this.quoteOf(position) && this.liveOf(position) && this.planDue(position));
     if (due.length === 0 && lapsed.length === 0 && planned.length === 0 && trailing.length === 0) return filling;
     return Promise.all([
       filling,

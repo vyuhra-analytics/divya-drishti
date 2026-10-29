@@ -36,14 +36,14 @@ const names = async (c: Client) => (await c.listTools()).tools.map((t) => t.name
 test("by default agents can read but not trade: the write tools are not even offered", async () => {
   const { client } = await connect();
   expect(await names(client)).toEqual([
-    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_eia_arrivals", "get_eia_forecasts", "get_eia_release_context", "get_eia_report", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
+    "get_bars", "get_briefing_context", "get_calendar", "get_chokepoints", "get_eia", "get_eia_arrivals", "get_eia_forecasts", "get_eia_release_context", "get_eia_report", "get_futures_curve", "get_market_status", "get_news", "get_option_chain", "get_paper_account", "get_quote", "get_recap", "get_signals", "get_source_checks", "get_speculator_positioning", "get_technicals", "list_instruments", "list_paper_positions", "list_paper_trades",
   ].sort());
 });
 
 test("with writes enabled the three paper-trading tools appear", async () => {
   const { client } = await connect({ write: true });
   expect(await names(client)).toEqual(expect.arrayContaining(["place_paper_order", "place_paper_option_order", "close_paper_position", "set_paper_stop_target"]));
-  expect((await names(client)).length).toBe(26);
+  expect((await names(client)).length).toBe(27);
 });
 
 test("the EIA report tools trim what they return and pass their choices through; the prompts name the right tools", async () => {
@@ -392,4 +392,12 @@ test("an option order is sent as a buy of that option key, a waiting limit order
   const bad: any = await client.callTool({ name: "place_paper_option_order", arguments: { option_key: "MCX:CRUDEOIL", lots: 1 } }).catch((e) => ({ isError: true, content: [{ text: String(e) }] }));
   expect(bad.isError).toBe(true);
   expect(calls).toHaveLength(1);
+});
+
+test("get_signals reads the log, passing the strategy and limit through", async () => {
+  const { call, calls } = await connect({}, () => ({ body: [{ record: { key: "k", status: "signal", option: { label: "CRUDEOIL 9600 CE" } } }] }));
+  const r = JSON.parse((await call("get_signals", { strategy: "usib", limit: 5 })).text);
+  expect(r[0].record.option.label).toContain("CE");
+  expect(calls.at(-1)!.url).toBe("http://api.test/signals?limit=5&strategy=usib");
+  expect((await call("get_signals", { strategy: "other" })).isError).toBe(true);
 });

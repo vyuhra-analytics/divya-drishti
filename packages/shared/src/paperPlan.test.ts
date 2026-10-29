@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseOrderInput } from "./paperServer";
+import { parseOptionOrder, parseOrderInput } from "./paperServer";
 
 const order = { symbol: "MCX:NATGASMINI", side: "buy", lots: 1, stop: 288, plan: { tp1: 294, close_at: "2026-10-29T16:00:00Z" } };
 
@@ -140,4 +140,37 @@ test("the trail does not start before TP2 and a short trails over the best (lowe
   s.m.q = { price: 284.0, bid: 283.9, ask: 284.1 };
   await s.engine.onQuotes();
   expect((await s.store.positions("main"))[0].stop).toBeCloseTo(286.6, 6); // the 14:35 candle closed at 284.6; + 2 (under the entry the TP1 stop moved first)
+});
+
+// ---- the same plan on a bought option: premiums, the option's own quote
+test("an option order carries a plan: TP1 moves the premium stop to the entry, the time exit sells at the bid", async () => {
+  const KEY = "MCX_FO|583810";
+  const info = { key: KEY, label: "CRUDEOIL 9600 CE 17 NOV 26", underlying: "CRUDEOIL", type: "CE" as const, strike: 9600, expiry: "2026-11-17", tick: 0.05, lot: 100, expiresAt: Date.parse("2026-11-17T18:00:00Z") };
+  const store = new FakeStore();
+  const opt: { q: PaperQuote } = { q: { price: 170, bid: 169, ask: 170.5 } };
+  let t = Date.parse("2026-10-29T14:35:00Z");
+  let n = 0;
+  const events: any[] = [];
+  const engine = new PaperEngine({ store, quote: () => undefined, live: () => true, option: { info: async () => info, quote: () => opt.q, live: () => true }, rates: async () => UPSTOX_MCX_RATES, now: () => t, newId: () => `o${++n}`, publish: (e) => void events.push(e) });
+  const r = await engine.place("main", { option: { key: KEY }, side: "buy", lots: 1, stop: 154, plan: { tp1: 185, close_at: "2026-10-29T16:00:00Z" } }, "ui");
+  if (!r.ok) throw new Error(r.error);
+  expect(r.position.plan).toMatchObject({ tp1: 185 });
+  opt.q = { price: 186, bid: 185.5, ask: 186.5 };
+  await engine.onQuotes();
+  const [p] = await store.positions("main");
+  expect(p.stop).toBe(p.entry);
+  expect(p.plan?.tp1Done).toBe(true);
+  t = Date.parse("2026-10-29T16:00:05Z");
+  await engine.onQuotes();
+  expect(await store.positions("main")).toHaveLength(0);
+  const [tr] = await store.trades("main", 3);
+  expect(tr).toMatchObject({ reason: "time", closedBy: "engine" });
+  expect(tr.exit).toBeLessThan(185.5); // sold at the bid, less slippage
+});
+
+test("an option order's plan is read, and refused on a limit order", () => {
+  const body = { option: { key: "MCX_FO|583810" }, side: "buy", lots: 1, plan: { tp1: 185, close_at: "2026-10-29T16:00:00Z", tp2: 220, trail: 8 } };
+  const ok = parseOptionOrder(body);
+  expect("order" in ok && ok.order.plan).toMatchObject({ tp1: 185, tp2: 220, trail: 8 });
+  expect("error" in parseOptionOrder({ ...body, entry: 160 })).toBe(true);
 });

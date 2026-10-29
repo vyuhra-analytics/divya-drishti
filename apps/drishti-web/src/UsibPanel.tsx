@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { chainLevels, DAY_RULES, suggestStrike, usibRange, usibStage, usOpenFor, USIB_RULES, watchUsib, type UsibBar, type UsibStage } from "@drishti/shared";
+import { chainLevels, DAY_RULES, optionLegFor, suggestStrike, usibRange, usibStage, usOpenFor, USIB_RULES, watchUsib, type UsibBar, type UsibStage } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
@@ -101,6 +101,8 @@ export function UsibWidget(_: { widget: Widget }) {
   const watch = useMemo(() => (range && nowSec >= openSec ? watchUsib(bars, openSec, range, levels, nowSec) : undefined), [bars, range, levels, openSec, Math.floor(now / 5000)]);
   const signal = watch?.signal;
   const strike = useMemo(() => suggestStrike(chain, signal?.side, signal?.rPoints), [chain, signal?.side, signal?.rPoints]);
+  // the option the signal buys, with its premium levels from the future's R, TP2 distance, trail and the delta now (the auto paper trade places it)
+  const optionLeg = useMemo(() => (signal ? optionLegFor({ side: signal.side, entry: signal.entry, rPoints: signal.rPoints, tp2: signal.tp2, trail: signal.trail }, chain, underlying) : undefined), [chain, signal?.side, signal?.candleTime, signal?.entry, signal?.rPoints, signal?.tp2, signal?.trail, underlying]);
   const livePrice = useStore((s) => s.quotes[symbol]?.price);
 
   // the range and the signal's levels on the chart (the trade's own levels are published by the trade block)
@@ -177,10 +179,10 @@ export function UsibWidget(_: { widget: Widget }) {
         strategy="usib"
         recordKey={`usib:${openAt}`}
         releaseAt={openAt}
-        chartSymbol={symbol}
-        signal={signal && !reportDay ? { side: signal.side, candleTime: signal.candleTime, rPoints: signal.rPoints, tp2: signal.tp2, trail: signal.trail } : undefined}
+        signal={signal && !reportDay ? { side: signal.side, candleTime: signal.candleTime } : undefined}
+        option={optionLeg?.leg}
+        optionReason={optionLeg?.reason}
         timeStop={{ fromMin: USIB_RULES.timeStopFromMin, toMin: USIB_RULES.timeStopToMin }}
-        bars={bars}
         onEvent={(m) => say(`auto:${m}`, m)}
       />
 

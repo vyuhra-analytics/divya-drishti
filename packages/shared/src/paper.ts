@@ -50,7 +50,7 @@ export interface OrderMeta {
 }
 
 /**
- * What the server does with a futures position by itself, so a trade managed by a strategy needs no open browser: when a live price reaches `tp1` the stop
+ * What the server does with a position by itself (prices are premiums for an option position), so a trade managed by a strategy needs no open browser: when a live price reaches `tp1` the stop
  * moves to the entry (only ever tighter), and from `closeAt` (epoch ms) the position is closed at the market. Set once, with the order.
  */
 export interface ManagePlan {
@@ -123,7 +123,7 @@ export interface PaperPosition extends OrderMeta {
   fill?: FillDetail;
   /** set for an option position: `symbol` is then the Upstox instrument key, prices are premiums and costs use the option rates */
   option?: OptionRef;
-  /** futures only: TP1 and time-exit handling done by the engine */
+  /** TP1, time-exit and (USIB) trail handling done by the engine, on the position's own quote */
   plan?: ManagePlan;
 }
 

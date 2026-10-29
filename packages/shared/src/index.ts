@@ -417,3 +417,4 @@ export * from "./familyInsights";
 export * from "./familyHabits";
 export * from "./autoTrade";
 export * from "./signalLog";
+export * from "./optionSignal";

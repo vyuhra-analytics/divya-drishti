@@ -1,9 +1,10 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { analyzeReport, evaluateReportDay, evaluateUsib, instrument, nyDay, recentUsOpens, REPORT_DAY, reportKey, skippedRecord, usibKey, windowClosed, type Bar, type ReportCode, type SignalRecord } from "@drishti/shared";
+import { analyzeReport, evaluateReportDay, evaluateUsib, instrument, nyDay, optionLegFor, type Chain, recentUsOpens, REPORT_DAY, reportKey, skippedRecord, usibKey, windowClosed, type Bar, type ReportCode, type SignalRecord } from "@drishti/shared";
 import { Db } from "./db";
 import { EiaReportService } from "./eia-report.service";
 import { ForecastService } from "./forecast.service";
 import { upstoxHistory } from "./history";
+import { recordedChainAt } from "./recorded-chain";
 import { PgSignalStore } from "./signal-log.store";
 
 const TICK_MS = 60_000;
@@ -69,7 +70,7 @@ export class SignalLogService implements OnModuleInit, OnModuleDestroy {
           reportDays.add(nyDay(releaseAt));
           if (!windowClosed("report-day", releaseAt, now) || (await this.store.has(reportKey(code, releaseAt)))) continue;
           const record = await this.reportDay(code, w.weekEnding, releaseAt, barsOf);
-          if (record && (await this.store.add(record))) stored.push(record.key);
+          if (record && (await this.store.add(await this.withOption(record)))) stored.push(record.key);
         }
       }
       for (const openAt of recentUsOpens(now, LOOKBACK_DAYS)) {
@@ -81,12 +82,53 @@ export class SignalLogService implements OnModuleInit, OnModuleDestroy {
             : evaluateUsib({ symbol, openAt, bars: await barsOf(symbol) });
           // no candles at all is a holiday or a feed outage, not a strategy outcome worth a permanent row: leave it to be tried again within the lookback
           if (record.status === "no_bars" && now - openAt < LOOKBACK_DAYS * 86_400_000 - 3600_000) continue;
-          if (await this.store.add(record)) stored.push(record.key);
+          if (await this.store.add(await this.withOption(record))) stored.push(record.key);
         }
       }
       return stored;
     } finally {
       this.running = false;
+    }
+  }
+
+  /**
+   * The option to buy for a logged signal: the chain as recorded at the moment the signal candle closed (crude on the nearest expiry, gas on the next, as on the
+   * screens), the strike the screen's own rule picks, and its premium levels from the future's R through the delta. The premium is the contract's ask from the
+   * live-feed recording within two minutes before the signal when there is one, else the snapshot's (up to 15 minutes old, said in `basis`). Never guessed: with
+   * no snapshot the record says so.
+   */
+  async withOption(rec: SignalRecord): Promise<SignalRecord> {
+    const s = rec.signal;
+    if (rec.status !== "signal" || !s) return rec;
+    const underlying = rec.symbol.replace(/^MCX:/, "");
+    const at = s.closedAt * 1000;
+    try {
+      const sql = this.db.sql;
+      let r = await recordedChainAt(sql, underlying, undefined, at, 12);
+      if ("miss" in r) return { ...rec, optionNote: r.miss === "no-snapshot" ? "no option chain snapshot was recorded by then" : "the snapshot holds no options" };
+      if (underlying === "NATGASMINI" && r.chain.expiries[1] && r.chain.expiry !== r.chain.expiries[1]) {
+        const next = await recordedChainAt(sql, underlying, r.chain.expiries[1], at, 12);
+        if ("chain" in next) r = next;
+      }
+      let chain: Chain = r.chain;
+      let basis = `snapshot ${Math.round((at - chain.updatedAt) / 60_000)} min before the signal`;
+      const first = optionLegFor(s, chain, underlying);
+      const key = first.leg?.key;
+      if (first.leg && key) {
+        const q = (await sql`
+          SELECT price, ask, delta, extract(epoch FROM time)::float8 * 1000 AS t FROM feed_quotes
+          WHERE key = ${key} AND time <= ${new Date(at).toISOString()} AND time >= ${new Date(at - 120_000).toISOString()} ORDER BY time DESC LIMIT 1`.catch(() => [])) as { price: number | null; ask: number | null; delta: number | null; t: number }[];
+        const ask = q[0]?.ask && q[0].ask > 0 ? Number(q[0].ask) : undefined;
+        if (ask) {
+          const delta = q[0].delta ? Math.abs(Number(q[0].delta)) : first.leg.delta;
+          chain = { ...chain, rows: chain.rows.map((row) => (row.strike === first.leg!.strike ? { ...row, [first.leg!.type === "CE" ? "ce" : "pe"]: { ...(first.leg!.type === "CE" ? row.ce : row.pe), ask, ltp: ask, delta: first.leg!.type === "CE" ? delta : -delta } } : row)) };
+          basis = `live-feed ask ${Math.round((at - Number(q[0].t)) / 1000)} s before the signal`;
+        }
+      }
+      const { leg, reason } = optionLegFor(s, chain, underlying); // again, now with the ask of the moment when the feed recording had one
+      return leg ? { ...rec, option: { ...leg, basis } } : { ...rec, optionNote: reason };
+    } catch (e) {
+      return { ...rec, optionNote: `the option leg could not be worked out: ${(e as Error).message}` };
     }
   }
 

@@ -3,6 +3,7 @@
 // trader took the signal is not recorded here: trades are joined on at read time. Pure and tested; nothing here places an order.
 import { zonedTime } from "./eventSeries";
 import { DAY_RULES, preReleaseRange, REPORT_DAY, watchWindow, type DayBar, type DaySide, type ReportCode } from "./reportDay";
+import type { OptionLegSignal } from "./optionSignal";
 import { usibRange, USIB_RULES, watchUsib, type UsibBar } from "./usib";
 
 export type SignalStatus = "signal" | "no_signal" | "no_range" | "no_bars" | "skipped";
@@ -49,6 +50,9 @@ export interface SignalRecord {
   candles: LoggedCandle[];
   skippedAgainst?: number;
   signal?: LoggedSignal;
+  /** the option to buy for the signal (a call for a long, a put for a short) with its premium levels, or why there was none */
+  option?: OptionLegSignal;
+  optionNote?: string;
   /** the cut-off for entries, epoch seconds */
   cutoffAt?: number;
   /** what the rules could not use after the fact, in words (e.g. USIB's TP2 chain levels) */

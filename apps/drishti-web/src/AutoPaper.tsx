@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AUTO_ACCOUNT, AUTO_CAPITAL, AUTO_EVENT_TEXT, asManualTrade, autoSymbol, DAY_RULES, decideAuto, planAutoOrder, signalFresh, TIME_STOP, trackTrade, type AutoRecord, type DayBar, type DaySide } from "@drishti/shared";
+import { useEffect, useRef, useState } from "react";
+import { AUTO_ACCOUNT, AUTO_CAPITAL, closedWhy, DAY_RULES, optionOrderBody, signalFresh, type AutoRecord, type DaySide, type OptionLegSignal } from "@drishti/shared";
 import { paperCall } from "./paperClient";
 import { useClock } from "./settings";
-import { useStore } from "./store";
-import { usePublishLevels } from "./strategyLevels";
+import { sendWatch, useStore } from "./store";
 import { Switch } from "./ui";
 
-// The automatic PAPER trade of a signal (report day and USIB): when a signal fires and the switch is on, a futures paper order is placed in the separate "auto"
-// account, sized so the loss at the 1R stop stays inside the Rs 2,000 cap. The server holds the stop (and, on the report day, the TP2 target), so they fire even
-// with this browser closed; this component moves the stop to the entry at TP1, trails it in USIB, and closes at the time exit. Simulated only: no broker is
-// ever reached. A signal armed too late is skipped, never chased. The decisions are in shared autoTrade.ts.
+// The automatic PAPER trade of a signal (report day and USIB). The signal is read on the future, but the trade is the OPTION the strategies buy: when a signal
+// fires and the switch is on, the option leg (a call for a long, a put for a short, one lot) is bought in the separate "auto" paper account. The server holds
+// the premium stop and (report day) the TP2 target, moves the stop to the entry at TP1, trails it in USIB and closes at the time exit, all with this browser
+// closed; this component places the order, watches the contract and tells the trader what happened. Simulated only: no broker is ever reached. A signal armed
+// too late is skipped, never chased. The pure parts are in shared autoTrade.ts and optionSignal.ts.
 
 const REC_KEY = "drishti-autopaper";
 const ARM_KEY = "drishti-autopaper-armed";
@@ -47,10 +47,6 @@ const rs = (v: number) => `${v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toL
 export interface AutoSignal {
   side: DaySide;
   candleTime: number;
-  rPoints?: number;
-  /** USIB's own TP2 (a chain level) and its trail */
-  tp2?: number;
-  trail?: number;
 }
 
 interface Props {
@@ -59,29 +55,28 @@ interface Props {
   recordKey: string;
   /** the moment the day's clocks run from: the print (report day) or the US open (USIB) */
   releaseAt: number;
-  /** the contract on the chart; the paper trade uses its mini */
-  chartSymbol: string;
   signal?: AutoSignal;
+  /** the option to buy for the signal (optionLegFor), or why there is none */
+  option?: OptionLegSignal;
+  optionReason?: string;
   timeStop?: { fromMin: number; toMin: number };
-  bars: readonly DayBar[];
   /** how often the trade is looked at, in ms (tests use a short one) */
   tickMs?: number;
   /** a toast, a sound and a desktop notice, once for each message */
   onEvent: (message: string) => void;
 }
 
-export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal, timeStop, bars, tickMs = 2000, onEvent }: Props) {
+export function AutoPaper({ strategy, recordKey, releaseAt, signal, option, optionReason, timeStop, tickMs = 2000, onEvent }: Props) {
   const label = strategy === "usib" ? "USIB" : "Report day";
   const clock = useClock();
-  const symbol = autoSymbol(chartSymbol);
   const [armed, setArmed] = useState(loadArmed);
   const [rec, setRec] = useState<AutoRecord | undefined>(() => loadRec(recordKey));
   useEffect(() => setRec(loadRec(recordKey)), [recordKey]);
-  const price = useStore((s) => s.quotes[symbol]?.price);
+  const bid = useStore((s) => (rec?.optionKey ? s.options[rec.optionKey]?.bid : undefined));
 
   // what the ticking loop below reads: always the latest props and record
-  const latest = useRef({ armed, rec, signal, bars, releaseAt, timeStop, onEvent, recordKey, chartSymbol, strategy, label });
-  latest.current = { armed, rec, signal, bars, releaseAt, timeStop, onEvent, recordKey, chartSymbol, strategy, label };
+  const latest = useRef({ armed, rec, signal, option, optionReason, releaseAt, timeStop, onEvent, recordKey, strategy, label });
+  latest.current = { armed, rec, signal, option, optionReason, releaseAt, timeStop, onEvent, recordKey, strategy, label };
   const commit = (next: AutoRecord) => {
     saveRec(latest.current.recordKey, next);
     latest.current.rec = next; // the next tick sees it before the screen has redrawn
@@ -97,7 +92,7 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
       try {
         const L = latest.current;
         if (!L.rec) await enter(L);
-        else if (L.rec.status === "placed") await manage(L);
+        else if (L.rec.status === "placed") await watch(L);
       } finally {
         busy.current = false;
       }
@@ -106,111 +101,70 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
       const s = L.signal;
       if (!L.armed || !s) return;
       const skip = (reason: string) => {
-        commit({ status: "skipped", reason, events: [] });
+        commit({ status: "skipped", reason });
         L.onEvent(`${L.label}: auto paper trade skipped: ${reason}`);
       };
       if (!signalFresh(s.candleTime, DAY_RULES.candleSec, Date.now())) return skip("the signal is more than 2 minutes old, so it is not chased");
-      const q = useStore.getState().quotes[autoSymbol(L.chartSymbol)];
-      const ref = s.side === "long" ? (q?.ask ?? q?.price) : (q?.bid ?? q?.price);
-      const planned = planAutoOrder({ chartSymbol: L.chartSymbol, dir: s.side, ref: ref ?? 0, rPoints: s.rPoints, tp2: L.strategy === "usib" ? s.tp2 : undefined });
-      if (!planned.ok) return skip(planned.reason);
-      const plan = planned.plan;
+      const leg = L.option;
+      if (!leg?.key) return skip(L.optionReason ?? "no option fits this signal");
+      sendWatch([leg.key]); // the stream must be listening to the contract before a paper order can be priced
       const acct = await paperCall(`/accounts/${AUTO_ACCOUNT}`);
       if (!acct.ok && acct.status === 0) return; // the stream is unreachable: try again on the next tick
       if (!acct.ok && acct.status === 404) {
         const made = await paperCall("/accounts", "POST", { id: AUTO_ACCOUNT, capital: AUTO_CAPITAL, slippage: 1 });
         if (!made.ok) return made.status === 0 ? undefined : skip(`the auto account could not be created: ${made.error}`);
       }
-      const r = await paperCall<{ position: { id: string; entry: number; openedAt: number } }>(`/accounts/${AUTO_ACCOUNT}/orders`, "POST", {
-        symbol: plan.symbol,
-        side: plan.side,
-        lots: plan.lots,
-        stop: plan.stop,
-        ...(L.strategy === "report-day" ? { target: plan.tp2 } : {}), // USIB has no target: after TP2 the stop trails
-        client_order_id: `auto-${L.recordKey}`.slice(0, 64),
-        tag: "auto",
-        strategy: L.strategy,
-        signal_time: new Date((s.candleTime + DAY_RULES.candleSec) * 1000).toISOString(),
-        r_points: plan.rPoints,
-        // the server moves the stop to the entry at TP1 and closes at the time window, with this browser closed; this panel's own checks are the backup
-        plan: { tp1: plan.tp1, close_at: new Date(L.releaseAt + (L.timeStop ?? TIME_STOP).fromMin * 60_000).toISOString(), ...(L.strategy === "usib" && s.trail ? { tp2: plan.tp2, trail: s.trail, candle_sec: DAY_RULES.candleSec } : {}) }, // USIB: the server trails the stop too
-      });
-      if (!r.ok) return r.status === 0 ? undefined : skip(`the paper order was refused: ${r.error}`);
+      const r = await paperCall<{ position: { id: string; entry: number; openedAt: number } }>(
+        `/accounts/${AUTO_ACCOUNT}/orders`,
+        "POST",
+        optionOrderBody(leg, { strategy: L.strategy, recordKey: L.recordKey, candleTime: s.candleTime, releaseAt: L.releaseAt, timeStop: L.timeStop }),
+      );
+      // no live premium yet: the stream has just been asked to watch the contract, so try again on the next tick (the freshness rule ends the tries)
+      if (!r.ok && (r.status === 0 || (r.status === 503 && /premium|try again/i.test(r.error)))) return;
+      if (!r.ok) return skip(`the paper order was refused: ${r.error}`);
       const pos = r.data.position;
       commit({
         status: "placed",
-        symbol: plan.symbol,
-        dir: plan.dir,
-        lots: plan.lots,
-        units: plan.units,
+        label: leg.label,
+        optionKey: leg.key,
+        dir: s.side,
+        lots: 1,
+        units: leg.units,
         entry: pos.entry,
-        stop: plan.stop,
-        tp1: plan.tp1,
-        tp2: plan.tp2,
-        rPoints: plan.rPoints,
+        stop: leg.stop,
+        currentStop: leg.stop,
+        tp1: leg.tp1,
+        tp2: leg.tp2,
+        rPremium: leg.rPremium,
         enteredAt: pos.openedAt,
         positionId: pos.id,
-        currentStop: plan.stop,
-        ...(L.strategy === "usib" && s.trail !== undefined ? { trail: s.trail } : {}),
-        events: [],
       });
-      L.onEvent(`${L.label}: paper ${plan.dir.toUpperCase()} opened, ${plan.lots} lot${plan.lots === 1 ? "" : "s"} ${plan.symbol} at ${num(pos.entry, 2)}, stop ${num(plan.stop, 2)}`);
+      L.onEvent(`${L.label}: paper bought 1 lot ${leg.label} at ${num(pos.entry, 2)}, stop ${num(leg.stop, 2)}, TP1 ${num(leg.tp1, 2)}`);
     };
-    const manage = async (L: typeof latest.current) => {
+    // the server runs the trade; every few seconds read the account to see the stop move and the trade close
+    const watch = async (L: typeof latest.current) => {
+      sendWatch([L.rec!.optionKey!]);
+      if (++polls.current < 3) return;
+      polls.current = 0;
       let rec = L.rec!;
-      const px = useStore.getState().quotes[rec.symbol!]?.price;
-      const view = trackTrade(asManualTrade(rec, L.releaseAt, L.timeStop), L.bars, px, undefined, Date.now());
-      if (view.fresh.length) {
-        rec = { ...rec, events: view.events };
-        commit(rec);
-        for (const e of view.fresh) if (e.kind === "tp1" || e.kind === "tp2" || e.kind === "timestop-open") L.onEvent(`${L.label}: auto paper trade: ${AUTO_EVENT_TEXT[e.kind]}`);
+      const st = await paperCall<{ state: { positions: { id: string; stop?: number; plan?: { tp1Done?: boolean } }[]; trades: { id: string; closedAt: number; exit: number; net: number; reason: string }[] } }>(`/accounts/${AUTO_ACCOUNT}`);
+      if (!st.ok) return;
+      const open = st.data.state.positions.find((p) => p.id === rec.positionId);
+      if (open) {
+        if (open.plan?.tp1Done && !rec.tp1Done) L.onEvent(`${L.label}: auto paper trade: TP1 reached, the stop moved to the entry`);
+        if (open.stop !== rec.currentStop || (open.plan?.tp1Done ?? false) !== (rec.tp1Done ?? false)) commit({ ...rec, currentStop: open.stop, tp1Done: open.plan?.tp1Done ?? false });
+        return;
       }
-      const d = decideAuto(rec, view);
-      const base = `/accounts/${AUTO_ACCOUNT}/positions/${encodeURIComponent(rec.positionId!)}`;
-      if (d.closeTime) {
-        const r = await paperCall<{ trade: { closedAt: number; exit: number; net: number } }>(`${base}/close`, "POST");
-        if (r.ok) {
-          commit({ ...rec, status: "closed", reason: "time exit", exit: { at: r.data.trade.closedAt, price: r.data.trade.exit, net: r.data.trade.net, reason: "time exit" } });
-          L.onEvent(`${L.label}: auto paper trade closed at the time exit, net ${rs(r.data.trade.net)}`);
-          return;
-        }
-        if (r.status === 404) polls.current = 99; // already closed on the server: the check below records how
-      } else if (d.moveStop !== undefined) {
-        const r = await paperCall(base, "PATCH", { stop: d.moveStop, only_tighten: true, reason: "auto: TP1 or trail" });
-        if (r.ok) {
-          rec = { ...rec, currentStop: d.moveStop };
-          commit(rec);
-        }
-      }
-      // closed on the server by the stop or the target while nobody was looking
-      if (++polls.current >= 3) {
-        polls.current = 0;
-        const st = await paperCall<{ state: { positions: { id: string }[]; trades: { id: string; closedAt: number; exit: number; net: number; reason: string }[] } }>(`/accounts/${AUTO_ACCOUNT}`);
-        if (st.ok && !st.data.state.positions.some((p) => p.id === rec.positionId)) {
-          const t = st.data.state.trades.find((x) => x.id === rec.positionId);
-          const why = t ? (t.reason === "stop" ? (rec.events.some((e) => e.kind === "tp1") ? "stopped at the entry" : "stopped out") : t.reason === "target" ? "target (TP2)" : t.reason === "time" ? "time exit" : t.reason) : "closed";
-          commit({ ...rec, status: "closed", reason: why, ...(t ? { exit: { at: t.closedAt, price: t.exit, net: t.net, reason: why } } : {}) });
-          L.onEvent(`${L.label}: auto paper trade closed: ${why}${t ? `, net ${rs(t.net)}` : ""}`);
-        }
-      }
+      const t = st.data.state.trades.find((x) => x.id === rec.positionId);
+      const why = t ? closedWhy(t.reason, rec.tp1Done ?? false) : "closed";
+      rec = { ...rec, status: "closed", reason: why, ...(t ? { exit: { at: t.closedAt, price: t.exit, net: t.net, reason: why } } : {}) };
+      commit(rec);
+      L.onEvent(`${L.label}: auto paper trade closed: ${why}${t ? `, net ${rs(t.net)}` : ""}`);
     };
     const id = setInterval(() => void tick(), tickMs);
     void tick();
     return () => clearInterval(id);
   }, []);
-
-  // the trade's levels on the chart while it is open
-  usePublishLevels(
-    `auto:${recordKey}`,
-    rec?.status === "placed" && rec.entry !== undefined
-      ? [
-          { price: rec.entry, title: "Auto entry", color: "#e0e0e0", style: "solid" },
-          { price: rec.currentStop ?? rec.stop ?? NaN, title: rec.currentStop !== undefined && rec.currentStop !== rec.stop ? "Auto stop (moved)" : "Auto stop", color: "#ef5350", style: "solid" },
-          { price: rec.tp1 ?? NaN, title: "Auto TP1", color: "#66bb6a", style: "solid" },
-          { price: rec.tp2 ?? NaN, title: "Auto TP2", color: "#43a047", style: "solid" },
-        ]
-      : [],
-  );
 
   const toggle = (on: boolean) => {
     setArmed(on);
@@ -221,24 +175,31 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
     }
   };
 
-  const live = useMemo(() => {
-    if (rec?.status !== "placed" || rec.entry === undefined || price === undefined) return undefined;
-    const dir = rec.dir === "long" ? 1 : -1;
-    return { pts: dir * (price - rec.entry), rs: dir * (price - rec.entry) * (rec.units ?? 1) * (rec.lots ?? 1) };
-  }, [rec, price]);
+  const live = rec?.status === "placed" && rec.entry !== undefined && bid !== undefined ? { pts: bid - rec.entry, rs: (bid - rec.entry) * (rec.units ?? 1) * (rec.lots ?? 1) } : undefined;
 
   return (
     <section className="rd-auto" aria-label="Automatic paper trade" data-testid="auto-paper">
       <div className="rd-auto-head">
         <h2>Auto paper trade</h2>
-        <label className="rd-auto-switch" title="When a signal fires, open, manage and close a simulated futures trade in the auto account. Nothing reaches a broker.">
+        <label className="rd-auto-switch" title="When a signal fires, buy the signal's option on paper, manage it and close it, in the auto account. Nothing reaches a broker.">
           <Switch checked={armed} onCheckedChange={toggle} aria-label="Auto paper trade" /> {armed ? "On" : "Off"}
         </label>
       </div>
+      {signal && !rec && (
+        <p data-testid="auto-option-signal" className={option ? undefined : "muted"}>
+          {option ? (
+            <>
+              <b>Option signal:</b> buy <b className={option.type === "CE" ? "up" : "down"}>{option.label}</b> at {num(option.premium, 2)} (delta {num(option.delta, 2)}) · stop {num(option.stop, 2)} · TP1 {num(option.tp1, 2)} · TP2 {num(option.tp2, 2)} · 1R {rs(option.rupeeR)} · lot costs {rs(option.cost)}
+            </>
+          ) : (
+            <>Option signal: none. {optionReason}</>
+          )}
+        </p>
+      )}
       {!rec && (
         <p className="muted">
           {armed
-            ? `Armed: when a signal fires it opens a paper ${symbol} trade in the "${AUTO_ACCOUNT}" account (${rs(AUTO_CAPITAL)}), whole lots sized so the loss at the stop stays inside ${rs(DAY_RULES.lossCap)}. The stop is held by the server; this panel moves it to the entry at TP1${strategy === "usib" ? ", trails it after TP2" : ""} and closes at the time exit.`
+            ? `Armed: when a signal fires it buys the signal's option (a call for a long, a put for a short, one lot) in the "${AUTO_ACCOUNT}" account (${rs(AUTO_CAPITAL)}), strike picked so 1R stays inside ${rs(DAY_RULES.lossCap)}. The server holds the stop${strategy === "usib" ? "" : " and the target"}, moves it to the entry at TP1${strategy === "usib" ? ", trails it after TP2" : ""} and closes at the time exit.`
             : "Off: nothing is traded automatically. Turn it on before the print; a signal that fired before you armed is skipped."}
         </p>
       )}
@@ -246,17 +207,17 @@ export function AutoPaper({ strategy, recordKey, releaseAt, chartSymbol, signal,
       {rec?.status === "placed" && (
         <div data-testid="auto-open">
           <p>
-            <b className={rec.dir === "long" ? "up" : "down"}>{rec.dir?.toUpperCase()}</b> {rec.lots} lot{rec.lots === 1 ? "" : "s"} {rec.symbol} at <b>{num(rec.entry, 2)}</b> · {clock.time(rec.enteredAt ?? 0)}
+            <b className={rec.dir === "long" ? "up" : "down"}>BOUGHT</b> {rec.lots} lot {rec.label} at <b>{num(rec.entry, 2)}</b> · {clock.time(rec.enteredAt ?? 0)}
           </p>
           <p className="muted">
             Stop {num(rec.currentStop, 2)}
             {rec.currentStop !== rec.stop ? " (moved)" : ""} · TP1 {num(rec.tp1, 2)}
-            {strategy === "usib" ? " · after TP2 the stop trails" : ` · target ${num(rec.tp2, 2)}`} · R {num(rec.rPoints, 2)} points
+            {strategy === "usib" ? " · after TP2 the stop trails" : ` · target ${num(rec.tp2, 2)}`} · 1R {num(rec.rPremium, 2)} premium points
           </p>
           {live && (
             <p className={live.rs >= 0 ? "up" : "down"}>
               {live.pts >= 0 ? "+" : ""}
-              {num(live.pts, 2)} points · {rs(live.rs)} before costs
+              {num(live.pts, 2)} premium · {rs(live.rs)} at the bid, before costs
             </p>
           )}
         </div>

@@ -135,6 +135,19 @@ export function createServer(cfg: McpConfig) {
     },
   );
 
+  server.registerTool(
+    "get_signals",
+    {
+      description:
+        "The signal log: every report-day and USIB evening, newest first, whether or not it was traded. Each has the range, the candles of the entry window, the signal read on the FUTURE (side, entry, R, stop, TP1, TP2) or the reason there was none, and the OPTION to buy for it (a call for a long, a put for a short, one lot) with its strike, premium, delta, premium stop, TP1, TP2, 1R in rupees and where the premium came from. Also the paper trade it led to, when there was one. Research only: no order is placed.",
+      inputSchema: { strategy: z.enum(["report-day", "usib"]).optional(), limit: z.number().int().min(1).max(30).optional().describe("default 10") },
+    },
+    async ({ strategy, limit }) => {
+      const r = await call(cfg.api, `/signals?limit=${limit ?? 10}${strategy ? `&strategy=${strategy}` : ""}`);
+      return r.ok ? ok(r.json) : err(r.error);
+    },
+  );
+
   // ---- prompts: the two workflows the INSTRUCTIONS describe, one click away in clients that list prompts
   server.registerPrompt(
     "eia-article",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DAY_RULES, dayStage, preReleaseRange, readiness, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
+import { DAY_RULES, dayStage, preReleaseRange, readiness, optionLegFor, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
@@ -208,6 +208,8 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const watch = useMemo(() => (release && range && nowSec >= releaseSec ? watchWindow(bars, releaseSec, range, side, nowSec) : undefined), [bars, range, side, releaseSec, Math.floor(now / 5000)]);
   const signal = watch?.signal;
   const strike = useMemo(() => suggestStrike(chain, signal?.side ?? side, signal?.rPoints), [chain, signal?.side, signal?.rPoints, side]);
+  // the option the signal buys, with its premium levels from the future's R and the delta now (the auto paper trade places it)
+  const optionLeg = useMemo(() => (signal ? optionLegFor({ side: signal.side, entry: signal.entry, rPoints: signal.rPoints, tp2: signal.tp2 }, chain, cfg.underlying) : undefined), [chain, signal?.side, signal?.candleTime, signal?.entry, signal?.rPoints, signal?.tp2, cfg.underlying]);
 
   // the range and the signal's levels on the chart (the trade's own levels are published by the trade block)
   const tradingNow = release ? !!loadRecord(release.at).trade : false;
@@ -283,9 +285,9 @@ export function ReportDayWidget(_: { widget: Widget }) {
         strategy="report-day"
         recordKey={String(release.at)}
         releaseAt={release.at}
-        chartSymbol={cfg.symbol}
-        signal={signal ? { side: signal.side, candleTime: signal.candleTime, rPoints: signal.rPoints } : undefined}
-        bars={bars}
+        signal={signal ? { side: signal.side, candleTime: signal.candleTime } : undefined}
+        option={optionLeg?.leg}
+        optionReason={optionLeg?.reason}
         onEvent={(m) => say(`auto:${m}`, m)}
       />
 

@@ -1,21 +1,26 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { OptionLegSignal } from "@drishti/shared";
 import { AutoPaper } from "./AutoPaper";
 import { useStore } from "./store";
 
-// A fake paper server (the stream's /paper API) and a fixed clock: the component places, manages and closes a simulated futures trade, and never anything else.
+// A fake paper server (the stream's /paper API) and a fixed clock: the component buys the signal's option, follows what the server does with it, and
+// never anything else. The server (not this component) holds the stop and target and runs TP1, the trail and the time exit.
 
 const RELEASE = Date.UTC(2026, 9, 29, 14, 30); // Thu 29 Oct 2026, 10:30 New York = 20:00 IST
-const CANDLE = RELEASE / 1000 + 300; // the 5-minute candle that closed beyond the range: 20:05 IST, closes at 20:10
+const CANDLE = RELEASE / 1000 + 300; // the 5-minute candle that closed beyond the range, closes at 20:10 IST
 const AFTER_CLOSE = (CANDLE + 300) * 1000 + 20_000; // 20 seconds after the signal candle closed
-const SYMBOL = "MCX:NATGASMINI";
+
+const LEG: OptionLegSignal = { key: "MCX_FO|583810", label: "NATGASMINI 290 CE 2026-11-24", type: "CE", strike: 290, expiry: "2026-11-24", units: 250, premium: 8.4, delta: 0.52, cost: 2100, rPremium: 1.2, rupeeR: 300, stop: 7.2, tp1: 9.6, tp2: 10.8, trail: 0.6 };
 
 interface Fake {
   calls: { method: string; path: string; body?: any }[];
   account: "ok" | "missing";
   order?: { ok: boolean; status?: number; error?: string };
-  open: boolean;
-  trade?: object;
+  /** the first n order attempts are answered "no live premium yet" */
+  noPremium: number;
+  positions: object[];
+  trades: object[];
 }
 let fake: Fake;
 
@@ -23,27 +28,30 @@ beforeEach(() => {
   try {
     localStorage.clear();
   } catch {}
-  fake = { calls: [], account: "ok", open: true };
+  fake = { calls: [], account: "ok", noPremium: 0, positions: [], trades: [] };
   setSystemTime(new Date(AFTER_CLOSE));
-  useStore.setState({ quotes: { [SYMBOL]: { symbol: SYMBOL, price: 291.2, bid: 291.1, ask: 291.2, time: AFTER_CLOSE, source: "upstox" } as never } });
+  useStore.setState({ options: {} });
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     const full = new URL(String(url), "http://x").pathname;
-    const path = full.slice(full.indexOf("/paper") + 6); // the stream may sit behind a proxy prefix
+    const path = full.slice(full.indexOf("/paper") + 6);
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     fake.calls.push({ method, path, body });
     const json = (status: number, data: object) => ({ ok: status < 400, status, json: async () => data }) as Response;
-    if (method === "GET" && path === "/accounts/auto") return fake.account === "missing" ? json(404, { error: "no such account" }) : json(200, { state: { positions: fake.open ? [{ id: "p1" }] : [], trades: fake.trade ? [fake.trade] : [] } });
+    if (method === "GET" && path === "/accounts/auto") return fake.account === "missing" ? json(404, { error: "no such account" }) : json(200, { state: { positions: fake.positions, trades: fake.trades } });
     if (method === "POST" && path === "/accounts") {
       fake.account = "ok";
       return json(201, {});
     }
     if (method === "POST" && path === "/accounts/auto/orders") {
+      if (fake.noPremium > 0) {
+        fake.noPremium--;
+        return json(503, { error: "no live premium for this option yet: the feed has been asked to watch it, try again in a few seconds" });
+      }
       if (fake.order && !fake.order.ok) return json(fake.order.status ?? 422, { error: fake.order.error });
-      return json(201, { position: { id: "p1", entry: 291.3, openedAt: Date.now() } });
+      fake.positions = [{ id: "p1", stop: body.stop, plan: body.plan }];
+      return json(201, { position: { id: "p1", entry: 8.5, openedAt: Date.now() } });
     }
-    if (method === "PATCH" && path === "/accounts/auto/positions/p1") return json(200, { position: { id: "p1" } });
-    if (method === "POST" && path === "/accounts/auto/positions/p1/close") return json(200, { trade: { closedAt: Date.now(), exit: 291.1, net: -120 } });
     return json(404, { error: "unexpected request" });
   }) as never;
 });
@@ -52,31 +60,40 @@ afterEach(() => {
   setSystemTime();
 });
 
-const signal = { side: "long" as const, candleTime: CANDLE, rPoints: 3 };
-const props = { strategy: "report-day" as const, recordKey: String(RELEASE), releaseAt: RELEASE, chartSymbol: SYMBOL, bars: [], tickMs: 15 };
+const signal = { side: "long" as const, candleTime: CANDLE };
+const props = { strategy: "report-day" as const, recordKey: String(RELEASE), releaseAt: RELEASE, option: LEG, tickMs: 15 };
 const orders = () => fake.calls.filter((c) => c.method === "POST" && c.path === "/accounts/auto/orders");
 const arm = () => localStorage.setItem("drishti-autopaper-armed", "1");
+const wait = (ms = 80) => act(async () => await new Promise((r) => setTimeout(r, ms)));
 
-test("off by default: a signal places nothing", async () => {
-  const onEvent = mock((_m: string) => {});
-  render(<AutoPaper {...props} signal={signal} onEvent={onEvent} />);
-  await act(async () => await new Promise((r) => setTimeout(r, 80)));
+test("off by default: a signal places nothing, but the option signal is shown", async () => {
+  render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
+  await wait();
   expect(orders()).toHaveLength(0);
   expect(screen.getByText(/Off: nothing is traded automatically/)).toBeTruthy();
+  expect(screen.getByTestId("auto-option-signal").textContent).toMatch(/buy NATGASMINI 290 CE.*stop 7\.20.*TP1 9\.60.*TP2 10\.80/);
 });
 
-test("armed, a fresh signal opens a paper futures order with the stop and TP2 held by the server, sized inside the cap", async () => {
+test("armed, a fresh signal buys the option: one lot, premium stop and TP2 target, labels, and the plan the server carries out", async () => {
   arm();
   const onEvent = mock((_m: string) => {});
   render(<AutoPaper {...props} signal={signal} onEvent={onEvent} />);
   await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
   expect(orders()).toHaveLength(1); // one order, however many ticks
   const b = orders()[0].body;
-  expect(b).toMatchObject({ symbol: SYMBOL, side: "buy", stop: 288.2, target: 297.2, tag: "auto", strategy: "report-day", client_order_id: `auto-${RELEASE}`, r_points: 3 });
-  expect(Number.isInteger(b.lots) && b.lots >= 1).toBe(true);
-  expect(b.signal_time).toBe(new Date((CANDLE + 300) * 1000).toISOString());
-  expect(onEvent.mock.calls[0][0]).toMatch(/paper LONG opened/);
-  expect(screen.getByText(/291\.30/)).toBeTruthy(); // the fill the server reported
+  expect(b).toMatchObject({ option: { key: LEG.key }, side: "buy", lots: 1, stop: 7.2, target: 10.8, tag: "auto", strategy: "report-day", client_order_id: `auto-${RELEASE}`, r_points: 1.2 });
+  expect(b.plan).toEqual({ tp1: 9.6, close_at: new Date(RELEASE + 90 * 60_000).toISOString() });
+  expect(onEvent.mock.calls[0][0]).toMatch(/paper bought 1 lot NATGASMINI 290 CE.*at 8\.50/);
+  expect(screen.getByTestId("auto-open").textContent).toContain("8.50"); // the fill the server reported
+});
+
+test("USIB: no target, and the server is told to trail the premium after TP2", async () => {
+  arm();
+  render(<AutoPaper {...props} strategy="usib" recordKey="usib:1" timeStop={{ fromMin: 150, toMin: 180 }} signal={signal} onEvent={() => {}} />);
+  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
+  const b = orders()[0].body;
+  expect("target" in b).toBe(false);
+  expect(b.plan).toMatchObject({ tp1: 9.6, tp2: 10.8, trail: 0.6, candle_sec: 300 });
 });
 
 test("the auto account is created when it does not exist yet", async () => {
@@ -97,53 +114,49 @@ test("a signal that is already stale is skipped, never chased", async () => {
   expect(onEvent.mock.calls[0][0]).toMatch(/skipped/);
 });
 
+test("no option for the signal is a skip with the reason, never a trade of something else", async () => {
+  arm();
+  render(<AutoPaper {...props} option={undefined} optionReason="No trade: 1R is over the ₹2,000 cap even on the lowest-delta strike that fits." signal={signal} onEvent={() => {}} />);
+  await waitFor(() => expect(screen.getByTestId("auto-skipped").textContent).toMatch(/over the .*2,000 cap/));
+  expect(orders()).toHaveLength(0);
+});
+
+test("no live premium yet is retried on the next tick, not skipped", async () => {
+  arm();
+  fake.noPremium = 2;
+  render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
+  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
+  expect(orders()).toHaveLength(3); // two refusals, then the fill
+  expect(screen.queryByTestId("auto-skipped")).toBeNull();
+});
+
 test("a refused order is recorded with the reason and not retried", async () => {
   arm();
   fake.order = { ok: false, status: 422, error: "the market is closed" };
   render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
   await waitFor(() => expect(screen.getByTestId("auto-skipped").textContent).toMatch(/the market is closed/));
-  await act(async () => await new Promise((r) => setTimeout(r, 80)));
+  await wait();
   expect(orders()).toHaveLength(1);
 });
 
-test("an R too wide for one lot inside the cap is skipped with that reason", async () => {
+test("when the server moves the stop at TP1 the panel shows it and says so once", async () => {
   arm();
-  render(<AutoPaper {...props} signal={{ ...signal, rPoints: 20 }} onEvent={() => {}} />);
-  await waitFor(() => expect(screen.getByTestId("auto-skipped").textContent).toMatch(/over the .*2,000 cap/));
-  expect(orders()).toHaveLength(0);
+  const onEvent = mock((_m: string) => {});
+  render(<AutoPaper {...props} signal={signal} onEvent={onEvent} />);
+  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
+  fake.positions = [{ id: "p1", stop: 8.5, plan: { tp1: 9.6, tp1Done: true } }];
+  await waitFor(() => expect(screen.getByText(/Stop 8\.50 \(moved\)/)).toBeTruthy());
+  expect(onEvent.mock.calls.filter((c) => /TP1 reached/.test(c[0]))).toHaveLength(1);
 });
 
-test("at TP1 the stop is moved to the entry, only tightening", async () => {
+test("the time exit and a stop that fired on the server are noticed and recorded", async () => {
   arm();
   render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
   await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
-  act(() => useStore.setState({ quotes: { [SYMBOL]: { symbol: SYMBOL, price: 294.5, bid: 294.4, ask: 294.5, time: Date.now(), source: "upstox" } as never } }));
-  await waitFor(() => expect(fake.calls.some((c) => c.method === "PATCH")).toBe(true));
-  expect(fake.calls.find((c) => c.method === "PATCH")!.body).toMatchObject({ stop: 291.3, only_tighten: true });
-  await waitFor(() => expect(screen.getByText(/Stop 291\.30 \(moved\)/)).toBeTruthy());
-  const patches = fake.calls.filter((c) => c.method === "PATCH").length;
-  await act(async () => await new Promise((r) => setTimeout(r, 80)));
-  expect(fake.calls.filter((c) => c.method === "PATCH")).toHaveLength(patches); // not moved again
-});
-
-test("the time exit closes the trade at the market", async () => {
-  arm();
-  render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
-  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
-  act(() => setSystemTime(new Date(RELEASE + 91 * 60_000)));
+  fake.positions = [];
+  fake.trades = [{ id: "p1", closedAt: Date.now(), exit: 9.1, net: 150, reason: "time" }];
   await waitFor(() => expect(screen.getByTestId("auto-closed").textContent).toMatch(/time exit/));
-  expect(fake.calls.some((c) => c.method === "POST" && c.path.endsWith("/close"))).toBe(true);
-  expect(screen.getByTestId("auto-closed").textContent).toMatch(/net .*120/);
-});
-
-test("a stop or target that fired on the server is noticed and recorded", async () => {
-  arm();
-  render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
-  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
-  fake.open = false;
-  fake.trade = { id: "p1", closedAt: Date.now(), exit: 288.2, net: -950, reason: "stop" };
-  await waitFor(() => expect(screen.getByTestId("auto-closed").textContent).toMatch(/stopped out/));
-  expect(screen.getByTestId("auto-closed").textContent).toMatch(/950/);
+  expect(screen.getByTestId("auto-closed").textContent).toMatch(/net ₹150/);
 });
 
 test("a reload carries on: the record is read back and nothing is placed twice", async () => {
@@ -152,7 +165,7 @@ test("a reload carries on: the record is read back and nothing is placed twice",
   await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
   first.unmount();
   render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
-  await act(async () => await new Promise((r) => setTimeout(r, 80)));
+  await wait();
   expect(orders()).toHaveLength(1);
   expect(screen.getByTestId("auto-open")).toBeTruthy();
 });

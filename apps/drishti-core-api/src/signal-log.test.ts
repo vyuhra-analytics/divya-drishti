@@ -48,3 +48,45 @@ test("USIB on the New York day an EIA report was out is logged as skipped with t
   expect(log.get(usibKey("MCX:CRUDEOIL", wed))).toMatchObject({ status: "skipped" });
   expect(log.get(usibKey("MCX:CRUDEOIL", wed))!.reason).toContain("EIA report");
 });
+
+// ---- the option leg: a fake database answering the five queries the recorded chain and the feed ask make
+function fakeSql(opts: { snapshot: boolean; feedAsk?: number }) {
+  const at = new Date("2026-10-27T13:25:00Z");
+  const fut = { key: "MCX_FO|1", side: "FUT", expiry: "2026-11-17", strike: 0, lot: 100, lastPrice: 9600, depth: null };
+  const legs = [9500, 9550, 9600, 9650, 9700].flatMap((strike, i) =>
+    (["CE", "PE"] as const).map((side) => ({ key: `MCX_FO|${strike}${side === "CE" ? 1 : 2}`, side, expiry: "2026-11-17", strike, lot: 100, underlyingKey: "MCX_FO|1", lastPrice: 170, delta: side === "CE" ? 0.62 - i * 0.05 : -(0.62 - (4 - i) * 0.05), depth: { buy: [{ quantity: 10, price: 168 }], sell: [{ quantity: 10, price: [240, 200, 170, 140, 110][side === "CE" ? i : 4 - i] }] } })),
+  );
+  const sql = (strings: TemplateStringsArray) => {
+    const q = strings.join("?");
+    if (q.includes("FROM feed_quotes")) return Promise.resolve(opts.feedAsk ? [{ price: opts.feedAsk, ask: opts.feedAsk, delta: 0.5, t: Date.parse("2026-10-27T13:34:50Z") }] : []);
+    if (q.includes("max(time) AS t FROM quote_snapshots WHERE time <=")) return Promise.resolve(opts.snapshot ? [{ t: at }] : [{ t: null }]);
+    if (q.includes("FROM quote_snapshots WHERE")) return Promise.resolve([{ t: null }]);
+    if (q.includes("FROM quote_snapshots s JOIN contract_master")) return Promise.resolve([fut, ...legs]);
+    return Promise.resolve([]);
+  };
+  return sql as never;
+}
+const signalRecord = (side: "long" | "short"): SignalRecord => ({ key: "k", strategy: "usib", symbol: "MCX:CRUDEOIL", at: OPEN, status: "signal", candles: [], notes: [], signal: { side, candleTime: OPEN / 1000 + 300, closedAt: OPEN / 1000 + 600, entry: 9600, rPoints: 30, stop: 9570, tp1: 9630, tp2: 9660 } });
+
+test("a logged signal gets the option to buy: the call or put the screen would pick, with premium levels from the recorded chain", async () => {
+  const svc = new SignalLogService({ sql: fakeSql({ snapshot: true }), redis: {} } as never, {} as never);
+  const long = await svc.withOption(signalRecord("long"));
+  expect(long.option).toMatchObject({ type: "CE", strike: 9600, expiry: "2026-11-17", units: 100 });
+  expect(long.option!.basis).toContain("snapshot");
+  expect(long.option!.stop).toBeLessThan(long.option!.premium);
+  expect(long.option!.tp2).toBeGreaterThan(long.option!.tp1);
+  const short = await svc.withOption(signalRecord("short"));
+  expect(short.option).toMatchObject({ type: "PE" });
+});
+
+test("a live-feed ask within two minutes of the signal replaces the snapshot's; with no snapshot the record says so and invents nothing", async () => {
+  const svc = new SignalLogService({ sql: fakeSql({ snapshot: true, feedAsk: 181 }), redis: {} } as never, {} as never);
+  const r = await svc.withOption(signalRecord("long"));
+  expect(r.option!.premium).toBe(181);
+  expect(r.option!.basis).toContain("live-feed ask");
+  const none = await new SignalLogService({ sql: fakeSql({ snapshot: false }), redis: {} } as never, {} as never).withOption(signalRecord("long"));
+  expect(none.option).toBeUndefined();
+  expect(none.optionNote).toContain("no option chain snapshot");
+  const quiet: SignalRecord = { ...signalRecord("long"), status: "no_signal", signal: undefined };
+  expect((await svc.withOption(quiet)).option).toBeUndefined(); // only a signal has an option leg
+});
