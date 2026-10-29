@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BROKER_LABELS, familyCsv, fyOf, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type DayRow, type FamilyAccount, type FamilyMember, type GroupRow, type Insights, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
+import { BROKER_LABELS, familyCsv, fyOf, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type DayRow, type FamilyAccount, type FamilyMember, type DayRisk, type FyHeadline, type GroupRow, type Habits, type Insights, type LastDay, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
+import { ByMember, HabitsCard, RecentDays, RiskCard, YearSoFar } from "./FamilyExtras";
 import { apiUrl } from "./settings";
 import { Button, Input, Select, Switch, Tabs, TabsList, TabsTrigger } from "./ui";
 import type { Widget } from "./workspace";
@@ -32,6 +33,10 @@ interface Overview {
 interface Report {
   summary: Summary;
   monthly: MonthlyView;
+  lastDay?: LastDay | null;
+  fyHeadline?: FyHeadline | null;
+  risk?: DayRisk | null;
+  habits?: Habits | null;
   insights: Insights | null;
   yearBySegment: CrossTab;
   memberByYear: CrossTab;
@@ -357,7 +362,7 @@ export function FamilyWidget(_: { widget: Widget }) {
       const r = await call<Report>(`/summary${query}`, { signal: ac.signal });
       if (mine !== seq.current.report) return;
       const monthly = { ...r.monthly, days: r.monthly.days ?? [], months: r.monthly.months.map((m) => ({ ...m, est: m.est ?? { realized: 0, charges: 0, contracts: 0 } })), unplaced: r.monthly.unplaced ?? { contracts: 0, realized: 0 } };
-      setReport({ ...r, monthly, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
+      setReport({ ...r, lastDay: r.lastDay ? { ...r.lastDay, recent: r.lastDay.recent ?? [], byMember: r.lastDay.byMember ?? [] } : (r.lastDay ?? null), fyHeadline: r.fyHeadline ?? null, risk: r.risk ?? null, habits: r.habits ?? null, monthly, insights: r.insights ?? null, yearBySegment: r.yearBySegment ?? { rows: [], cols: [], cells: {} }, memberByYear: r.memberByYear ?? { rows: [], cols: [], cells: {} } });
       setError(null);
     } catch (e) {
       if ((e as Error).name !== "AbortError" && mine === seq.current.report) setError((e as Error).message);
@@ -437,6 +442,7 @@ export function FamilyWidget(_: { widget: Widget }) {
   const accountName = (a: FamilyAccount) => `${memberName(a.memberId)} · ${BROKER_LABELS[a.broker]} · ${hide ? `account ${a.id}` : a.label}`;
   const money = (n: number, dp = 2) => (hide ? "••••" : inr(n, dp));
   const signed = (n: number, dp = 2) => <span className={n > 0 ? "up" : n < 0 ? "down" : ""}>{money(n, dp)}</span>;
+  const fmt = { hide, money: (n: number) => money(n), signed: (n: number) => signed(n) };
 
   const upload = async (files: FileList | null, accept = false, again?: Outcome) => {
     const list = again ? [{ name: again.file, buf: again.bytes! }] : await Promise.all([...(files ?? [])].map(async (f) => ({ name: f.name, buf: await f.arrayBuffer() })));
@@ -550,14 +556,12 @@ export function FamilyWidget(_: { widget: Widget }) {
   );
   // one thing to check is shown as it is; several fold into one line that opens, so the numbers stay at the top
   const alertBlock =
-    alerts.length === 0 ? null : alerts.length === 1 ? (
-      <div className="fam-alerts no-drag">{alertCard(alerts[0])}</div>
-    ) : (
+    alerts.length === 0 ? null : (
       <details className="fam-alerts no-drag">
         <summary>
           {alerts.some((a) => a.tone === "warn") && <span className="fam-dot" aria-hidden="true" />}
-          <b>{alerts.length} things to check</b>
-          <small>{alerts.map((a) => a.title).join(" · ")}</small>
+          <b>{alerts.length === 1 ? alerts[0].title : `${alerts.length} things to check`}</b>
+          {alerts.length > 1 && <small>{alerts.map((a) => a.title).join(" · ")}</small>}
         </summary>
         {alerts.map(alertCard)}
       </details>
@@ -658,6 +662,7 @@ export function FamilyWidget(_: { widget: Widget }) {
             Download CSV
           </Button>
         )}
+        {report?.lastDay && <span className="fam-asof" title="The newest dated trade in what is selected: later days are not loaded">Trades to {new Date(`${report.lastDay.asOf}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</span>}
         <label className="fam-hide" title="Hides names and amounts on screen. It is not encryption.">
           <Switch checked={hide} onCheckedChange={() => toggleHide()} aria-label="Hide names and amounts" /> Hide names and amounts
         </label>
@@ -670,6 +675,55 @@ export function FamilyWidget(_: { widget: Widget }) {
           <p className="muted">No statement yet, so there is nothing to total. Add a Zerodha P&amp;L file in <b>Files and people</b>. A tradebook alone gives the months but not the charges.</p>
         ) : (
           <>
+            {(() => {
+              const d = report.lastDay;
+              const todayIst = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+              const when = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+              if (!d)
+                return (
+                  <div className="fam-card" data-testid="fam-lastday">
+                    <b>Last trading day</b>
+                    <p className="muted">No dated trades are loaded, so there is no trading day to show. A Zerodha tradebook or Kotak's Transaction Statement carries the dates; a statement alone does not.</p>
+                  </div>
+                );
+              const acct = (id: number) => {
+                const a = data?.accounts.find((x) => x.id === id);
+                return a ? accountName(a) : "?";
+              };
+              return (
+                <div className="fam-card" data-testid="fam-lastday">
+                  <b>Last trading day</b> <span className="muted">{when(d.date)}</span>
+                  <div className="fam-lastday-net">{signed(d.net)}</div>
+                  <p className="muted">
+                    {hide ? "••" : `realised ${inr(d.realized)} less charges ${inr(d.charges)} · ${d.closes} position${d.closes === 1 ? "" : "s"} closed`}
+                    {d.closes === 0 && !hide ? " (only costs: positions were opened, none closed)" : ""}
+                  </p>
+                  <p className="muted">
+                    {d.previous ? <>Trading day before, {when(d.previous.date)}: {signed(d.previous.net)}. </> : null}
+                    {new Date(`${d.date}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", timeZone: "UTC" })} so far: {signed(d.monthToDate)}.
+                  </p>
+                  <RecentDays days={d.recent ?? []} hide={hide} />
+                  <ByMember rows={d.byMember ?? []} name={memberName} fmt={fmt} />
+                  {(d.byAccount.length > 1 || d.bySegment.length > 1) && (
+                    <ul className="fam-lastday-split">
+                      {d.byAccount.length > 1 && d.byAccount.map((r) => <li key={`a${r.accountId}`}>{acct(r.accountId)}: {signed(r.net)}</li>)}
+                      {d.bySegment.length > 1 && d.bySegment.map((r) => <li key={`s${r.segment}`}>{SEGMENT_LABELS[r.segment]}: {signed(r.net)}</li>)}
+                    </ul>
+                  )}
+                  <p className="muted">
+                    Trades loaded up to {when(d.asOf)}.{" "}
+                    {d.asOf < todayIst
+                      ? `Nothing is loaded after that, so later days are not shown: add newer statements and a tradebook.`
+                      : d.date < d.asOf
+                        ? "No position closed and no cost was booked after the day above."
+                        : ""}{" "}
+                    Realised only: open positions are not included.
+                  </p>
+                </div>
+              );
+            })()}
+            {!period && report.fyHeadline && <YearSoFar h={report.fyHeadline} fmt={fmt} />}
+            {!period && report.fyHeadline && s.byPeriod.length > 1 && <h2 className="fam-allyears">All years together</h2>}
             <div className="fam-kpis">
               <div className="fam-kpi">
                 <span>Realised P&amp;L</span>
@@ -762,6 +816,8 @@ export function FamilyWidget(_: { widget: Widget }) {
                 </section>
               );
             })()}
+            {report.risk && <RiskCard r={report.risk} fmt={fmt} />}
+            {report.habits && <HabitsCard h={report.habits} fmt={fmt} />}
 
             <div className="fam-grid">
               <section className="fam-card">

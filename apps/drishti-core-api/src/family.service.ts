@@ -4,7 +4,13 @@ import {
   accountantStatement,
   BROKER_LABELS,
   contractRows,
+  closedLotsOf,
+  dayRisk,
+  fyHeadline,
+  habits,
   insights,
+  lastTradingDay,
+  tradingDays,
   memberByYear,
   selectParts,
   statementCoverage,
@@ -354,9 +360,16 @@ export class FamilyService {
     const [members, accounts, imports] = await Promise.all([this.store.members(), this.store.accounts(), this.store.imports()]);
     const parts = selectParts(accounts, imports, filter);
     const contracts = contractRows(parts);
+    const days = tradingDays(members, accounts, imports, filter);
     return {
       summary: summarize(members, accounts, imports, filter),
       monthly: monthlyView(members, accounts, imports, filter),
+      // the newest trading day for the selection, whatever year is chosen; null while no tradebook is loaded
+      lastDay: lastTradingDay(members, accounts, imports, filter),
+      // the current financial year against the same stretch of the last, the risk figures over the exact trading days, and the habit tables from the dated closes
+      fyHeadline: fyHeadline(members, accounts, imports, filter, new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10)),
+      risk: dayRisk(days),
+      habits: habits(closedLotsOf(accounts, imports, filter).map((c) => c.lot), days),
       // why the result is what it is, and the two cross-tables. The contracts themselves are a separate request (`contracts`): only one tab shows them
       insights: insights(contracts, parts) ?? null,
       yearBySegment: yearBySegment(parts),

@@ -351,6 +351,7 @@ describe("what the screen reads beyond the totals", () => {
     expect(c.contracts[0]).toMatchObject({ symbol: "NIFTY2462023600CE", underlying: "NIFTY", segment: "fno", realized: 700 });
     expect(s.insights).toMatchObject({ contracts: 1, winners: 1, losers: 0 });
     expect(s.yearBySegment.cols.map((c) => c.key)).toEqual(["fno"]);
+    expect(s.lastDay).toBeNull(); // a statement alone has no dated trades, so no trading day
     expect(s.memberByYear.rows).toHaveLength(1);
     const o = await svc.overview();
     expect(o.coverage.years).toEqual(["2024-25"]);

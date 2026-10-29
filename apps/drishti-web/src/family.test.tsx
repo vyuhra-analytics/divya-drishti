@@ -73,7 +73,7 @@ const widget = { id: "fam-1", type: "family" } as never;
 const topBar = () => within(document.querySelector(".fam-top") as HTMLElement); // the year in the statement card has the same label
 const open = async () => {
   const view = render(<FamilyWidget widget={widget} />);
-  await waitFor(() => expect(screen.getByText("Net after charges")).toBeTruthy());
+  await waitFor(() => expect(screen.getAllByText("Net after charges").length).toBeGreaterThan(0)); // the year-so-far row and the all-years row both carry it
   return view;
 };
 
@@ -90,6 +90,63 @@ test("the net leads, the years are charted, every member is compared and the unf
   expect(screen.getAllByText(/Carried-in positions/).length).toBeGreaterThan(0);
   expect(screen.getAllByText("Some months are estimated").length).toBeGreaterThan(0);
   expect(screen.getByText(/NIFTY24JUL23900PE/)).toBeTruthy();
+});
+
+test("the last trading day leads the overview: its net, the day before, the month so far, and how far the data goes", async () => {
+  const day = (date: string, realized: number, charges: number, closes: number) => ({ date, realized, charges, net: realized - charges, closes });
+  const lastDay = { ...day("2026-10-27", 1200, 150, 3), previous: day("2026-10-26", -500, 80, 2), monthToDate: 640, asOf: "2026-10-27", byAccount: [{ ...day("2026-10-27", 1000, 100, 2), accountId: 11 }, { ...day("2026-10-27", 200, 50, 1), accountId: 12 }], bySegment: [] };
+  const prior = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string) => (String(url).includes("/family/summary") ? { ok: true, json: async () => ({ ...report, lastDay }) } : (prior as never as (u: string) => Promise<unknown>)(url))) as never;
+  await open();
+  const card = within(screen.getByTestId("fam-lastday"));
+  expect(card.getByText("Last trading day")).toBeTruthy();
+  expect(card.getAllByText(/Tue, 27 Oct,? 2026/).length).toBeGreaterThan(1);
+  expect(card.getByText("1,050.00")).toBeTruthy(); // 1,200 realised less 150 charges
+  expect(card.getByText(/realised 1,200.00 less charges 150.00 · 3 positions closed/)).toBeTruthy();
+  expect(card.getByText(/Mon, 26 Oct,? 2026/)).toBeTruthy();
+  expect(card.getByText(/October so far/)).toBeTruthy();
+  expect(card.getByText(/Trades loaded up to Tue, 27 Oct,? 2026\. Nothing is loaded after that/)).toBeTruthy(); // the test clock is later than the data
+});
+
+test("the year so far, the recent days, each person's last day, the risk figures and the habit tables are drawn from the computed figures", async () => {
+  const day = (date: string, net: number, closes = 1) => ({ date, realized: net, charges: 0, net, closes });
+  const totals = (net: number) => ({ realized: net, charges: 100, net, unrealized: 0, profits: 500, losses: -400, winners: 3, losers: 2, symbols: 5, turnoverAtLeast: 0 });
+  const row = (label: string, n: number, total: number, thin = false) => ({ label, n, total, avg: total / n, winRate: 0.5, thin });
+  const extra = {
+    lastDay: { ...day("2026-10-27", 1050, 3), previous: day("2026-10-26", -400), monthToDate: 640, recent: [day("2026-10-23", -100), day("2026-10-26", -400), day("2026-10-27", 1050, 3)], byAccount: [], bySegment: [], byMember: [{ ...day("2026-10-27", 1050), memberId: 1 }, { ...day("2026-10-26", -400), memberId: 2 }], asOf: "2026-10-27" },
+    fyHeadline: { fy: "2026-27", through: "2026-10-28", totals: totals(777), daysNet: 777, daysNetLastYear: -55, previous: { fy: "2025-26", totals: totals(305) } },
+    risk: { days: 10, winDays: 6, lossDays: 4, bestDay: day("2026-09-01", 900), worstDay: day("2026-09-10", -800), streak: { kind: "loss", days: 2 }, maxDrawdown: { amount: 1500, from: "2026-09-01", to: "2026-09-12" }, currentDrawdown: 600 },
+    habits: { positions: 40, days: 12, weekday: [row("Monday", 12, 300), row("Friday", 3, -90, true)], hold: [row("Same day", 30, -200)], kind: [row("Bought calls", 25, 100)], busy: [row("3 to 5 positions closed", 6, -120)] },
+  };
+  const prior = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string) => (String(url).includes("/family/summary") ? { ok: true, json: async () => ({ ...report, ...extra, summary: { ...report.summary, byPeriod: [...report.summary.byPeriod, { ...report.summary.byPeriod[0], key: "2025-26", label: "2025-26" }] } }) } : (prior as never as (u: string) => Promise<unknown>)(url))) as never;
+  await open();
+  const year = within(screen.getByTestId("fam-year"));
+  expect(year.getByText(/FY 2026-27 so far/)).toBeTruthy();
+  expect(year.getByText(/same stretch of last year: -55.00 · 2025-26 in full: 305.00/)).toBeTruthy();
+  expect(screen.getByText("All years together")).toBeTruthy(); // the older totals are labelled as such once a year row leads
+  expect(screen.getByRole("img", { name: "Last 3 trading days" })).toBeTruthy();
+  expect(within(screen.getByTestId("fam-lastday")).getByLabelText("Each person's latest trading day")).toBeTruthy();
+  const risk = within(screen.getByTestId("fam-risk"));
+  expect(risk.getByText("2 losing days")).toBeTruthy();
+  expect(risk.getByText("900.00")).toBeTruthy();
+  expect(risk.getByText(/from 1 Sept?,? 2026 to 12 Sept?,? 2026/)).toBeTruthy();
+  const habits = within(screen.getByTestId("fam-habits"));
+  expect(habits.getByText(/40 positions closed in the dated tradebooks, over 12 trading days/)).toBeTruthy();
+  expect(habits.getByText("Friday *")).toBeTruthy(); // under five is marked
+  expect(habits.getByText("Bought calls")).toBeTruthy();
+  expect(screen.getByText(/Trades to 27 Oct,? 2026/)).toBeTruthy();
+});
+
+test("a single note folds into one line instead of a banner", async () => {
+  await open();
+  const folded = document.querySelector("details.fam-alerts") as HTMLElement;
+  expect(folded).toBeTruthy();
+});
+
+test("with no dated trades the last-day card says what to add instead of showing a zero", async () => {
+  await open();
+  expect(within(screen.getByTestId("fam-lastday")).getByText(/No dated trades are loaded/)).toBeTruthy();
 });
 
 test("the insights say why the result is what it is: the sentence, the sizes, the worst and best contracts and each segment", async () => {

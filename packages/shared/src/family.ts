@@ -1,6 +1,6 @@
 // Family accounts: the household's own broker statements, imported and analysed. Pure functions only (the API stores, the screen draws). A record-keeper:
 // it holds what the broker reported, never credentials or full account numbers, and gives no advice. See docs/redesign/FAMILY_ACCOUNTS.md.
-import { matchFills, reconcileWithStatement, settleExpired, type Matched, type Reconciliation } from "./fifo";
+import { matchFills, reconcileWithStatement, settleExpired, type ClosedLot, type Matched, type Reconciliation } from "./fifo";
 import type { ChargeHead, PnlLine, Segment } from "./zerodhaPnl";
 import type { Fill } from "./zerodhaTradebook";
 
@@ -498,6 +498,123 @@ export function monthlyView(members: FamilyMember[], accounts: FamilyAccount[], 
     .sort((a, b) => (a.date < b.date ? -1 : 1))
     .map((d) => ({ ...d, realized: r2(d.realized), charges: r2(d.charges), net: r2(d.realized - d.charges + d.est.realized - d.est.charges), est: { realized: r2(d.est.realized), charges: r2(d.est.charges), contracts: d.est.contracts } }));
   return { months: out, days: dayOut, reconciliation, withoutTradebook, unplaced: { contracts: unplaced.contracts, realized: r2(unplaced.realized) } };
+}
+
+/** One trading day's exact result: what dated fills closed and what they cost (estimates from undated statements are not part of it). */
+export interface DayResult {
+  date: string;
+  realized: number;
+  charges: number;
+  net: number;
+  closes: number;
+}
+
+/**
+ * What the most recent trading day came to, for the selection (the financial-year filter is ignored: this is about "latest"). A trading day is one on which a dated
+ * fill closed a position or carried charges (Kotak's fills carry theirs, so an opening-only day still has a cost). Only EXACT figures count; a statement without
+ * dates places contracts by expiry, which is no trading day, so it never makes one. `asOf` is the newest fill loaded, so the screen can say how far the data goes
+ * and tell "nothing traded after" from "nothing loaded after". Null when no tradebook is loaded.
+ */
+export interface LastDay extends DayResult {
+  /** the trading day before it, to compare against */
+  previous?: DayResult;
+  /** the exact net of that month up to and including the day */
+  monthToDate: number;
+  /** the last (up to) ten trading days, oldest first, ending with `date` */
+  recent: DayResult[];
+  byAccount: (DayResult & { accountId: number })[];
+  bySegment: (DayResult & { segment: Segment })[];
+  /** each person's own latest trading day, when the selection is everyone and more than one person has dated trades */
+  byMember: (DayResult & { memberId: number })[];
+  /** the newest fill date among the selected tradebooks */
+  asOf: string;
+}
+
+const exactOf = (d: DayRow): DayResult | undefined => (d.closes > 0 || d.charges > 0 ? { date: d.date, realized: d.realized, charges: d.charges, net: r2(d.realized - d.charges), closes: d.closes } : undefined);
+const narrow = (f: Filter): Filter => ({ memberId: f.memberId, accountId: f.accountId, segment: f.segment }); // the financial-year filter is not part of a "latest" or a whole-history question
+
+/** The exact trading days of a selection, oldest first (see `LastDay`). The year filter is ignored. */
+export function tradingDays(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): DayResult[] {
+  return monthlyView(members, accounts, imports, narrow(filter)).days.map(exactOf).filter((d): d is DayResult => !!d);
+}
+
+/** Every position the selected tradebooks closed (matched first in, first out, expired options settled at zero), with its account and segment. The year filter is ignored. */
+export function closedLotsOf(accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): { lot: ClosedLot; accountId: number; segment: Segment }[] {
+  const f = narrow(filter);
+  const acc = new Map(accounts.map((a) => [a.id, a]));
+  const sel = imports.filter((i) => {
+    const a = acc.get(i.accountId);
+    return i.kind === "tradebook" && !!a && (f.accountId === undefined || a.id === f.accountId) && (f.memberId === undefined || a.memberId === f.memberId) && (!f.segment || i.segment === f.segment);
+  });
+  const out: { lot: ClosedLot; accountId: number; segment: Segment }[] = [];
+  for (const key of new Set(sel.map((i) => `${i.accountId}|${i.segment}`))) {
+    const books = sel.filter((i) => `${i.accountId}|${i.segment}` === key);
+    const fills = new Map<string, Fill>();
+    for (const b of books) for (const fl of b.fills) fills.set(fl.tradeId, fl);
+    const matched = matchWithExpiry(fills.values(), books.map(knownUntil).sort().at(-1) ?? "0000-00-00");
+    for (const lot of matched.closed) out.push({ lot, accountId: books[0].accountId, segment: books[0].segment });
+  }
+  return out;
+}
+
+export function lastTradingDay(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter = {}): LastDay | null {
+  const base = narrow(filter);
+  const acc = new Map(accounts.map((a) => [a.id, a]));
+  const books = imports.filter((i) => {
+    const a = acc.get(i.accountId);
+    return i.kind === "tradebook" && !!a && (base.accountId === undefined || a.id === base.accountId) && (base.memberId === undefined || a.memberId === base.memberId) && (!base.segment || i.segment === base.segment);
+  });
+  const asOf = books.flatMap((b) => b.fills.map((f) => f.date)).sort().at(-1);
+  if (!asOf) return null;
+  const all = tradingDays(members, accounts, imports, base);
+  const last = all.at(-1);
+  if (!last) return null;
+  const at = (days: DayResult[]) => days.find((d) => d.date === last.date);
+  const zero = { date: last.date, realized: 0, charges: 0, net: 0, closes: 0 };
+  const accountIds = [...new Set(books.map((b) => b.accountId))];
+  const segments = [...new Set(books.map((b) => b.segment))];
+  // each person's OWN latest day (it can differ from the household's), only when the selection is everyone and more than one person has dated trades
+  const memberIds = base.memberId === undefined && base.accountId === undefined ? [...new Set(books.map((b) => acc.get(b.accountId)!.memberId))] : [];
+  const byMember = memberIds.length > 1 ? memberIds.map((memberId) => ({ memberId, day: tradingDays(members, accounts, imports, { ...base, memberId }).at(-1) })).filter((r): r is { memberId: number; day: DayResult } => !!r.day).map((r) => ({ ...r.day, memberId: r.memberId })) : [];
+  return {
+    ...last,
+    previous: all.length > 1 ? all[all.length - 2] : undefined,
+    monthToDate: r2(all.filter((d) => d.date.slice(0, 7) === last.date.slice(0, 7) && d.date <= last.date).reduce((a, d) => a + d.net, 0)),
+    recent: all.slice(-10),
+    byAccount: accountIds.map((accountId) => ({ ...(at(tradingDays(members, accounts, imports, { ...base, accountId })) ?? zero), accountId })).filter((r) => r.closes > 0 || r.charges > 0),
+    bySegment: segments.map((segment) => ({ ...(at(tradingDays(members, accounts, imports, { ...base, segment })) ?? zero), segment })).filter((r) => r.closes > 0 || r.charges > 0),
+    byMember,
+    asOf,
+  };
+}
+
+/** The current financial year against the same stretch of the year before. */
+export interface FyHeadline {
+  fy: string;
+  /** the day the year-to-date runs to (today, India time) */
+  through: string;
+  totals: Totals;
+  /** the net of the days of this year up to `through`, and of the same days a year earlier (null when the year before has no days) */
+  daysNet: number;
+  daysNetLastYear: number | null;
+  /** the whole previous year, when there is one */
+  previous: { fy: string; totals: Totals } | null;
+}
+
+export function fyHeadline(members: FamilyMember[], accounts: FamilyAccount[], imports: ImportRecord[], filter: Filter, today: string): FyHeadline | null {
+  const base = narrow(filter);
+  const fy = fyOf(today);
+  const rows = summarize(members, accounts, imports, base).byPeriod;
+  const cur = rows.find((r) => r.label === fy);
+  if (!cur) return null;
+  const y = Number(fy.slice(0, 4));
+  const prevFy = `${y - 1}-${String(y).slice(2)}`;
+  const prev = rows.find((r) => r.label === prevFy);
+  const days = monthlyView(members, accounts, imports, base).days;
+  const sum = (from: string, to: string) => r2(days.filter((d) => d.date >= from && d.date <= to).reduce((a, d) => a + d.net, 0));
+  const lastYearToday = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`;
+  const prevHasDays = days.some((d) => d.date >= `${y - 1}-04-01` && d.date <= `${y}-03-31`);
+  return { fy, through: today, totals: cur, daysNet: sum(`${y}-04-01`, today), daysNetLastYear: prevHasDays ? sum(`${y - 1}-04-01`, lastYearToday) : null, previous: prev ? { fy: prevFy, totals: prev } : null };
 }
 
 const csvCell = (v: string | number): string => {

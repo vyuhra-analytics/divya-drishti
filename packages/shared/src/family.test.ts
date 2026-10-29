@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { chargeGroup, familyCsv, fyOf, maskCode, monthlyView, toCsv, overlaps, parseSymbol, periodFy, summarize, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
+import { dayRisk, habits } from "./familyHabits";
+import { chargeGroup, familyCsv, fyHeadline, fyOf, lastTradingDay, maskCode, monthlyView, toCsv, overlaps, parseSymbol, periodFy, summarize, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
 import { matchFills, reconcileWithStatement, realizedByMonth } from "./fifo";
 import { readXlsx } from "./xlsx";
 import { parseZerodhaPnl } from "./zerodhaPnl";
@@ -334,6 +335,22 @@ describe("results by day", () => {
     expect(v.days.reduce((a, d) => a + d.net, 0)).toBeCloseTo(v.months.reduce((a, m) => a + m.net, 0), 6);
   });
 
+  test("the last trading day is the newest day with a close or a cost, exact figures only, with the day before and the month so far", () => {
+    expect(lastTradingDay(members, accounts, [stmt(1, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20)], 20)])).toBeNull(); // a statement without dates has no trading day
+    const book: ImportRecord = { ...stmt(2, 11, [], 0, { importedAt: "2024-06-20T12:00:00Z" }), kind: "tradebook", fills: [fill("NIFTY2461923000CE", "2024-06-18", "buy", 40, "a", 12), fill("NIFTY2461923000CE", "2024-06-19", "sell", 50, "b", 13), fill("NIFTY2462723600CE", "2024-06-20", "buy", 30, "c", 7)] };
+    const st = stmt(3, 11, [line("NIFTY2461923000CE", 250)], 32);
+    const d = lastTradingDay(members, accounts, [st, book])!;
+    expect(d).toMatchObject({ date: "2024-06-20", realized: 0, charges: 7, net: -7, closes: 0, asOf: "2024-06-20", monthToDate: 218 }); // an opening-only day still has its cost
+    expect(d.previous).toMatchObject({ date: "2024-06-19", net: 237, closes: 1 });
+    expect(d.byAccount).toEqual([expect.objectContaining({ accountId: 11, net: -7 })]);
+    expect(d.bySegment).toEqual([expect.objectContaining({ segment: "fno", net: -7 })]);
+    // a later estimated day (an expiring contract of a Kotak statement) never becomes the last trading day, and the year filter does not hide it
+    const k = stmt(4, 10, [line("NIFTY 24DEC24 CE 24000", 500, 20)], 20);
+    expect(lastTradingDay(members, accounts, [st, book, k], { period: "2023-24" })!.date).toBe("2024-06-20");
+    // narrowing to an account with no tradebook gives nothing
+    expect(lastTradingDay(members, accounts, [st, book, k], { accountId: 10 })).toBeNull();
+  });
+
   test("a monthly name has no day, so it is placed on the month's last day; a contract is never placed after its statement or its import", () => {
     expect(monthlyView(members, accounts, [stmt(1, 11, [line("NIFTY24JUL23000CE", 50, 5)], 5)]).days.map((d) => d.date)).toEqual(["2024-07-31"]);
     const k = stmt(2, 10, [line("NIFTY 26DEC26 CE 24000", 500, 20)], 20, { periodTo: "2027-03-31", importedAt: "2026-10-28T04:00:00Z" });
@@ -347,3 +364,65 @@ describe("results by day", () => {
   });
 });
 
+
+describe("recent days, risk, habits and the year so far", () => {
+  const day = (date: string, realized: number, charges: number, closes: number) => ({ date, realized, charges, net: realized - charges, closes });
+
+  test("risk: best and worst day, the streak the latest day belongs to, and the drawdown of the running net", () => {
+    expect(dayRisk([])).toBeNull();
+    const r = dayRisk([day("2024-06-03", 100, 10, 1), day("2024-06-04", 300, 10, 2), day("2024-06-05", -500, 10, 3), day("2024-06-06", -100, 10, 1), day("2024-06-07", 50, 10, 1)])!;
+    expect(r).toMatchObject({ days: 5, winDays: 3, lossDays: 2, bestDay: { date: "2024-06-04", net: 290 }, worstDay: { date: "2024-06-05", net: -510 }, streak: { kind: "win", days: 1 } });
+    // running net: 90, 380, -130, -240, -200: peak 380 on the 4th, trough -240 on the 6th
+    expect(r.maxDrawdown).toEqual({ amount: 620, from: "2024-06-04", to: "2024-06-06" });
+    expect(r.currentDrawdown).toBe(580);
+    // a loss run from the very first day measures against the start (peak zero)
+    expect(dayRisk([day("2024-06-03", -100, 0, 1), day("2024-06-04", -50, 0, 1)])).toMatchObject({ maxDrawdown: { amount: 150, from: null, to: "2024-06-04" }, streak: { kind: "loss", days: 2 } });
+  });
+
+  const people: FamilyMember[] = [{ id: 1, nickname: "A", relation: "", hidden: false, note: "" }, { id: 2, nickname: "B", relation: "", hidden: false, note: "" }];
+  const accts: FamilyAccount[] = [{ id: 10, memberId: 1, broker: "kotak", label: "k", clientCode: "XYZ123" }, { id: 11, memberId: 2, broker: "zerodha", label: "z", clientCode: "AB1234" }];
+  const ln = (symbol: string, realized: number, charges: number) => ({ symbol, quantity: 25, buyValue: 1000, sellValue: 1000 + realized, realized, openQuantity: 0, unrealized: 0, charges });
+  const st = (id: number, accountId: number, from: string, to: string, lines: ReturnType<typeof ln>[]): ImportRecord => ({ id, accountId, kind: "pnl", segment: "fno", periodFrom: from, periodTo: to, fileName: `s${id}.xlsx`, importedAt: "", summary: { charges: lines.reduce((a, l) => a + (l.charges ?? 0), 0), otherCreditDebit: 0, realized: lines.reduce((a, l) => a + l.realized, 0), unrealized: 0 }, lines, charges: [{ head: "Brokerage", amount: lines.reduce((a, l) => a + (l.charges ?? 0), 0) }], fills: [], problems: [] });
+  const book = (id: number, accountId: number, importedAt: string, fills: ImportRecord["fills"]): ImportRecord => ({ ...st(id, accountId, "2026-04-01", "2027-03-31", []), kind: "tradebook", importedAt, fills });
+  const fl = (symbol: string, date: string, side: "buy" | "sell", price: number, id: string, charges: number) => ({ symbol, date, time: null, side, quantity: 25, price, tradeId: id, exchange: "NSE", charges }) as const;
+
+  test("the year so far against the same stretch of last year, from this year's totals and the days of both", () => {
+    const imports = [st(1, 10, "2025-04-01", "2026-03-31", [ln("NIFTY 25SEP25 CE 24000", -50, 5), ln("NIFTY 24DEC25 CE 24000", 400, 40)]), st(2, 10, "2026-04-01", "2027-03-31", [ln("NIFTY 25JUN26 CE 24000", 100, 10)])];
+    const h = fyHeadline(people, accts, imports, {}, "2026-10-28")!;
+    expect(h).toMatchObject({ fy: "2026-27", through: "2026-10-28", daysNet: 90, daysNetLastYear: -55 }); // the December 2025 contract is after the same date last year
+    expect(h.totals.net).toBe(90);
+    expect(h.previous).toMatchObject({ fy: "2025-26" });
+    expect(h.previous!.totals.net).toBe(305);
+    expect(fyHeadline(people, accts, imports, {}, "2027-05-01")).toBeNull(); // no data for that year yet
+    expect(fyHeadline(people, accts, [imports[0]], {}, "2026-10-28")).toBeNull();
+  });
+
+  test("the last trading day carries the last ten days, and each person's own latest day when more than one has dated trades", () => {
+    const a = book(5, 10, "2026-10-28T12:00:00Z", [fl("NIFTY2661123000CE", "2026-10-26", "buy", 40, "a", 3), fl("NIFTY2661123000CE", "2026-10-26", "sell", 50, "b", 3)]);
+    const b = book(6, 11, "2026-10-28T12:00:00Z", [fl("NIFTY2661123000PE", "2026-10-27", "buy", 40, "c", 4), fl("NIFTY2661123000PE", "2026-10-28", "sell", 60, "d", 4)]);
+    const sa = { ...st(7, 10, "2026-04-01", "2027-03-31", [ln("NIFTY2661123000CE", 250, 6)]) };
+    const sb = { ...st(8, 11, "2026-04-01", "2027-03-31", [ln("NIFTY2661123000PE", 500, 8)]) };
+    const d = lastTradingDay(people, accts, [a, b, sa, sb])!;
+    expect(d.date).toBe("2026-10-28");
+    expect(d.recent.map((x) => x.date)).toEqual(["2026-10-26", "2026-10-27", "2026-10-28"]);
+    expect(d.byMember.map((m) => [m.memberId, m.date])).toEqual([[1, "2026-10-26"], [2, "2026-10-28"]]); // A last traded two days earlier
+    expect(lastTradingDay(people, accts, [a, b, sa, sb], { memberId: 1 })!.byMember).toEqual([]); // a single person has nothing to compare
+    const many = Array.from({ length: 12 }, (_, i) => fl("NIFTY2661123000CE", `2026-10-${String(1 + i).padStart(2, "0")}`, i % 2 ? "sell" : "buy", 40, `m${i}`, 1));
+    expect(lastTradingDay(people, accts, [book(9, 10, "2026-10-28T12:00:00Z", many), st(10, 10, "2026-04-01", "2027-03-31", [ln("NIFTY2661123000CE", 0, 6)])])!.recent).toHaveLength(10);
+  });
+
+  test("habits group the closed positions by weekday, holding time and kind, and the days by how busy they were; small samples are marked thin", () => {
+    const lot = (symbol: string, openDate: string, closeDate: string, pnl: number, direction: "long" | "short" = "long") => ({ symbol, direction, quantity: 25, openDate, closeDate, openPrice: 1, closePrice: 1, pnl });
+    expect(habits([], [])).toBeNull();
+    const h = habits(
+      [lot("NIFTY2461923000CE", "2024-06-17", "2024-06-17", 100), lot("NIFTY2461923000PE", "2024-06-17", "2024-06-19", -300), lot("NIFTY2461923000CE", "2024-06-14", "2024-06-19", 50), lot("NIFTYFUT", "2024-06-10", "2024-06-20", 20, "short")],
+      [day("2024-06-17", 100, 10, 1), day("2024-06-19", -250, 20, 2), day("2024-06-20", 20, 5, 1)],
+    )!;
+    expect(h).toMatchObject({ positions: 4, days: 3 });
+    expect(h.weekday.map((r) => [r.label, r.n, r.total])).toEqual([["Monday", 1, 100], ["Wednesday", 2, -250], ["Thursday", 1, 20]]);
+    expect(h.hold.map((r) => [r.label, r.n])).toEqual([["Same day", 1], ["1 to 2 days", 1], ["3 days or more", 2]]);
+    expect(h.kind.map((r) => [r.label, r.n, r.total])).toEqual([["Bought calls", 2, 150], ["Bought puts", 1, -300], ["Sold other", 1, 20]]); // a bare "NIFTYFUT" carries no expiry, so it is not recognised as a future
+    expect(h.busy).toEqual([{ label: "1 to 2 positions closed", n: 3, total: -165, avg: -55, winRate: 2 / 3, thin: true }]); // days netted 90, -270 and 15
+    expect(h.weekday.every((r) => r.thin)).toBe(true);
+  });
+});
