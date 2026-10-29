@@ -309,10 +309,34 @@ describe("a Kotak file with several segments", () => {
   test("taken whole or not at all: an overlap in one segment stops the others being stored", async () => {
     const store = new MemStore();
     const svc = new FamilyService(store);
-    await svc.importFile(undefined, "derivs.xlsx", makeXlsx([{ name: "Realized Gain-Loss", rows: [...head, ["Derivatives"], ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Disclaimer"]] as never }]), { accept: true });
+    const shifted = head.map((r, i) => (i === 3 ? ["Transaction Period", "From : 2024-10-01 To : 2025-09-30", ...r.slice(2)] : r)); // partly overlaps all.xlsx (2024-04-01 to 2025-03-31)
+    await svc.importFile(undefined, "derivs.xlsx", makeXlsx([{ name: "Realized Gain-Loss", rows: [...shifted, ["Derivatives"], ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Disclaimer"]] as never }]), { accept: true });
     const before = store.i.length;
     await expect(svc.importFile(undefined, "all.xlsx", both(), { accept: true })).rejects.toThrow(/Futures & Options.*overlaps derivs.xlsx/);
     expect(store.i).toHaveLength(before);
+  });
+
+  test("the same period downloaded again replaces the earlier file (and says so on a dry run)", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    await svc.importFile(undefined, "derivs.xlsx", makeXlsx([{ name: "Realized Gain-Loss", rows: [...head, ["Derivatives"], ["BANKNIFTY 24DEC24 CE 52700", "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Derivatives Total", "", "", 15, 1000, 1100, 0, 100, 0, 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77], ["Disclaimer"]] as never }]), { accept: true });
+    const old = store.i[0].id;
+    const dry = await svc.importFile(undefined, "all.xlsx", both(), { accept: true, dry: true });
+    expect(dry.replaced).toMatchObject([{ id: old, fileName: "derivs.xlsx", rows: 1 }]);
+    expect(store.i).toHaveLength(1); // a dry run changes nothing
+    const r = await svc.importFile(undefined, "all.xlsx", both(), { accept: true });
+    expect(r.replaced?.map((x) => x.id)).toEqual([old]);
+    expect(store.i.map((i) => i.segment).sort()).toEqual(["commodity", "fno"]);
+    expect(store.i.some((i) => i.id === old)).toBe(false);
+  });
+
+  test("an older download (fewer contracts) does not replace a newer one", async () => {
+    const store = new MemStore();
+    const svc = new FamilyService(store);
+    const line = (name: string) => [name, "OPTIDX", "-", 15, 1000, 1100, "-", 100, "NA", 100, 3.6, 20, 4.17, 5.48, 33.25, 94.52, 127.77];
+    await svc.importFile(undefined, "newer.xlsx", makeXlsx([{ name: "Realized Gain-Loss", rows: [...head, ["Derivatives"], line("BANKNIFTY 24DEC24 CE 52700"), line("BANKNIFTY 24DEC24 PE 52700"), ["Derivatives Total", "", "", 30, 2000, 2200, 0, 200, 0, 200, 7.2, 40, 8.34, 10.96, 66.5, 189.04, 255.54], ["Disclaimer"]] as never }]), { accept: true });
+    await expect(svc.importFile(undefined, "older.xlsx", both(), { accept: true })).rejects.toThrow(/looks older/); // one derivatives contract against two
+    expect(store.i).toHaveLength(1);
   });
 });
 

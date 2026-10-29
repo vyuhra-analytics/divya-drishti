@@ -91,7 +91,12 @@ export interface ImportResult {
   summary?: { charges: number; otherCreditDebit: number; realized: number; unrealized: number };
   problems: string[];
   notes: string[];
+  /** earlier files of the same account, kind and segment that this one covers and replaces (a year-to-date statement downloaded again); removed once the new one is stored */
+  replaced?: { id: number; fileName: string; periodFrom: string; periodTo: string; rows: number }[];
 }
+
+const sizeOf = (i: ImportRecord) => (i.kind === "pnl" ? i.lines.length : i.fills.length);
+const lastFill = (i: ImportRecord) => i.fills.reduce((m, f) => (f.date > m ? f.date : m), "");
 
 export class FamilyService {
   constructor(private readonly store: FamilyStore) {}
@@ -262,13 +267,24 @@ export class FamilyService {
     } else account = accounts.find((a) => a.broker === broker && a.clientCode === code);
 
     // everything is checked before anything is stored, so a file with several segments is taken whole or not at all
+    const replaced: ImportRecord[] = [];
     if (account) {
       for (const part of parts) if (await this.store.hasHash(account.id, hashOf(part))) throw new ConflictException("this exact file is already imported for this account");
       const stored = await this.store.imports();
       for (const part of parts) {
         const same = stored.filter((i) => i.accountId === account!.id && i.kind === part.kind && i.segment === part.parsed.segment);
-        const clash = same.find((i) => overlaps({ from: i.periodFrom, to: i.periodTo }, { from: part.parsed.periodFrom, to: part.parsed.periodTo }));
-        if (clash) throw new ConflictException(`its ${SEGMENT_LABELS[part.parsed.segment as Segment]} period (${part.parsed.periodFrom} to ${part.parsed.periodTo}) overlaps ${clash.fileName} (${clash.periodFrom} to ${clash.periodTo}) already imported: remove that one first, or import a period that does not overlap`);
+        const incoming = { from: part.parsed.periodFrom as string, to: part.parsed.periodTo as string };
+        const rowsIn = part.kind === "pnl" ? part.parsed.lines.length : part.parsed.fills.length;
+        const lastIn = part.kind === "tradebook" ? (part.parsed.fills as { date: string }[]).reduce((m, f) => (f.date > m ? f.date : m), "") : "";
+        for (const clash of same.filter((i) => overlaps({ from: i.periodFrom, to: i.periodTo }, incoming))) {
+          const where = `its ${SEGMENT_LABELS[part.parsed.segment as Segment]} period (${incoming.from} to ${incoming.to}) overlaps ${clash.fileName} (${clash.periodFrom} to ${clash.periodTo}) already imported`;
+          // a year-to-date statement downloaded again covers the earlier one and replaces it; a partial overlap would count trades twice and stays refused
+          if (incoming.from > clash.periodFrom || incoming.to < clash.periodTo) throw new ConflictException(`${where}: remove that one first, or import a period that does not overlap`);
+          // ...but never an older download over a newer one: fewer contracts or fills, or a tradebook that ends earlier, means the stored file is the newer
+          if (rowsIn < sizeOf(clash) || (part.kind === "tradebook" && lastIn < lastFill(clash)))
+            throw new ConflictException(`${where}, and this file looks older (it holds ${rowsIn} ${part.kind === "pnl" ? "contracts" : "fills"} against ${sizeOf(clash)}${part.kind === "tradebook" ? `, last trade ${lastIn || "none"} against ${lastFill(clash)}` : ""}): remove that one first if you really want this one`);
+          replaced.push(clash);
+        }
       }
     }
     const problems = parts.flatMap((p) => (p.kind === "pnl" ? (p.parsed.problems as string[]) : []));
@@ -292,6 +308,7 @@ export class FamilyService {
         : {}),
       problems,
       notes: parts[0].kind === "tradebook" ? first.notes : [],
+      ...(replaced.length ? { replaced: replaced.map((i) => ({ id: i.id, fileName: i.fileName, periodFrom: i.periodFrom, periodTo: i.periodTo, rows: sizeOf(i) })) } : {}),
     };
     if (opts.dry) return result;
 
@@ -329,6 +346,7 @@ export class FamilyService {
       });
       firstId ??= saved.id;
     }
+    for (const old of replaced) await this.store.deleteImport(old.id); // only after the new file is stored: a failure above leaves the earlier one in place
     return { ...result, id: firstId, newAccount: result.newAccount };
   }
 
