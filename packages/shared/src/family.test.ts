@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { dayRisk, habits } from "./familyHabits";
-import { chargeGroup, familyCsv, fyHeadline, fyOf, lastTradingDay, maskCode, monthlyView, toCsv, overlaps, parseSymbol, periodFy, summarize, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
+import { dayRisk, habits, runningSeries, SERIES_PICK } from "./familyHabits";
+import { chargeGroup, familyCsv, fyHeadline, fyOf, lastTradingDay, maskCode, monthlyView, toCsv, overlaps, parseSymbol, periodFy, summarize, type DayRow, type FamilyAccount, type FamilyMember, type ImportRecord } from "./family";
 import { matchFills, reconcileWithStatement, realizedByMonth } from "./fifo";
 import { readXlsx } from "./xlsx";
 import { parseZerodhaPnl } from "./zerodhaPnl";
@@ -409,6 +409,17 @@ describe("recent days, risk, habits and the year so far", () => {
     expect(lastTradingDay(people, accts, [a, b, sa, sb], { memberId: 1 })!.byMember).toEqual([]); // a single person has nothing to compare
     const many = Array.from({ length: 12 }, (_, i) => fl("NIFTY2661123000CE", `2026-10-${String(1 + i).padStart(2, "0")}`, i % 2 ? "sell" : "buy", 40, `m${i}`, 1));
     expect(lastTradingDay(people, accts, [book(9, 10, "2026-10-28T12:00:00Z", many), st(10, 10, "2026-04-01", "2027-03-31", [ln("NIFTY2661123000CE", 0, 6)])])!.recent).toHaveLength(10);
+  });
+
+  test("a running series adds the days up, can start on a date, and keeps the last points so it ends at the figure on the card", () => {
+    const row = (date: string, realized: number, charges: number, estRealized = 0): DayRow => ({ date, realized, charges, net: realized - charges + estRealized, closes: 1, est: { realized: estRealized, charges: 0, contracts: estRealized ? 1 : 0 } });
+    const days = [row("2026-03-30", 100, 10), row("2026-04-02", 50, 5), row("2026-04-03", -30, 5, 200), row("2026-04-06", 20, 2)];
+    expect(runningSeries(days, SERIES_PICK.net).map((p) => p.total)).toEqual([90, 135, 300, 318]);
+    expect(runningSeries(days, SERIES_PICK.net, "2026-04-01").map((p) => p.total)).toEqual([45, 210, 228]); // a financial year starts from zero
+    expect(runningSeries(days, SERIES_PICK.realized).map((p) => p.total)).toEqual([100, 150, 320, 340]); // expiry-placed results count
+    expect(runningSeries(days, SERIES_PICK.charges).at(-1)!.total).toBe(22);
+    expect(runningSeries(days, SERIES_PICK.net, undefined, 2).map((p) => p.date)).toEqual(["2026-04-03", "2026-04-06"]);
+    expect(runningSeries([], SERIES_PICK.net)).toEqual([]);
   });
 
   test("habits group the closed positions by weekday, holding time and kind, and the days by how busy they were; small samples are marked thin", () => {

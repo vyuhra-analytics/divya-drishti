@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BROKER_LABELS, familyCsv, fyOf, maskCode, SEGMENT_LABELS, statementHtml, statementRows, toCsv, type AccountantStatement, type ContractRow, type CoverageView, type CrossTab, type DayRow, type FamilyAccount, type FamilyMember, type DayRisk, type FyHeadline, type GroupRow, type Habits, type Insights, type LastDay, type MonthlyView, type MonthRow, type Segment, type Summary } from "@drishti/shared";
-import { ByMember, HabitsCard, RecentDays, RiskCard, YearSoFar } from "./FamilyExtras";
+import { allCards, ByMember, fyCards, HabitsCard, KpiTrio, RecentDays, RiskCard, YearSoFar } from "./FamilyExtras";
 import { apiUrl } from "./settings";
 import { Button, Input, Select, Switch, Tabs, TabsList, TabsTrigger } from "./ui";
 import type { Widget } from "./workspace";
@@ -675,6 +675,14 @@ export function FamilyWidget(_: { widget: Widget }) {
           <p className="muted">No statement yet, so there is nothing to total. Add a Zerodha P&amp;L file in <b>Files and people</b>. A tradebook alone gives the months but not the charges.</p>
         ) : (
           <>
+            {!period && report.fyHeadline && <YearSoFar h={report.fyHeadline} cards={fyCards(report.fyHeadline, report.lastDay, monthly.days)} day={report.lastDay?.date} fmt={fmt} />}
+            {!period && report.fyHeadline && s.byPeriod.length > 1 && <h2 className="fam-allyears">All years together</h2>}
+            <KpiTrio cards={allCards(s.totals, s.byPeriod, report.lastDay, monthly.days)} day={report.lastDay?.date} fmt={fmt} />
+            <p className="fam-meta">
+              <span title="Open positions as the broker marked them at the end of the statement; not part of the net">Unrealised (reported) {signed(s.totals.unrealized)}</span>
+              <span title="The sum of each symbol's absolute net result. The true turnover uses every trade, so this is a lower bound; ask your accountant for the filing figure.">F&amp;O turnover, at least {money(s.totals.turnoverAtLeast, 0)}</span>
+              <span>{s.totals.symbols} symbols traded</span>
+            </p>
             {(() => {
               const d = report.lastDay;
               const todayIst = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
@@ -722,39 +730,6 @@ export function FamilyWidget(_: { widget: Widget }) {
                 </div>
               );
             })()}
-            {!period && report.fyHeadline && <YearSoFar h={report.fyHeadline} fmt={fmt} />}
-            {!period && report.fyHeadline && s.byPeriod.length > 1 && <h2 className="fam-allyears">All years together</h2>}
-            <div className="fam-kpis">
-              <div className="fam-kpi">
-                <span>Realised P&amp;L</span>
-                <b>{signed(s.totals.realized)}</b>
-                <small>{hide ? "••" : `${s.totals.winners} winning, ${s.totals.losers} losing symbols`}</small>
-              </div>
-              <div className="fam-kpi">
-                <span>Charges and taxes</span>
-                <b>{money(s.totals.charges)}</b>
-                <small>{hide ? "••" : s.totals.profits > 0 ? `${((s.totals.charges / s.totals.profits) * 100).toFixed(1)}% of the winnings` : "no winnings to compare"}</small>
-              </div>
-              <div className={`fam-kpi net ${s.totals.net > 0 ? "up" : s.totals.net < 0 ? "down" : ""}`}>
-                <span>Net after charges</span>
-                <b>{money(s.totals.net)}</b>
-                <small>
-                  {hide
-                    ? "••"
-                    : s.byPeriod.length > 1
-                      ? (() => {
-                          const best = [...s.byPeriod].sort((x, y) => y.net - x.net);
-                          return `best ${best[0].label} ${inr(best[0].net, 0)}, worst ${best[best.length - 1].label} ${inr(best[best.length - 1].net, 0)}`;
-                        })()
-                      : "after brokerage, taxes and fees"}
-                </small>
-              </div>
-            </div>
-            <p className="fam-meta">
-              <span title="Open positions as the broker marked them at the end of the statement; not part of the net">Unrealised (reported) {signed(s.totals.unrealized)}</span>
-              <span title="The sum of each symbol's absolute net result. The true turnover uses every trade, so this is a lower bound; ask your accountant for the filing figure.">F&amp;O turnover, at least {money(s.totals.turnoverAtLeast, 0)}</span>
-              <span>{s.totals.symbols} symbols traded</span>
-            </p>
 
             {report.insights && (() => {
               const i = report.insights;

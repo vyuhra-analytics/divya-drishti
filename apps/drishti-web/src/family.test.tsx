@@ -1,3 +1,4 @@
+import { Change } from "./FamilyExtras";
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { FamilyWidget } from "./FamilyPanel";
@@ -136,6 +137,39 @@ test("the year so far, the recent days, each person's last day, the risk figures
   expect(habits.getByText("Friday *")).toBeTruthy(); // under five is marked
   expect(habits.getByText("Bought calls")).toBeTruthy();
   expect(screen.getByText(/Trades to 27 Oct,? 2026/)).toBeTruthy();
+});
+
+test("each headline card shows what the last trading day did to it: an arrow for the direction, a colour for good or bad, and a running line behind it", async () => {
+  const row = (date: string, realized: number, charges: number) => ({ date, realized, charges, net: realized - charges, closes: 1, est: { realized: 0, charges: 0, contracts: 0 } });
+  const days = [row("2026-10-23", 100, 10), row("2026-10-26", -400, 20), row("2026-10-27", 300, 15), row("2026-10-28", 950, 193.25)];
+  const totals = (net: number) => ({ realized: net, charges: 100, net, unrealized: 0, profits: 500, losses: -400, winners: 3, losers: 2, symbols: 5, turnoverAtLeast: 0 });
+  const extra = {
+    lastDay: { date: "2026-10-28", realized: 950, charges: 193.25, net: 756.75, closes: 6, monthToDate: 640, recent: days.map((d) => ({ date: d.date, realized: d.realized, charges: d.charges, net: d.net, closes: 1 })), byAccount: [], bySegment: [], byMember: [], asOf: "2026-10-28" },
+    fyHeadline: { fy: "2026-27", through: "2026-10-29", totals: totals(777), daysNet: 777, daysNetLastYear: null, previous: null },
+    monthly: { ...report.monthly, days },
+  };
+  const prior = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string) => (String(url).includes("/family/summary") ? { ok: true, json: async () => ({ ...report, ...extra }) } : (prior as never as (u: string) => Promise<unknown>)(url))) as never;
+  await open();
+  // realised and net went up (good), charges went up (bad): both the year row and the all-years row carry the three chips
+  expect(screen.getAllByLabelText(/^Up 950\.00 on 28 Oct,? 2026, good$/)).toHaveLength(2);
+  expect(screen.getAllByLabelText(/^Up 193\.25 on 28 Oct,? 2026, bad$/)).toHaveLength(2);
+  expect(screen.getAllByLabelText(/^Up 756\.75 on 28 Oct,? 2026, good$/)).toHaveLength(2);
+  expect(screen.getAllByRole("img", { name: /Running total over the last 4 days/ }).length).toBeGreaterThanOrEqual(3);
+});
+
+test("the change chip: a loss is a down arrow in the bad colour, more cost is bad and less cost is good, and hidden amounts keep the direction", () => {
+  const fmt = { hide: false, money: (n: number) => n.toFixed(2), signed: (n: number) => String(n) };
+  const { rerender } = render(<Change amount={-300} kind="pnl" day="2026-10-28" fmt={fmt} />);
+  expect(screen.getByLabelText(/^Down 300\.00 on 28 Oct,? 2026, bad$/)).toBeTruthy();
+  rerender(<Change amount={-30} kind="cost" day="2026-10-28" fmt={fmt} />);
+  expect(screen.getByLabelText(/^Down 30\.00 on 28 Oct,? 2026, good$/)).toBeTruthy();
+  rerender(<Change amount={0} kind="pnl" day="2026-10-28" fmt={fmt} />);
+  expect(screen.getByLabelText(/^Unchanged on 28 Oct,? 2026, no change$/)).toBeTruthy();
+  rerender(<Change amount={500} kind="pnl" day="2026-10-28" fmt={{ ...fmt, hide: true }} />);
+  const hidden = screen.getByLabelText(/^Up on 28 Oct,? 2026, good$/); // the amount is gone, the direction stays
+  expect(hidden.textContent).toContain("••••");
+  expect(hidden.textContent).not.toContain("500");
 });
 
 test("a single note folds into one line instead of a banner", async () => {

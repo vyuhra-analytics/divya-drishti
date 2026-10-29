@@ -1,4 +1,4 @@
-import { parseSymbol, type DayResult } from "./family";
+import { parseSymbol, type DayResult, type DayRow } from "./family";
 import type { ClosedLot } from "./fifo";
 
 // Risk figures and habit patterns from the exact trading days and the closed positions of the dated tradebooks. Descriptive only: they say what happened, not what to
@@ -125,3 +125,31 @@ export function habits(lots: ClosedLot[], days: DayResult[]): Habits | null {
     busy: rows(busy, ["1 to 2 positions closed", "3 to 5 positions closed", "6 or more closed"]),
   };
 }
+
+export interface RunningPoint {
+  date: string;
+  /** the running total up to and including this day */
+  total: number;
+}
+
+/**
+ * The running total of one figure over the days of a selection (every day with a result, exact or placed by expiry), for a small chart under a headline number.
+ * `from` starts the total on that date (the first day of a financial year); the last `last` points are returned, so the line ends at the figure the card shows.
+ */
+export function runningSeries(days: DayRow[], pick: (d: DayRow) => number, from?: string, last = 30): RunningPoint[] {
+  let cum = 0;
+  const out: RunningPoint[] = [];
+  for (const d of [...days].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+    if (from && d.date < from) continue;
+    cum += pick(d);
+    out.push({ date: d.date, total: r2(cum) });
+  }
+  return out.slice(-last);
+}
+
+/** What each headline figure takes from a day row: realised and charges include the contracts placed by expiry, the net is the row's own. */
+export const SERIES_PICK = {
+  realized: (d: DayRow) => d.realized + d.est.realized,
+  charges: (d: DayRow) => d.charges + d.est.charges,
+  net: (d: DayRow) => d.net,
+} as const;
