@@ -1,10 +1,31 @@
 import type { Bar as OaBar, DataFeed } from "openalgo-charts";
-import { applyTick, instrument, quoteToTick, TIMEFRAMES, tzOffsetSec, type Bar, type Timeframe } from "@drishti/shared";
+import { applyTick, instrument, INSTRUMENTS, quoteToTick, TIMEFRAMES, tzOffsetSec, type Bar, type Timeframe } from "@drishti/shared";
 import { apiUrl } from "./settings";
 import { useStore } from "./store";
 
 /** The intervals our history API serves; the advanced chart is limited to these. */
 export const ADV_INTERVALS = ["1m", "5m", "15m", "1h", "1D"] as const;
+
+/**
+ * The instrument a typed symbol means: the full code ("MCX:NATURALGAS") or the bare name ("naturalgas"), when exactly one instrument matches. The list is read at call time
+ * (instruments added in Settings change it in place).
+ */
+export function resolveSymbol(text: string, list: readonly { symbol: string }[] = INSTRUMENTS): string | undefined {
+  const t = text.trim().toUpperCase().replace(/\s+/g, "");
+  if (!t) return undefined;
+  const full = list.find((i) => i.symbol.toUpperCase() === t);
+  if (full) return full.symbol;
+  const bare = list.filter((i) => i.symbol.split(":").pop()!.toUpperCase() === t);
+  return bare.length === 1 ? bare[0].symbol : undefined;
+}
+
+/** What the chart's symbol box offers while typing: our instruments whose code or name contains every word typed (all of them for an empty box). */
+export function searchInstruments(query: string, list: readonly { symbol: string; name: string; exchange: string }[] = INSTRUMENTS) {
+  const words = query.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  return list
+    .filter((i) => words.every((w) => `${i.symbol} ${i.name}`.toUpperCase().includes(w)))
+    .map((i) => ({ symbol: i.symbol, exchange: i.exchange, name: i.name }));
+}
 
 /** openalgo-charts interval code ("5m", "1h", "1D") → our timeframe, or undefined when we can't serve it. */
 export function timeframeOf(code: string): Timeframe | undefined {
@@ -26,6 +47,9 @@ export function ourFeed(isPaused: () => boolean = () => false): DataFeed {
   const key = (symbol: string, tf: Timeframe) => `${symbol}|${tf}`;
   const inflight = new Map<string, Promise<Bar[]>>();
   return {
+    async searchSymbols(req) {
+      return searchInstruments(req.query);
+    },
     async getBars(req) {
       const tf = timeframeOf(req.interval);
       if (!tf) throw new Error(`Interval ${req.interval} isn't available: choose one of ${ADV_INTERVALS.join(", ")}`);

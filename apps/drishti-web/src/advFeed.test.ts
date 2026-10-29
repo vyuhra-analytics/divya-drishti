@@ -1,7 +1,7 @@
-import { beforeEach, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { ReplayController, ema as oaEma, rsi as oaRsi } from "openalgo-charts";
 import { ema, rsi, type Bar } from "@drishti/shared";
-import { ourFeed, timeframeOf } from "./advFeed";
+import { ourFeed, resolveSymbol, searchInstruments, timeframeOf } from "./advFeed";
 import { useStore } from "./store";
 
 const T0 = 1_760_000_000 - (1_760_000_000 % 60);
@@ -107,4 +107,29 @@ test("replay over stored candles: every bar plays back exactly as stored, formin
   for (const c of closed) expect(c).toMatchObject(five.find((b) => b.time === c.time)!); // identical to the stored bar
   rc.stop();
   expect(shown).toHaveLength(12);
+});
+
+describe("the chart's symbol box", () => {
+  const list = [
+    { symbol: "MCX:CRUDEOIL", name: "Crude Oil (MCX)", exchange: "MCX" },
+    { symbol: "MCX:NATURALGAS", name: "Natural Gas (MCX)", exchange: "MCX" },
+    { symbol: "MCX:NATGASMINI", name: "Natural Gas Mini (MCX)", exchange: "MCX" },
+    { symbol: "NYMEX:NG", name: "Natural Gas (NYMEX)", exchange: "NYMEX" },
+  ];
+  test("a bare or differently cased name means the one instrument it names; an ambiguous or unknown one means none", () => {
+    expect(resolveSymbol("MCX:NATURALGAS", list)).toBe("MCX:NATURALGAS");
+    expect(resolveSymbol("naturalgas", list)).toBe("MCX:NATURALGAS");
+    expect(resolveSymbol(" natgas mini ", list)).toBe("MCX:NATGASMINI");
+    expect(resolveSymbol("NG", list)).toBe("NYMEX:NG");
+    expect(resolveSymbol("GAS", list)).toBeUndefined();
+    expect(resolveSymbol("", list)).toBeUndefined();
+    const twice = [...list, { symbol: "NYMEX:NATURALGAS", name: "x", exchange: "NYMEX" }];
+    expect(resolveSymbol("NATURALGAS", twice)).toBeUndefined(); // two instruments share the bare name
+  });
+  test("the search offers every instrument whose code or name holds all the words typed", () => {
+    expect(searchInstruments("natural gas", list).map((m) => m.symbol)).toEqual(["MCX:NATURALGAS", "MCX:NATGASMINI", "NYMEX:NG"]);
+    expect(searchInstruments("mini", list).map((m) => m.symbol)).toEqual(["MCX:NATGASMINI"]);
+    expect(searchInstruments("", list)).toHaveLength(4);
+    expect(searchInstruments("zzz", list)).toEqual([]);
+  });
 });

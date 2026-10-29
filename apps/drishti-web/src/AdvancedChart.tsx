@@ -3,7 +3,7 @@ import { SourceBadge } from "./SourceBadge";
 import { instrument, type Bar } from "@drishti/shared";
 import type { Widget as OaWidget } from "openalgo-charts/widget";
 import type { ReplayController, ReplayState, TickMarkType } from "openalgo-charts";
-import { ADV_INTERVALS, ourFeed, timeframeOf } from "./advFeed";
+import { ADV_INTERVALS, ourFeed, resolveSymbol, timeframeOf } from "./advFeed";
 import { advStorage } from "./advStorage";
 import { registerFlowStudies } from "./advFlow";
 import { registerKillzones } from "./advKillzones";
@@ -11,7 +11,7 @@ import { registerSessionBreaks } from "./advSessionBreaks";
 import { ensureStrategyLevels, registerStrategyLevels } from "./advStrategyLevels";
 import { ensureChartDefaults } from "./advDefaults";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
-import { useWidgetSymbol, type Widget } from "./workspace";
+import { useWidgetSymbol, useWorkspace, type Widget } from "./workspace";
 
 const SPEEDS = [1, 2, 5, 10, 25];
 
@@ -58,6 +58,8 @@ const stored = async (symbol: string, tf: string): Promise<Bar[]> => {
  */
 export function AdvancedChartWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
+  const latestSymbol = useRef(symbol); // the symbol the workspace holds now, for the chart's own symbol box to compare with
+  latestSymbol.current = symbol;
   const theme = useSettings((s) => s.theme);
   const clock = useClock();
   const host = useRef<HTMLDivElement>(null);
@@ -106,6 +108,20 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           branding: false, // no "Chart by OpenAlgo" corner mark or toolbar label (supported option; their NOTICE stays with the package)
         });
         oa.current = created;
+        // the chart's own symbol box: what was typed is turned into one of our instruments ("naturalgas" is MCX:NATURALGAS) and the workspace follows it, so the title,
+        // the linked panels and a reload agree with the chart; a name that is none of ours puts the chart back on what the workspace holds
+        const chart = created;
+        chart.on("symbol", (p) => {
+          const typed = (p as { symbol?: string } | undefined)?.symbol;
+          if (!typed || chart.isDestroyed) return;
+          const resolved = resolveSymbol(typed);
+          if (!resolved) {
+            chart.setSymbol(latestSymbol.current, instrument(latestSymbol.current)?.exchange);
+            return;
+          }
+          if (resolved !== typed) chart.setSymbol(resolved, instrument(resolved)?.exchange);
+          if (resolved !== latestSymbol.current) useWorkspace.getState().loadSymbol(widget.id, resolved);
+        });
         ensureChartDefaults(created, widget.id); // Volume pane (candle-direction colours) and the bar-close countdown, once per chart
         if (/^(reportday|usib)-/.test(widget.id)) ensureStrategyLevels(created); // the strategy desks draw their levels on their chart
         settleUntil.current = Date.now() + SETTLE_MS;
