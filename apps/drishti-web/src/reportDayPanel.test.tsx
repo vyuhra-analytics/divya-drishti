@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReportDayWidget } from "./ReportDayPanel";
 import { useLevels } from "./strategyLevels";
 import type { Widget } from "./workspace";
@@ -146,25 +146,34 @@ test("the Report day desk and the RD command exist", () => {
   expect(MNEMONICS.RD).toBe("reportday");
 });
 
-test("gas options are read on the NEXT expiry, crude options on the nearest", async () => {
-  const urls: string[] = [];
+test("the chain is read on the nearest expiry, or on the next when the nearest is within 3 days of expiring", async () => {
   const gasRelease = Date.UTC(2026, 9, 29, 14, 30);
-  setSystemTime(new Date(gasRelease - 3600_000 * 3));
-  const expiries = ["2026-11-24", "2026-12-28"];
-  globalThis.fetch = mock(async (u: string) => {
-    const url = String(u);
-    urls.push(url);
-    const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
-    if (url.includes("/calendar/stored")) return ok(url.includes("series=WNGSR") ? [{ id: "2", series_code: "WNGSR", scheduled_at: new Date(gasRelease).toISOString(), status: "scheduled", observations: [] }] : []);
-    if (url.includes("/options")) return ok({ ...chain, underlying: "NATGASMINI", expiry: url.includes("expiry=2026-12-28") ? expiries[1] : expiries[0], expiries, updatedAt: Date.now() });
-    if (url.includes("/bars")) return ok([]);
-    return ok({ releases: [] });
-  }) as never;
-  render(<ReportDayWidget widget={widget} />);
-  await waitFor(() => expect(urls.some((u) => u.includes("/options") && u.includes("underlying=NATGASMINI") && u.includes("expiry=2026-12-28"))).toBe(true));
+  const run = async (expiries: string[]) => {
+    const urls: string[] = [];
+    setSystemTime(new Date(gasRelease - 3600_000 * 3));
+    globalThis.fetch = mock(async (u: string) => {
+      const url = String(u);
+      urls.push(url);
+      const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+      if (url.includes("/calendar/stored")) return ok(url.includes("series=WNGSR") ? [{ id: "2", series_code: "WNGSR", scheduled_at: new Date(gasRelease).toISOString(), status: "scheduled", observations: [] }] : []);
+      if (url.includes("/options")) return ok({ ...chain, underlying: "NATGASMINI", expiry: expiries.find((e) => url.includes(`expiry=${e}`)) ?? expiries[0], expiries, updatedAt: Date.now() });
+      if (url.includes("/bars")) return ok([]);
+      return ok({ releases: [] });
+    }) as never;
+    render(<ReportDayWidget widget={widget} />);
+    return urls;
+  };
+  // 24 Nov is weeks away: the nearest expiry is used and no other is asked for
+  let urls = await run(["2026-11-24", "2026-12-28"]);
+  await waitFor(() => expect(urls.some((u) => u.includes("/options") && u.includes("underlying=NATGASMINI"))).toBe(true));
+  await act(async () => await new Promise((r) => setTimeout(r, 100)));
+  expect(urls.filter((u) => u.includes("/options") && u.includes("underlying=NATGASMINI")).every((u) => !u.includes("expiry="))).toBe(true);
+  cleanup();
+  // 31 Oct is two and a half days away: within 3 days, so the next expiry is read
+  urls = await run(["2026-10-31", "2026-11-24"]);
+  await waitFor(() => expect(urls.some((u) => u.includes("/options") && u.includes("underlying=NATGASMINI") && u.includes("expiry=2026-11-24"))).toBe(true));
   expect(urls.filter((u) => u.includes("/options") && u.includes("underlying=NATGASMINI"))[0]).not.toContain("expiry="); // first the nearest, to learn the expiries
   cleanup();
-  urls.length = 0;
   serve({}); // the crude release again: its chain is asked for with no expiry
   setSystemTime(new Date(REL - 5 * 3600_000));
   render(<ReportDayWidget widget={widget} />);

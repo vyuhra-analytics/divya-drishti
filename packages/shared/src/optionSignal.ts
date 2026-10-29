@@ -39,11 +39,20 @@ export interface OptionLegSignal {
   basis?: string;
 }
 
+/** The option expiry to trade: the nearest, unless it is within this many days of its last trading minute (23:30 IST on the day), then the next one. The owner's rule. */
+export const EXPIRY_AVOID_DAYS = 3;
+
+/** The expiry (YYYY-MM-DD) to read the chain on, from the chain's list (nearest first). With every expiry too close, the last one; with none, undefined. */
+export function tradingExpiry(expiries: readonly string[], now: number, avoidDays: number = EXPIRY_AVOID_DAYS): string | undefined {
+  const sorted = [...expiries].sort();
+  return sorted.find((e) => (Date.parse(`${e}T23:30:00+05:30`) - now) / 86_400_000 > avoidDays) ?? sorted.at(-1);
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * The option to buy for a future signal, with its premium levels, or the reason there is none. `underlying` names the contract in the label. The chain must be
- * of the expiry to trade (the nearest for crude, the next for gas: the caller chooses).
+ * of the expiry to trade (`tradingExpiry`: the nearest, unless it is within 3 days of expiring).
  */
 export function optionLegFor(signal: SignalFutureLevels, chain: Chain | null | undefined, underlying: string): { leg?: OptionLegSignal; reason: string } {
   if (signal.rPoints === undefined || !(signal.rPoints > 0)) return { reason: "the signal has no R yet (not enough candles for the ATR)" };

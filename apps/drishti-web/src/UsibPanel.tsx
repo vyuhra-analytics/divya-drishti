@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { chainLevels, DAY_RULES, optionLegFor, suggestStrike, usibRange, usibStage, usOpenFor, USIB_RULES, watchUsib, type UsibBar, type UsibStage } from "@drishti/shared";
+import { chainLevels, DAY_RULES, optionLegFor, suggestStrike, tradingExpiry, usibRange, usibStage, usOpenFor, USIB_RULES, watchUsib, type UsibBar, type UsibStage } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
@@ -93,7 +93,9 @@ export function UsibWidget(_: { widget: Widget }) {
   const { chain } = useChain(underlying, expiry, "auto", 8, stage !== "after");
   useEffect(() => setExpiry(""), [underlying]);
   useEffect(() => {
-    if (underlying === "NATGASMINI" && expiry === "" && chain && chain.expiries.length > 1 && chain.expiry === chain.expiries[0]) setExpiry(chain.expiries[1]);
+    // the nearest expiry, unless it is within 3 days of expiring (then the next): the same for crude and gas
+    const want = chain && expiry === "" ? tradingExpiry(chain.expiries, Date.now()) : undefined;
+    if (want && want !== chain!.expiry) setExpiry(want);
   }, [underlying, expiry, chain?.expiry, chain?.expiries.length]);
 
   const levels = useMemo(() => chainLevels(chain), [chain]);

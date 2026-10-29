@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { analyzeReport, evaluateReportDay, evaluateUsib, instrument, nyDay, optionLegFor, type Chain, recentUsOpens, REPORT_DAY, reportKey, skippedRecord, usibKey, windowClosed, type Bar, type ReportCode, type SignalRecord } from "@drishti/shared";
+import { analyzeReport, evaluateReportDay, evaluateUsib, instrument, nyDay, optionLegFor, tradingExpiry, type Chain, recentUsOpens, REPORT_DAY, reportKey, skippedRecord, usibKey, windowClosed, type Bar, type ReportCode, type SignalRecord } from "@drishti/shared";
 import { Db } from "./db";
 import { EiaReportService } from "./eia-report.service";
 import { ForecastService } from "./forecast.service";
@@ -106,9 +106,10 @@ export class SignalLogService implements OnModuleInit, OnModuleDestroy {
       const sql = this.db.sql;
       let r = await recordedChainAt(sql, underlying, undefined, at, 12);
       if ("miss" in r) return { ...rec, optionNote: r.miss === "no-snapshot" ? "no option chain snapshot was recorded by then" : "the snapshot holds no options" };
-      if (underlying === "NATGASMINI" && r.chain.expiries[1] && r.chain.expiry !== r.chain.expiries[1]) {
-        const next = await recordedChainAt(sql, underlying, r.chain.expiries[1], at, 12);
-        if ("chain" in next) r = next;
+      const want = tradingExpiry(r.chain.expiries, at); // the nearest, unless it was within 3 days of expiring at the time
+      if (want && want !== r.chain.expiry) {
+        const other = await recordedChainAt(sql, underlying, want, at, 12);
+        if ("chain" in other) r = other;
       }
       let chain: Chain = r.chain;
       let basis = `snapshot ${Math.round((at - chain.updatedAt) / 60_000)} min before the signal`;

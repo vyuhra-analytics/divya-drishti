@@ -49,3 +49,18 @@ test("no R, no chain, or a stop that would be under zero each give no leg and sa
   expect(r.leg).toBeUndefined();
   expect(r.reason).toContain("as large as its premium");
 });
+
+import { tradingExpiry } from "./optionSignal";
+
+test("the expiry to trade is the nearest, unless it is within 3 days of its last minute (23:30 IST on the day), then the next", () => {
+  const list = ["2026-11-20", "2026-12-23", "2027-01-21"];
+  const at = (iso: string) => Date.parse(iso);
+  expect(tradingExpiry(list, at("2026-10-29T16:00:00+05:30"))).toBe("2026-11-20");
+  expect(tradingExpiry(list, at("2026-11-17T20:00:00+05:30"))).toBe("2026-11-20"); // 3 days and 3.5 hours left: still more than 3
+  expect(tradingExpiry(list, at("2026-11-17T23:00:00+05:30"))).toBe("2026-11-20"); // 3 days and 30 minutes left: still more than 3
+  expect(tradingExpiry(list, at("2026-11-17T23:30:00+05:30"))).toBe("2026-12-23"); // exactly 3 days: within 3 days, so the next
+  expect(tradingExpiry(list, at("2026-11-19T10:00:00+05:30"))).toBe("2026-12-23");
+  expect(tradingExpiry(["2027-01-21", "2026-12-23"], at("2026-12-22T10:00:00+05:30"))).toBe("2027-01-21"); // unsorted input, still the nearest that qualifies
+  expect(tradingExpiry(["2026-11-20"], at("2026-11-19T10:00:00+05:30"))).toBe("2026-11-20"); // nothing else to move to
+  expect(tradingExpiry([], at("2026-11-19T10:00:00+05:30"))).toBeUndefined();
+});

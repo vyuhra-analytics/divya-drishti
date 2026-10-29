@@ -33,11 +33,12 @@ function saveRec(key: string, rec: AutoRecord) {
     /* storage blocked: the trade carries on for this session */
   }
 }
+/** On unless the trader has switched it off: the choice is kept in the browser ("0" = off). */
 const loadArmed = () => {
   try {
-    return localStorage.getItem(ARM_KEY) === "1";
+    return localStorage.getItem(ARM_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 };
 

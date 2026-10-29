@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DAY_RULES, dayStage, preReleaseRange, readiness, optionLegFor, REPORT_DAY, reportSignal, suggestStrike, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
+import { DAY_RULES, dayStage, preReleaseRange, readiness, optionLegFor, REPORT_DAY, reportSignal, suggestStrike, tradingExpiry, watchWindow, type DayBar, type DayStage, type ReportCode } from "@drishti/shared";
 import { apiUrl, useClock } from "./settings";
 import { useChain } from "./chainClient";
 import { useAlerts } from "./alertsStore";
@@ -199,7 +199,9 @@ export function ReportDayWidget(_: { widget: Widget }) {
   const { chain } = useChain(cfg.underlying, expiry, "auto", 6, stage !== undefined && stage !== "after");
   useEffect(() => setExpiry(""), [report]);
   useEffect(() => {
-    if (report === "WNGSR" && expiry === "" && chain && chain.expiries.length > 1 && chain.expiry === chain.expiries[0]) setExpiry(chain.expiries[1]);
+    // the nearest expiry, unless it is within 3 days of expiring (then the next): the same for crude and gas
+    const want = chain && expiry === "" ? tradingExpiry(chain.expiries, Date.now()) : undefined;
+    if (want && want !== chain!.expiry) setExpiry(want);
   }, [report, expiry, chain?.expiry, chain?.expiries.length]);
 
   const surprise = print && forecast ? print.change - forecast.value : undefined;

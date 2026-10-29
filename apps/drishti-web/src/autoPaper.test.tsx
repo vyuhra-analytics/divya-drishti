@@ -64,9 +64,17 @@ const signal = { side: "long" as const, candleTime: CANDLE };
 const props = { strategy: "report-day" as const, recordKey: String(RELEASE), releaseAt: RELEASE, option: LEG, tickMs: 15 };
 const orders = () => fake.calls.filter((c) => c.method === "POST" && c.path === "/accounts/auto/orders");
 const arm = () => localStorage.setItem("drishti-autopaper-armed", "1");
+const disarm = () => localStorage.setItem("drishti-autopaper-armed", "0");
 const wait = (ms = 80) => act(async () => await new Promise((r) => setTimeout(r, ms)));
 
-test("off by default: a signal places nothing, but the option signal is shown", async () => {
+test("on by default: with nothing saved, a fresh signal is traded", async () => {
+  render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
+  await waitFor(() => expect(screen.getByTestId("auto-open")).toBeTruthy());
+  expect(orders()).toHaveLength(1);
+});
+
+test("switched off, a signal places nothing, but the option signal is shown, and the choice is kept", async () => {
+  disarm();
   render(<AutoPaper {...props} signal={signal} onEvent={() => {}} />);
   await wait();
   expect(orders()).toHaveLength(0);
