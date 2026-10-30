@@ -52,10 +52,11 @@ function once(widget: unknown, widgetId: string, feature: keyof typeof keys, set
 }
 
 /** Volume bars in their own pane, coloured by the candle's direction ("Match candle direction"), and the countdown to the bar's close in the last-price tag. */
-export function ensureChartDefaults(widget: unknown, widgetId: string): void {
-  // saved studies come back a moment after creation: only add Volume when none of them is a volume pane
-  once(widget, widgetId, "volume", 3, (c) => {
-    if (c.indicators && c.addIndicator && !c.indicators().some((i) => i.indicatorId === VOLUME_ID)) c.addIndicator(VOLUME_ID, { colorByDirection: true });
-  });
+export function ensureChartDefaults(widget: unknown, widgetId: string, opts: { volume?: boolean } = {}): void {
+  // saved studies come back a moment after creation: only add Volume when none of them is a volume pane. An index has no volume: its pane would be empty.
+  if (opts.volume !== false)
+    once(widget, widgetId, "volume", 3, (c) => {
+      if (c.indicators && c.addIndicator && !c.indicators().some((i) => i.indicatorId === VOLUME_ID)) c.addIndicator(VOLUME_ID, { colorByDirection: true });
+    });
   once(widget, widgetId, "countdown", 2, (c) => c.setAxisChromeOptions?.({ barCountdown: true }));
 }

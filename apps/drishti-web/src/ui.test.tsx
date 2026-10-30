@@ -257,6 +257,13 @@ test("DriversWidget shows the NYMEX and rupee legs with the delay, the fair valu
   render(<DriversWidget widget={{ ...widget("drivers"), symbol: "MCX:CRUDEOIL" }} />);
   expect(screen.getByText("MCX MCX:CRUDEOIL".replace("MCX MCX:", "MCX "))).toBeTruthy();
   expect(screen.getByText("10 min late")).toBeTruthy(); // the free NYMEX feed
+  // the day's move twice, apart: in price units and in percent
+  expect(screen.getByText("Day chg")).toBeTruthy();
+  expect(screen.getByText("Day %")).toBeTruthy();
+  const rows = [...document.querySelectorAll(".drv-legs tbody tr")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent));
+  expect(rows[0].slice(0, 3)).toEqual(["9,600", "+100", "+1.05%"]); // MCX crude, no decimals
+  expect(rows[1].slice(0, 3)).toEqual(["101.00", "+1.00", "+1.00%"]); // NYMEX CL
+  expect(rows[2].slice(0, 3)).toEqual(["95.2000", "+0.2000", "+0.21%"]); // USD/INR
   expect(screen.getByText("9,615")).toBeTruthy(); // 101 x 95.2
   expect(document.querySelector(".drv-fair")!.textContent).toContain("-15 (-0.16%)"); // MCX 9600 against 9615.2
   expect(document.querySelector(".drv-split")!.textContent).toContain("+1.05%");

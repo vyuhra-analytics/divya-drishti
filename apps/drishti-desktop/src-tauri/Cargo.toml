@@ -8,4 +8,6 @@ license = "MIT"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# "unstable" turns on child webviews: the in-app browser panel is a second webview laid over the panel's rectangle
+tauri = { version = "2", features = ["unstable"] }
+serde = { version = "1", features = ["derive"] }

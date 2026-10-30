@@ -47,7 +47,9 @@ export class MarketController {
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.bars;
 
-    const bars = await (inst.yahoo ? yahooHistory(inst, tf as Timeframe) : upstoxHistory(inst, tf as Timeframe, this.db.redis)).catch(
+    // Upstox first for what it carries (MCX contracts and the Nifty index: its candles are live), Yahoo for NYMEX and FX and as the index's fallback
+    const fromUpstox = () => upstoxHistory(inst, tf as Timeframe, this.db.redis);
+    const bars = await (inst.upstoxKey ? fromUpstox().then((b) => (b?.length ? b : inst.yahoo ? yahooHistory(inst, tf as Timeframe) : b)) : inst.yahoo ? yahooHistory(inst, tf as Timeframe) : fromUpstox()).catch(
       (err) => (console.warn(`history ${key}:`, (err as Error).message), null),
     );
     if (bars?.length) {

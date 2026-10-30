@@ -65,7 +65,7 @@ export async function upstoxHistory(inst: Instrument, tf: Timeframe, redis: Redi
   // Redis is optional: a failed read just means no login token / no cached fronts
   const [login, fronts] = await Promise.all([redis.get("upstox:token").catch(() => null), loadFronts(redis)]);
   const token = login || process.env.UPSTOX_ACCESS_TOKEN?.trim(); // today's login first, else the .env token
-  const front: MasterRow | undefined = fronts?.[inst.upstox!];
+  const front: Pick<MasterRow, "instrument_key"> | undefined = inst.upstoxKey ? { instrument_key: inst.upstoxKey } : fronts?.[inst.upstox!]; // an index has one fixed key
   if (!token || !front) return null;
   const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
   const { unit, interval, days } = UPSTOX[tf];

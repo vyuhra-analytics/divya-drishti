@@ -27,9 +27,9 @@ afterEach(() => {
 
 const fill = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-test("lists the seven built-ins as fixed, with no remove button", () => {
+test("lists the eight built-ins as fixed, with no remove button", () => {
   render(<InstrumentsSettings />);
-  expect(screen.getAllByText(/built in/)).toHaveLength(7);
+  expect(screen.getAllByText(/built in/)).toHaveLength(8);
   expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
 });
 

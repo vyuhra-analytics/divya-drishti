@@ -1,4 +1,4 @@
-import { agreement, buildContext, chainProvenance, buildRecap, completedBars, freshness, fxSession, instrument, mcxSession, nymexSession, recapExtras, SYMBOLS, TIMEFRAMES, TOPIC_TAGS, type Bar, type CotRow, type CurveSummary, type EiaSummary, type BriefingContext, type CalEvent, type Chain, type DayOverride, type NewsItem, type Quote, type Timeframe } from "@drishti/shared";
+import { agreement, buildContext, chainProvenance, buildRecap, completedBars, freshness, fxSession, instrument, mcxSession, nseSession, nymexSession, recapExtras, SYMBOLS, TIMEFRAMES, TOPIC_TAGS, type Bar, type CotRow, type CurveSummary, type EiaSummary, type BriefingContext, type CalEvent, type Chain, type DayOverride, type NewsItem, type Quote, type Timeframe } from "@drishti/shared";
 
 export interface StreamHealth {
   active?: Record<string, string>;
@@ -47,7 +47,7 @@ export async function gatherServerContext(symbol: string, tf: string, s: Sources
   ]);
   if (!quote) throw new Error(`no live price for ${symbol} yet`);
 
-  const open = inst.exchange === "MCX" ? mcxSession(now, day?.mcx ?? undefined).open : inst.exchange === "NYMEX" ? nymexSession(now).open : fxSession(now).open;
+  const open = inst.exchange === "MCX" ? mcxSession(now, day?.mcx ?? undefined).open : inst.exchange === "NYMEX" ? nymexSession(now).open : inst.exchange === "NSE" ? nseSession(now).open : fxSession(now).open;
   const active = health?.active?.[symbol];
   const heardAt = active ? health?.prices?.[symbol]?.[active]?.at : undefined; // any poll counts as heard, even with an unchanged price
 
@@ -76,7 +76,7 @@ export async function technicals(symbol: string, tf: string, s: Sources) {
 export async function recap(symbol: string, s: Sources) {
   const inst = instrument(symbol);
   if (!inst) throw new Error(`unknown symbol ${symbol}`);
-  if (inst.exchange === "FX") throw new Error("The recap covers the energy futures: pick an MCX or NYMEX contract.");
+  if (inst.exchange === "FX" || inst.exchange === "NSE") throw new Error("The recap covers the energy futures: pick an MCX or NYMEX contract.");
   const crude = inst.topic === "crude";
   const [ctx, curve, cot, eia] = await Promise.all([
     gatherServerContext(symbol, "5m", s),
@@ -94,7 +94,7 @@ export async function recap(symbol: string, s: Sources) {
 export async function marketStatus(s: Sources) {
   const now = s.now();
   const [health, day] = await Promise.all([s.health(), s.api<{ mcx: DayOverride | null }>("/market/sessions")]);
-  const sessions = { MCX: mcxSession(now, day?.mcx ?? undefined), NYMEX: nymexSession(now), FX: fxSession(now) };
+  const sessions = { MCX: mcxSession(now, day?.mcx ?? undefined), NYMEX: nymexSession(now), FX: fxSession(now), NSE: nseSession(now) };
   const instruments = SYMBOLS.map((symbol) => {
     const inst = instrument(symbol)!;
     const open = sessions[inst.exchange].open;

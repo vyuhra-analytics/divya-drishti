@@ -106,6 +106,23 @@ export function fxSession(now: number): SessionState {
   return { open: true, next: at(17, 5 - dow) };
 }
 
+/**
+ * NSE cash and index: Mon-Fri 09:15 to 15:30 IST (the pre-open 09:00 to 09:15 is not trading). Exchange holidays are not known here: a holiday reads as open
+ * and its quotes go stale, which the badges show.
+ */
+export function nseSession(now: number): SessionState {
+  const { dow, msOfDay, midnight } = local(now, "Asia/Kolkata");
+  const at = (h: number, m: number, dayOffset = 0) => midnight + dayOffset * 24 * H + (h * 60 + m) * MIN;
+  const mins = msOfDay / MIN;
+  const OPEN = 9 * 60 + 15;
+  const CLOSE = 15 * 60 + 30;
+  if (dow === 6) return { open: false, next: at(9, 15, 2) }; // Saturday: Monday
+  if (dow === 0) return { open: false, next: at(9, 15, 1) };
+  if (mins < OPEN) return { open: false, next: at(9, 15) };
+  if (mins < CLOSE) return { open: true, next: at(15, 30) };
+  return { open: false, next: at(9, 15, dow === 5 ? 3 : 1) };
+}
+
 export type Freshness = "live" | "stale" | "closed";
 
 /**

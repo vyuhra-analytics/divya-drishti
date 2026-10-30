@@ -76,3 +76,15 @@ test("withStatus: the exchange's own fresh status corrects the rules in both dir
   expect(knownStatus("NORMAL_OPEN") && knownStatus("NORMAL_CLOSE")).toBe(true);
   expect(knownStatus("PRE_OPEN_START")).toBe(false);
 });
+
+import { nseSession } from "./sessions";
+test("NSE is open Monday to Friday 09:15 to 15:30 IST, with the next boundary, and shut at weekends", () => {
+  const ist = (iso: string) => Date.parse(`${iso}+05:30`);
+  expect(nseSession(ist("2026-10-30T09:14:00"))).toEqual({ open: false, next: ist("2026-10-30T09:15:00") }); // Friday, before the open
+  expect(nseSession(ist("2026-10-30T09:15:00"))).toEqual({ open: true, next: ist("2026-10-30T15:30:00") });
+  expect(nseSession(ist("2026-10-30T15:29:59")).open).toBe(true);
+  expect(nseSession(ist("2026-10-30T15:30:00"))).toEqual({ open: false, next: ist("2026-11-02T09:15:00") }); // after Friday's close: Monday
+  expect(nseSession(ist("2026-10-31T11:00:00"))).toEqual({ open: false, next: ist("2026-11-02T09:15:00") }); // Saturday
+  expect(nseSession(ist("2026-11-01T11:00:00"))).toEqual({ open: false, next: ist("2026-11-02T09:15:00") }); // Sunday
+  expect(nseSession(ist("2026-11-02T16:00:00"))).toEqual({ open: false, next: ist("2026-11-03T09:15:00") }); // Monday after the close: Tuesday
+});

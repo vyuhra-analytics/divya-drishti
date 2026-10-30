@@ -5,7 +5,7 @@ import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain" | "optionhistory" | "reportday" | "usib" | "family";
+export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain" | "optionhistory" | "reportday" | "usib" | "family" | "browser";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -18,6 +18,8 @@ export interface Widget {
   tf: Timeframe;
   /** tv widgets: selected stream URL */
   channel?: string;
+  /** browser widgets: the address that is open */
+  url?: string;
   /** chart widgets: series type and enabled indicators (defaults: candles + volume) */
 }
 
@@ -39,6 +41,7 @@ interface WorkspaceState {
   cycleGroup: (id: string) => void;
   loadSymbol: (id: string, symbol: string) => void;
   setChannel: (id: string, channel: string) => void;
+  setUrl: (id: string, url: string) => void;
   focus: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   reset: () => void;
@@ -64,6 +67,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   reportday: { w: 5, h: 28 },
   usib: { w: 5, h: 28 },
   family: { w: 12, h: 28 },
+  browser: { w: 7, h: 20 },
   drivers: { w: 3, h: 14 },
   labels: { w: 5, h: 15 },
   recap: { w: 6, h: 12 },
@@ -195,6 +199,7 @@ export const useWorkspace = create<WorkspaceState>()(
         }),
 
       setChannel: (id, channel) => set((s) => ({ widgets: patch(s.widgets, id, { channel }) })),
+      setUrl: (id, url) => set((s) => ({ widgets: patch(s.widgets, id, { url }) })),
       focus: (focusedId) => set({ focusedId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       reset: () => set({ ...defaults(), activeWorkspace: null }),

@@ -34,7 +34,7 @@ export interface Preset {
 }
 
 /**
- * Ready-made desks, F1…F8; saved workspaces follow them (F9). Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
+ * Ready-made desks, F1…F9 (the Morning desk is the tenth and has no F-key: open it from the sidebar); saved workspaces follow them. Laid out for one large monitor: a grid row is 34 px in the default compact density (40 px
  * comfortable), so 28 rows fit a 1080p monitor without scrolling in compact, and every desk's first screen is built to that height (the Report prep desk scrolls for its last row).
  * `docs/redesign/RESEARCH_DESK.md` says what question each desk answers. The Evening desk here is an interim of today's panels for the
  * evening session; the purpose-built evening screen (`EIA_SCREENS.md`) replaces it when it is built.
@@ -140,6 +140,23 @@ export const PRESETS: Preset[] = [
     name: "Family",
     hint: "The household's broker statements: add a Zerodha P&L or tradebook file, name the people, and read realised P&L, charges and the net by year, member, account and month",
     build: () => snapshot("family", [["family-1", "family", null, "MCX:CRUDEOIL", "5m", 0, 0, 12, 28]]),
+  },
+  {
+    key: "morning",
+    name: "Morning",
+    hint: "The NSE morning: the Nifty 50 five-minute chart, its quote and the watchlist beside it, and the India news and the day's calendar under them",
+    build: () =>
+      snapshot(
+        "morning",
+        [
+          ["chart-1", "advchart", "amber", "NSE:NIFTY", "5m", 0, 0, 7, 17],
+          ["quote-1", "quote", "amber", "NSE:NIFTY", "5m", 7, 0, 5, 9],
+          ["watchlist-1", "watchlist", null, "NSE:NIFTY", "5m", 7, 9, 5, 8],
+          ["news-1", "news", "amber", "NSE:NIFTY", "5m", 0, 17, 5, 11],
+          ["calendar-1", "calendar", null, "NSE:NIFTY", "5m", 5, 17, 7, 11],
+        ],
+        { amber: "NSE:NIFTY" }, // this desk's amber link group is Nifty, not crude: every linked panel on it follows the index
+      ),
   },
 ];
 

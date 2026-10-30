@@ -5,6 +5,7 @@ import {
   DEFAULT_LIMITS,
   freshness,
   mcxSession,
+  nseSession,
   nymexSession,
   fxSession,
   PaperEngine,
@@ -223,6 +224,7 @@ function upstoxTargets() {
   for (const inst of INSTRUMENTS) {
     const front = inst.upstox ? fronts.get(inst.upstox) : undefined;
     if (front) out.set(front.instrument_key, { inst, contract: front.trading_symbol });
+    else if (inst.upstoxKey) out.set(inst.upstoxKey, { inst, contract: inst.name }); // an index has one fixed key and no contract months
   }
   return out;
 }
@@ -247,7 +249,7 @@ setInterval(() => void refreshMcxStatus(), 30_000);
 const symbolLive = (symbol: string) => {
   const exchange = instrument(symbol)?.exchange;
   const now = Date.now();
-  const open = exchange === "MCX" ? withStatus(mcxSession(now, mcxDay), mcxStatus, now).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : true;
+  const open = exchange === "MCX" ? withStatus(mcxSession(now, mcxDay), mcxStatus, now).open : exchange === "NYMEX" ? nymexSession(now).open : exchange === "FX" ? fxSession(now).open : exchange === "NSE" ? nseSession(now).open : true;
   const src = active.get(symbol);
   return freshness(open, src ? lastSeen.get(symbol)?.[src] : undefined, now) === "live";
 };

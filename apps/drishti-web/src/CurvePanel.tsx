@@ -58,7 +58,7 @@ export function CurveWidget({ widget }: { widget: Widget }) {
   return (
     <div className="curve">
       <div className="toolbar no-drag">
-        {INSTRUMENTS.filter((i) => i.exchange !== "FX").map((i) => (
+        {INSTRUMENTS.filter((i) => i.exchange === "MCX" || i.exchange === "NYMEX").map((i) => (
           <Button key={i.symbol} variant={i.symbol === active ? "default" : "ghost"} size="sm" title={i.name} onClick={() => setSymbol(i.symbol)}>
             {i.symbol.split(":")[1]}
           </Button>

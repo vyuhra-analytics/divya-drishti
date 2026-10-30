@@ -18,7 +18,8 @@ export interface DriverLeg {
   symbol: string;
   price: number;
   prevClose?: number;
-  /** the day's change in percent against the previous close */
+  /** the day's change against the previous close, in the leg's own price units, and in percent */
+  change?: number;
   changePct?: number;
   /** minutes this feed runs behind (0 = live) */
   delayMin: number;
@@ -41,7 +42,7 @@ export interface Drivers {
 
 const leg = (q?: Quote): DriverLeg | undefined =>
   q && Number.isFinite(q.price) && q.price > 0
-    ? { symbol: q.symbol, price: q.price, prevClose: q.prevClose, changePct: q.prevClose ? ((q.price - q.prevClose) / q.prevClose) * 100 : undefined, delayMin: Math.round((q.delayedBy ?? 0) / 60), time: q.time, source: q.source }
+    ? { symbol: q.symbol, price: q.price, prevClose: q.prevClose, change: q.prevClose ? q.price - q.prevClose : undefined, changePct: q.prevClose ? ((q.price - q.prevClose) / q.prevClose) * 100 : undefined, delayMin: Math.round((q.delayedBy ?? 0) / 60), time: q.time, source: q.source }
     : undefined;
 
 const logPct = (a: number, b: number) => Math.log(a / b) * 100;

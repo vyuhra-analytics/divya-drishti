@@ -70,6 +70,7 @@ export function StatusBar() {
     <footer className="statusbar" aria-label="Market status">
       <Market name="MCX" s={sessions.MCX} locale={locale} clock={clock} note={mcxStatus && now - mcxStatus.at <= STATUS_MAX_AGE_MS ? `Exchange status from Upstox: ${mcxStatus.state}` : undefined} />
       <Market name="NYMEX" s={sessions.NYMEX} locale={locale} clock={clock} />
+      <Market name="NSE" s={sessions.NSE} locale={locale} clock={clock} />
       <Market name="FX" s={sessions.FX} locale={locale} clock={clock} />
       <span className="sb-sep" aria-hidden="true" />
       {CLOCKS.map((c) => (

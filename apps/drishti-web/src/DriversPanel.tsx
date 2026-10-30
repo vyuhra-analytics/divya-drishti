@@ -21,16 +21,23 @@ async function bars(symbol: string, signal: AbortSignal): Promise<Bar[]> {
 function Leg({ name, l, dp, unit }: { name: string; l?: DriverLeg; dp: number; unit: string }) {
   return (
     <tr>
-      <th scope="row">{name}</th>
+      <th scope="row">
+        {name}
+        <span className="drv-unit muted">
+          {unit}
+          {l && l.delayMin > 0 && (
+            <span className="drv-delay" title={`This feed runs ${l.delayMin} minutes behind (free NYMEX data). Treat it as context: the MCX price is the live one.`}>
+              {l.delayMin} min late
+            </span>
+          )}
+        </span>
+      </th>
       <td className="drv-price">{l ? num(l.price, dp) : "—"}</td>
-      <td className={cls(l?.changePct)}>{signed(l?.changePct)}%</td>
-      <td className="muted">
-        {unit}
-        {l && l.delayMin > 0 && (
-          <span className="drv-delay" title={`This feed runs ${l.delayMin} minutes behind (free NYMEX data). Treat it as context: the MCX price is the live one.`}>
-            {l.delayMin} min late
-          </span>
-        )}
+      <td className={cls(l?.change)} title="Day change against the previous close, in the leg's own price units">
+        {signed(l?.change, dp)}
+      </td>
+      <td className={cls(l?.changePct)} title="Day change in percent of the previous close">
+        {l?.changePct === undefined ? "—" : `${signed(l.changePct)}%`}
       </td>
     </tr>
   );
@@ -81,8 +88,8 @@ export function DriversWidget({ widget }: { widget: Widget }) {
           <tr>
             <th />
             <th>Price</th>
-            <th>Day</th>
-            <th />
+            <th title="Day change in price units">Day chg</th>
+            <th title="Day change in percent">Day %</th>
           </tr>
         </thead>
         <tbody>

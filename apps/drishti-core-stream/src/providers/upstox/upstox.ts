@@ -37,7 +37,7 @@ export function feedToQuotes(msg: any, targets: Map<string, UpstoxTarget>): Quot
   const out: Quote[] = [];
   for (const [key, feed] of Object.entries<any>(msg?.feeds ?? {})) {
     const t = targets.get(key);
-    const ff = feed?.fullFeed?.marketFF;
+    const ff = feed?.fullFeed?.marketFF ?? feed?.fullFeed?.indexFF; // an index carries no book, volume or open interest: only its price and day OHLC
     const ltpc = ff?.ltpc ?? feed?.ltpc ?? feed?.firstLevelWithGreeks?.ltpc;
     if (!t || !ltpc?.ltp) continue;
     const day = ff?.marketOHLC?.ohlc?.find((o: any) => o.interval === "1d");

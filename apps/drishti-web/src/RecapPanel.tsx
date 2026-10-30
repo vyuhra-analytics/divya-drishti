@@ -24,7 +24,7 @@ export function RecapWidget({ widget }: { widget: Widget }) {
 
   const load = useCallback(async () => {
     const inst = instrument(symbol);
-    if (inst?.exchange === "FX") return setError("The recap covers the energy futures: pick an MCX or NYMEX contract."); // no curve, COT or inventories for a currency
+    if (inst?.exchange === "FX" || inst?.exchange === "NSE") return setError("The recap covers the energy futures: pick an MCX or NYMEX contract."); // no curve, COT or inventories for a currency
     const crude = inst?.topic === "crude";
     try {
       const [ctx, curve, cot, eia] = await Promise.all([

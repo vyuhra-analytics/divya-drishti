@@ -70,3 +70,21 @@ test("feedToQuotes handles ltpc-only feeds and ignores empty ones", () => {
   expect(feedToQuotes({ feeds: { "MCX_FO|573422": {} } }, targets)).toEqual([]);
   expect(feedToQuotes({}, targets)).toEqual([]);
 });
+
+test("feedToQuotes maps an INDEX feed (Nifty 50): price, previous close and day OHLC from indexFF, no book or volume", () => {
+  const FeedResponse = protobuf
+    .loadSync(join(import.meta.dir, "MarketDataFeed.proto"))
+    .lookupType("com.upstox.marketdatafeederv3udapi.rpc.proto.FeedResponse");
+  const nifty = new Map([["NSE_INDEX|Nifty 50", { inst: instrument("NSE:NIFTY")!, contract: "Nifty 50" }]]);
+  const payload = {
+    type: 1,
+    currentTs: 1792516000000,
+    feeds: { "NSE_INDEX|Nifty 50": { fullFeed: { indexFF: { ltpc: { ltp: 24850.35, ltt: 1792515999000, cp: 24790.1 }, marketOHLC: { ohlc: [{ interval: "1d", open: 24800, high: 24880.5, low: 24760.2, close: 24850.35 }] } } } } },
+  };
+  const wire = FeedResponse.encode(FeedResponse.fromObject(payload)).finish();
+  const msg = FeedResponse.toObject(FeedResponse.decode(wire), { longs: Number });
+  const [q] = feedToQuotes(msg, nifty);
+  expect(q).toMatchObject({ symbol: "NSE:NIFTY", price: 24850.35, prevClose: 24790.1, open: 24800, high: 24880.5, low: 24760.2, source: "upstox", contract: "Nifty 50", delayedBy: 0 });
+  expect(q.bid).toBeUndefined();
+  expect(q.volume).toBeUndefined();
+});

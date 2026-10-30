@@ -32,6 +32,17 @@ describe("computeDrivers", () => {
     expect(computeDrivers(q("MCX:CRUDEOIL", 0), q("NYMEX:CL", 100), q("FX:USDINR", 95)).mcx).toBeUndefined(); // a zero price is no price
   });
 
+  it("a leg carries the day's change in price units beside its percent, and neither without a previous close", () => {
+    const d = computeDrivers(q("MCX:CRUDEOIL", 9600, 9500), q("NYMEX:CL", 101, 100, 600), q("FX:USDINR", 95.2, 95));
+    expect(d.mcx!.change).toBe(100);
+    expect(d.mcx!.changePct).toBeCloseTo(1.0526, 3);
+    expect(d.global!.change).toBe(1);
+    expect(d.fx!.change).toBeCloseTo(0.2, 6);
+    const none = computeDrivers(q("MCX:CRUDEOIL", 9600), q("NYMEX:CL", 101), q("FX:USDINR", 95.2));
+    expect(none.mcx!.change).toBeUndefined();
+    expect(none.mcx!.changePct).toBeUndefined();
+  });
+
   it("maps the four MCX energy futures to the NYMEX contract they follow", () => {
     expect(DRIVER_PAIRS["MCX:CRUDEOILM"]).toBe("NYMEX:CL");
     expect(DRIVER_PAIRS["MCX:NATGASMINI"]).toBe("NYMEX:NG");

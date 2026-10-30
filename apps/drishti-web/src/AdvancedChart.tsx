@@ -122,7 +122,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           if (resolved !== typed) chart.setSymbol(resolved, instrument(resolved)?.exchange);
           if (resolved !== latestSymbol.current) useWorkspace.getState().loadSymbol(widget.id, resolved);
         });
-        ensureChartDefaults(created, widget.id); // Volume pane (candle-direction colours) and the bar-close countdown, once per chart
+        ensureChartDefaults(created, widget.id, { volume: instrument(widget.symbol)?.topic !== "index" }); // Volume pane (candle-direction colours, not for an index: it has no volume) and the bar-close countdown, once per chart
         if (/^(reportday|usib)-/.test(widget.id)) ensureStrategyLevels(created); // the strategy desks draw their levels on their chart
         settleUntil.current = Date.now() + SETTLE_MS;
         if (import.meta.env.DEV) ((window as unknown as { __adv?: Record<string, OaWidget> }).__adv ??= {})[widget.id] = created; // dev-only handle for debugging in the console

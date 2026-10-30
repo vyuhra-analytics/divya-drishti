@@ -6,13 +6,13 @@ export interface Instrument {
   /** EXCHANGE:ROOT, always the continuous front-month contract */
   symbol: string;
   name: string;
-  exchange: "MCX" | "NYMEX" | "FX";
+  exchange: "MCX" | "NYMEX" | "FX" | "NSE";
   currency: "INR" | "USD";
   /** exchange time zone: candles (1h, 1d) start on its hours/midnight, like the providers' history */
   timeZone: "Asia/Kolkata" | "America/New_York";
   decimals: number;
   /** commodity, for news filtering in linked panels */
-  topic: "crude" | "natgas" | "fx";
+  topic: "crude" | "natgas" | "fx" | "index";
   /** contract size, display only */
   lot: string;
   /** seconds the free feed lags the exchange (CME rule: 10 min) */
@@ -21,6 +21,8 @@ export interface Instrument {
   sources: Source[];
   /** Upstox instrument master `underlying_symbol` (MCX) */
   upstox?: string;
+  /** a fixed Upstox instrument key, for an instrument that has no contract months (an index: NSE_INDEX|Nifty 50) */
+  upstoxKey?: string;
   /** TradingView root; MCX uses dated codes (CRUDEOILX2026) because MCX `1!` rolls late */
   tv: string;
   /** Yahoo chart symbol (NYMEX) */
@@ -36,6 +38,7 @@ export const INSTRUMENTS: Instrument[] = [
   { symbol: "MCX:NATGASMINI", topic: "natgas", name: "Natural Gas Mini", exchange: "MCX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 1, lot: "250 mmBtu", delayedBy: 0, sources: ["upstox", "tradingview"], upstox: "NATGASMINI", tv: "MCX:NATGASMINI" },
   { symbol: "NYMEX:CL", topic: "crude", name: "WTI Crude Oil", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 2, lot: "1000 bbl", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "CL=F", tv: "NYMEX:CL1!" },
   { symbol: "NYMEX:NG", topic: "natgas", name: "Henry Hub Natural Gas", exchange: "NYMEX", currency: "USD", timeZone: "America/New_York", decimals: 3, lot: "10000 mmBtu", delayedBy: 600, sources: ["yahoo", "tradingview"], yahoo: "NG=F", tv: "NYMEX:NG1!" },
+  { symbol: "NSE:NIFTY", topic: "index", name: "Nifty 50", exchange: "NSE", currency: "INR", timeZone: "Asia/Kolkata", decimals: 2, lot: "index", delayedBy: 0, sources: ["upstox", "tradingview"], upstoxKey: "NSE_INDEX|Nifty 50", yahoo: "^NSEI", tv: "NSE:NIFTY" },
   { symbol: "FX:USDINR", topic: "fx", name: "USD/INR", exchange: "FX", currency: "INR", timeZone: "Asia/Kolkata", decimals: 4, lot: "1 USD", delayedBy: 0, sources: ["tradingview", "yahoo"], yahoo: "INR=X", tv: "FX_IDC:USDINR" },
 ];
 

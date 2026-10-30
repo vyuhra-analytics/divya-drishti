@@ -133,10 +133,10 @@ test("panels added in the same millisecond get different ids, so changing one ne
 const types = (key: string) => PRESETS.find((p) => p.key === key)!.build().widgets.map((w) => w.type);
 
 test("the built-in desks are the Evening desk, the five research workspaces, Report day, USIB and Family, in F-key order", () => {
-  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday", "usib", "family"]);
-  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day", "USIB", "Family"]);
-  // nine built-in desks fill F1 to F9; saved ones follow them in the sidebar list (they have no F-key any more)
-  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, false, false, true]);
+  expect(PRESETS.map((p) => p.key)).toEqual(["evening", "presession", "reportprep", "review", "study", "macro", "reportday", "usib", "family", "morning"]);
+  expect(PRESETS.map((p) => p.name)).toEqual(["Evening", "Pre-session", "Report prep", "Review", "Study", "Macro and TV", "Report day", "USIB", "Family", "Morning"]);
+  // nine built-in desks fill F1 to F9, the Morning desk is the tenth (sidebar only); saved ones follow them in the sidebar list (they have no F-key any more)
+  expect(workspaceList({ a: 1 }).map((w) => w.saved)).toEqual([false, false, false, false, false, false, false, false, false, false, true]);
 });
 
 test("each desk holds what its question needs", () => {
@@ -148,6 +148,14 @@ test("each desk holds what its question needs", () => {
   expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));
   expect(types("reportday")).toEqual(expect.arrayContaining(["advchart", "reportday"]));
   expect(types("usib")).toEqual(expect.arrayContaining(["advchart", "usib"]));
+  expect(types("morning")).toEqual(expect.arrayContaining(["advchart", "quote", "watchlist", "news", "calendar"]));
+});
+
+test("the Morning desk follows the Nifty 50 index, not crude", () => {
+  const m = PRESETS.find((p) => p.key === "morning")!.build();
+  expect(m.groups.amber).toBe("NSE:NIFTY");
+  for (const w of m.widgets.filter((x) => x.group === "amber")) expect(w.symbol).toBe("NSE:NIFTY");
+  expect(m.widgets.find((w) => w.type === "advchart")).toMatchObject({ symbol: "NSE:NIFTY", tf: "5m" });
 });
 
 test("the first screen of every desk fits one monitor: 28 grid rows (34 px each in the default compact density, a 1080p monitor), the Report prep desk scrolling only for its last row", () => {
