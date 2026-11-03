@@ -1,5 +1,6 @@
 import type { Bar, IndicatorDescriptor, IndicatorInput, IndicatorSettings } from "openalgo-charts";
-import { istWindow, LONDON_OPEN_WINDOW, po3Sweeps, sessionLevels, toIst, zoneAt, zoneDays, ZONES, type ZoneId } from "@drishti/shared";
+import type { AxisTag } from "./advAxisTags";
+import { barSeconds, dayLevels, istWindow, LONDON_OPEN_WINDOW, po3Sweeps, sessionLevels, toIst, zoneAt, zoneDays, ZONES, type ZoneId } from "@drishti/shared";
 
 // ICT killzones on the advanced chart: the five usual windows (defined in New York time, labelled in Indian time) shaded behind the candles, the New York day's midnight open, and the
 // range of the Asian window that just ended. A plain indicator of the library (no data of its own: it reads the chart's bars), so it works on every
@@ -9,8 +10,14 @@ import { istWindow, LONDON_OPEN_WINDOW, po3Sweeps, sessionLevels, toIst, zoneAt,
 
 export const KILLZONES_ID = "drishti-killzones";
 
+/** short zone names for the price-axis tags: the axis column has a fixed width and a longer tag is shrunk until it cannot be read */
+const SHORT: Record<ZoneId, string> = { asian: "ASIA", london: "LDN", nyam: "NYAM", lclose: "LCL", nypm: "NYPM" };
 const COLORS: Record<ZoneId, string> = { asian: "#78909c", london: "#42a5f5", nyam: "#ffa726", lclose: "#ab47bc", nypm: "#66bb6a" };
 const ALPHA = 0.14;
+/** how many candles past the newest the level name plates are anchored, so they sit in the free space beside the price axis */
+const LABEL_BARS = 2; // (only used for the plates, which advAxisTags.ts replaces)
+const TODAY = "#4dd0e1";
+const PREV = "#90a4ae";
 const NOW = () => Math.floor(Date.now() / 1000);
 
 /** "#rrggbb" to rgba(): the library's shading takes a CSS colour per bar. Anything that is not a six-digit hex is used as it is. */
@@ -34,6 +41,11 @@ const inputs: IndicatorInput[] = [
   { key: "show_midnight", type: "boolean", label: `Midnight open (00:00 NY = ${hhmm(toIst(0, NOW()))} IST today)`, default: true, group: "Levels" },
   { key: "show_asia", type: "boolean", label: "Asian range (needs bars covering 20:00-24:00 NY)", default: true, group: "Levels" },
   { key: "show_po3", type: "boolean", label: "Power of 3 sweep markers (London sweep of the Asian range, then a close back inside)", default: true, group: "Levels" },
+  { key: "show_day_levels", type: "boolean", label: "High and low of today and of the previous day (drawn from the start of each day, not across the chart)", default: true, group: "Levels" },
+  { key: "extend_prev", type: "boolean", label: "Run the previous day's high and low on through today", default: true, group: "Levels" },
+  { key: "color_today", type: "color", label: "Today's high and low colour", default: TODAY, group: "Levels" },
+  { key: "color_prev", type: "color", label: "Previous day's high and low colour", default: PREV, group: "Levels" },
+  { key: "zone_levels", type: "boolean", label: "High and low of each killzone, previous day and today (lines from the zone's start, on through the chart)", default: true, group: "Levels" },
   { key: "box_days", type: "number", label: "Zone boxes for the latest days (high, low, range, average; 0 = none)", default: 2, min: 0, max: 10, step: 1, group: "Levels" },
 ];
 
@@ -49,6 +61,84 @@ function boxWindow(id: string, sec: number, ldn: boolean): string {
   return z ? istWindow(z, sec) : "";
 }
 
+/** A readable name plate that sits just above its anchor (a thin box of the line's own colour hid its text). */
+const plate = (text: string, time: number, price: number, color: string, align: "left" | "right") => ({ kind: "label", at: { time, price }, text, color, textColor: "#ffffff", fontSize: 10, align, verticalAlign: "bottom" }) as const;
+
+const fmt2 = (v: number) => String(Number(v.toFixed(2)));
+
+/** Today's and the previous day's high and low: flat lines that start at the day's first candle (not across the whole chart), each with a small price label. */
+export function dayLines(bars: readonly Bar[], settings: Readonly<IndicatorSettings>): unknown[] {
+  if (!on(settings, "show_day_levels")) return [];
+  const d = dayLevels(bars);
+  if (!d) return [];
+  const today = String(settings.color_today ?? TODAY);
+  const prev = String(settings.color_prev ?? PREV);
+  const tail = bars[bars.length - 1].time + barSeconds(bars) * LABEL_BARS;
+  const prevTo = on(settings, "extend_prev") ? d.today.to : d.previous.to;
+  const out: unknown[] = [];
+  const level = (label: string, price: number, from: number, to: number, color: string, style: "solid" | "dashed") => {
+    out.push({ kind: "line", from: { time: from, price }, to: { time: to, price }, color, lineWidth: 1, lineStyle: style });
+    out.push(plate(`${label} ${fmt2(price)}`, tail, price, color, "right"));
+  };
+  level("PDH", d.previous.high, d.previous.from, prevTo, prev, "dashed");
+  level("PDL", d.previous.low, d.previous.from, prevTo, prev, "dashed");
+  level("DH", d.today.high, d.today.from, d.today.to, today, "solid");
+  level("DL", d.today.low, d.today.from, d.today.to, today, "solid");
+  return out;
+}
+
+/** Each enabled killzone's high and low for the previous New York day and today: flat lines from the zone's start to the newest candle, in the zone's colour (today's solid, the previous day's dashed). */
+export function zoneLines(bars: readonly Bar[], settings: Readonly<IndicatorSettings>): unknown[] {
+  if (!on(settings, "zone_levels")) return [];
+  const tf = barSeconds(bars);
+  if (!tf) return [];
+  const only = enabled(settings);
+  const all = zoneDays(bars, { londonOpen: londonOpen(settings) }).filter((z) => z.killzone && only.includes(z.window as ZoneId));
+  const days = [...new Set(all.map((z) => z.day))].sort().slice(-2);
+  const end = bars[bars.length - 1].time + tf;
+  const out: unknown[] = [];
+  for (const z of all.filter((x) => days.includes(x.day))) {
+    const color = String(settings[`color_${z.window}`] ?? COLORS[z.window as ZoneId]);
+    const style = z.day === days[days.length - 1] ? "solid" : "dashed";
+    const tag = days.length > 1 && z.day === days[0] ? "P " : "";
+    for (const [name, price] of [["H", z.high], ["L", z.low]] as const) {
+      out.push({ kind: "line", from: { time: z.start, price }, to: { time: end, price }, color, lineWidth: 1, lineStyle: style });
+      out.push(plate(`${tag}${SHORT[z.window as ZoneId]} ${name}`, end + tf * LABEL_BARS, price, color, "right"));
+    }
+  }
+  return out;
+}
+
+type Drawn = { kind: "line" | "label"; at?: { price: number }; color: string; text?: string };
+/** Every level line and its name plate, in one list. The names are shown on the price axis (advAxisTags.ts), so `draws` keeps only the lines. */
+function levelDrawings(bars: readonly Bar[], settings: Readonly<IndicatorSettings>): Drawn[] {
+  return [...dayLines(bars, settings), ...zoneLines(bars, settings)] as Drawn[];
+}
+
+/** The level names as price-axis tags. */
+export function killzoneTags(bars: readonly Bar[], settings: Readonly<IndicatorSettings>): AxisTag[] {
+  return levelDrawings(bars, settings).flatMap((d) => (d.kind === "label" && d.at && d.text ? [{ price: d.at.price, color: d.color, text: d.text }] : []));
+}
+
+function zoneBoxes(bars: readonly Bar[], settings: Readonly<IndicatorSettings>): unknown[] {
+  const n = Math.max(0, Math.min(10, Math.floor(Number(settings.box_days ?? 2))));
+  if (!n) return [];
+  const only = enabled(settings);
+  const all = zoneDays(bars, { londonOpen: londonOpen(settings) }).filter((z) => z.killzone && only.includes(z.window as ZoneId));
+  const last = new Set([...new Set(all.map((z) => z.day))].slice(-n));
+  const f = fmt2;
+  return all
+    .filter((z) => last.has(z.day))
+    .flatMap((z) => {
+      const color = String(settings[`color_${z.window}`] ?? COLORS[z.window as ZoneId]);
+      const text = [`${z.label}  ${boxWindow(z.window, z.start, londonOpen(settings))}`, `H ${f(z.high)}  L ${f(z.low)}`, `Range ${f(z.range)}  Avg ${f(z.average)}`].join("\n");
+      return [
+        { kind: "box", from: { time: z.start, price: z.high }, to: { time: z.end, price: z.low }, color, fillColor: color, opacity: 0.05, lineWidth: 1 },
+        plate(text, z.start, z.high, color, "left"), // the details sit on top of the box, not inside it
+      ];
+    });
+}
+
 export function killzoneIndicator(): IndicatorDescriptor {
   return {
     id: KILLZONES_ID,
@@ -61,7 +151,8 @@ export function killzoneIndicator(): IndicatorDescriptor {
       { key: "asiaHigh", type: "line", title: "Asian high", style: { color: "#78909c", lineWidth: 1 } as never },
       { key: "asiaLow", type: "line", title: "Asian low", style: { color: "#78909c", lineWidth: 1 } as never },
     ],
-    calc(bars: readonly Bar[], settings) {
+    calc(bars: readonly Bar[], settings, store) {
+      store.axisTags = killzoneTags(bars, settings);
       const lv = sessionLevels(bars);
       const blank = bars.map(() => null);
       return {
@@ -71,18 +162,7 @@ export function killzoneIndicator(): IndicatorDescriptor {
       };
     },
     draws({ bars, settings }) {
-      const n = Math.max(0, Math.min(10, Math.floor(Number(settings.box_days ?? 2))));
-      if (!n) return [];
-      const only = enabled(settings);
-      const all = zoneDays(bars, { londonOpen: londonOpen(settings) }).filter((z) => z.killzone && only.includes(z.window as ZoneId));
-      const last = new Set([...new Set(all.map((z) => z.day))].slice(-n));
-      const f = (v: number) => String(Number(v.toFixed(2)));
-      return all
-        .filter((z) => last.has(z.day))
-        .map((z) => {
-          const color = String(settings[`color_${z.window}`] ?? COLORS[z.window as ZoneId]);
-          return { kind: "box", from: { time: z.start, price: z.high }, to: { time: z.end, price: z.low }, color, fillColor: color, opacity: 0.05, lineWidth: 1, text: [`${z.label}  ${boxWindow(z.window, z.start, londonOpen(settings))}`, `H ${f(z.high)}  L ${f(z.low)}`, `Range ${f(z.range)}  Avg ${f(z.average)}`].join("\n"), fontSize: 10, verticalAlign: "top", align: "left" } as const;
-        }) as never;
+      return [...levelDrawings(bars, settings).filter((d) => d.kind === "line"), ...zoneBoxes(bars, settings)] as never;
     },
     markerAnchor: "price",
     markers({ bars, settings }) {

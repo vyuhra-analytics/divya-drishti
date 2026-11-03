@@ -4,9 +4,11 @@ import { App } from "./App";
 import { connectStream, useStore } from "./store";
 import { syncInstruments } from "./instrumentsClient";
 import { applyToDocument, useSettings } from "./settings";
+import { installAuthFetch } from "./access";
 import "./tailwind.css";
 import "./styles.css";
 
+installAuthFetch(); // the access token, for a build that talks to the services directly
 applyToDocument(useSettings.getState());
 useSettings.subscribe(applyToDocument);
 // instruments added in Settings must be in the catalogue before the saved layout renders; don't wait long if the stream is slow

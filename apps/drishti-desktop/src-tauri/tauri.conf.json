@@ -10,7 +10,7 @@
   },
   "app": {
     "windows": [{ "title": "Divya Drishti", "width": 1440, "height": 900, "minWidth": 900, "minHeight": 600 }],
-    "security": { "csp": null }
+    "security": { "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https:; worker-src 'self' blob:; frame-src https: http:; object-src 'none'; base-uri 'self'; form-action 'self'" }
   },
   "bundle": {
     "active": true,

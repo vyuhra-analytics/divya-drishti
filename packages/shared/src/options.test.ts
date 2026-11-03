@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { atmStrike, buildRows, expiriesOf, maxPain, mergeChains, pcr, pickStrikes, type OptionContract } from "./options";
+import { atmStrike, buildRows, expiriesOf, expiryDate, maxPain, mergeChains, pcr, pickStrikes, type OptionContract } from "./options";
 
 const day = 86_400_000;
 const c = (strike: number, type: "CE" | "PE", expiry: number, underlying = "CRUDEOIL"): OptionContract => ({
@@ -64,4 +64,17 @@ test("mergeChains keeps the Upstox instrument key of a leg whose prices come fro
   expect(merged.rows[0].ce).toMatchObject({ key: "MCX:CRUDEOIL261117C9450", ukey: "MCX_FO|582939", ltp: 502, oi: 1000 });
   const none = mergeChains({ ...base, source: "tradingview", rows: [{ strike: 9500, ce: tvLeg }] }, { ...base, source: "upstox", rows: [] });
   expect(none.rows[0].ce!.ukey).toBeUndefined(); // no Upstox contract for this strike: nothing to subscribe
+});
+
+import { parseNseContracts } from "./options";
+test("Upstox's option-contract list for the Nifty index becomes our contracts: expiry as that date, lot, strike and the index as the underlying; junk rows are left out", () => {
+  const row = { name: "NIFTY", segment: "NSE_FO", exchange: "NSE", expiry: "2026-11-03", weekly: true, instrument_key: "NSE_FO|47196", exchange_token: "47196", trading_symbol: "NIFTY 23100 CE 03 NOV 26", tick_size: 5, lot_size: 65, instrument_type: "CE", underlying_key: "NSE_INDEX|Nifty 50", underlying_type: "INDEX", underlying_symbol: "NIFTY", strike_price: 23100 };
+  const out = parseNseContracts({ status: "success", data: [row, { ...row, instrument_key: "NSE_FO|47197", instrument_type: "PE" }, { ...row, instrument_type: "FUT" }, { ...row, expiry: "soon" }, { ...row, strike_price: "x" }, { ...row, instrument_key: undefined }, null] });
+  expect(out).toHaveLength(2);
+  expect(out[0]).toEqual({ instrument_key: "NSE_FO|47196", trading_symbol: "NIFTY 23100 CE 03 NOV 26", instrument_type: "CE", underlying_symbol: "NIFTY", underlying_key: "NSE_INDEX|Nifty 50", strike_price: 23100, expiry: Date.parse("2026-11-03T00:00:00Z"), lot_size: 65 });
+  expect(expiryDate(out[0].expiry)).toBe("2026-11-03"); // the date comes back as it went in
+  expect(expiriesOf(out, "NIFTY", Date.parse("2026-11-03T04:00:00Z"))).toEqual(["2026-11-03"]); // still listed on its expiry day
+  expect(expiriesOf(out, "NIFTY", Date.parse("2026-11-04T01:00:00Z"))).toEqual([]);
+  expect(parseNseContracts({ data: "no" })).toEqual([]);
+  expect(parseNseContracts(undefined)).toEqual([]);
 });

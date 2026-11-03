@@ -185,3 +185,18 @@ test("when nothing was recorded at the chosen time the panel says so and offers 
   fireEvent.click(screen.getByText("Back to live"));
   expect(await screen.findByText("9,250")).toBeTruthy();
 });
+
+test("the Nifty chain asks for NIFTY on Upstox only, and has no feed picker or recorded-snapshot box (there are none for NSE)", async () => {
+  const nifty = { ...widget, id: "ocx-nifty", symbol: "NSE:NIFTY" } as Widget;
+  render(<OptionChainWidget widget={nifty} />);
+  await screen.findByText("9,250"); // the fake answers every request with the same chain; only the request and the controls matter here
+  expect(urls[0]).toContain("underlying=NIFTY");
+  expect(urls[0]).toContain("source=upstox");
+  expect(screen.queryByLabelText("Options feed")).toBeNull();
+  expect(screen.queryByLabelText("Show the chain as recorded at")).toBeNull();
+  cleanup();
+  render(<OptionChainWidget widget={widget} />); // crude keeps both
+  await screen.findByText("9,250");
+  expect(screen.getByLabelText("Options feed")).toBeTruthy();
+  expect(screen.getByLabelText("Show the chain as recorded at")).toBeTruthy();
+});

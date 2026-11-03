@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { dedupeNews, SYMBOLS, type MarketStatus, type NewsItem, type OptionQuote, type Quote } from "@drishti/shared";
 import { useAlerts } from "./alertsStore";
-import { streamUrl } from "./settings";
+import { streamSocketUrl } from "./access";
 import { pushTrail } from "./spark";
 
 /** Live market data. UI/layout state lives in workspace.ts. */
@@ -79,7 +79,7 @@ export function sendWatch(keys: string[]) {
 
 export function connectStream() {
   useStore.setState({ status: "connecting" });
-  const sock = new WebSocket(streamUrl());
+  const sock = new WebSocket(streamSocketUrl());
   ws = sock;
   sock.onopen = () => {
     lastMessageAt = Date.now();

@@ -10,6 +10,10 @@ export interface Sheet {
 }
 
 const MAX_FILE = 30 * 1024 * 1024; // a statement is well under this; a bigger file is not one
+// A zip bomb is a few kilobytes that inflate to gigabytes, so the size AFTER inflating is capped too, while inflating (the sizes a zip declares can lie).
+const MAX_ENTRIES = 500; // a workbook has tens of parts
+const MAX_PART = 64 * 1024 * 1024; // one inflated part: real statement sheets are a few MB
+const MAX_TOTAL = 160 * 1024 * 1024; // every part read from one workbook, together
 const decoder = new TextDecoder("utf-8");
 
 const u16 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
@@ -34,6 +38,7 @@ function zipEntries(b: Uint8Array): Entry[] {
   }
   if (eocd < 0) throw new Error("not an .xlsx file: no zip directory found");
   const count = u16(b, eocd + 10);
+  if (count > MAX_ENTRIES) throw new Error("not an .xlsx file: too many parts");
   let p = u32(b, eocd + 16);
   const out: Entry[] = [];
   for (let i = 0; i < count; i++) {
@@ -47,17 +52,36 @@ function zipEntries(b: Uint8Array): Entry[] {
   return out;
 }
 
-async function inflate(raw: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([raw as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+/** Inflates raw deflate data, stopping with an error the moment the output passes `limit` bytes (nothing past it is ever held in memory). */
+async function inflate(raw: Uint8Array, limit: number): Promise<Uint8Array> {
+  const reader = new Blob([raw as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("not a statement: a part of the file inflates to far more than a real one");
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
 }
 
-async function fileOf(b: Uint8Array, e: Entry): Promise<Uint8Array> {
+async function fileOf(b: Uint8Array, e: Entry, limit = MAX_PART): Promise<Uint8Array> {
   if (u32(b, e.offset) !== 0x04034b50) throw new Error("not an .xlsx file: damaged zip entry");
   const start = e.offset + 30 + u16(b, e.offset + 26) + u16(b, e.offset + 28);
   const data = b.subarray(start, start + e.csize);
   if (e.method === 0) return data;
-  if (e.method === 8) return inflate(data);
+  if (e.method === 8) return inflate(data, Math.min(limit, MAX_PART));
   throw new Error(`not an .xlsx file: unsupported zip compression ${e.method}`);
 }
 
@@ -118,9 +142,13 @@ export async function readXlsx(bytes: Uint8Array): Promise<Sheet[]> {
   if (bytes.length > MAX_FILE) throw new Error("the file is too big to be a statement");
   const entries = zipEntries(bytes);
   const byName = new Map(entries.map((e) => [e.name, e]));
+  let budget = MAX_TOTAL; // what all parts together may still inflate to
   const text = async (name: string) => {
     const e = byName.get(name);
-    return e ? decoder.decode(await fileOf(bytes, e)) : undefined;
+    if (!e) return undefined;
+    const data = await fileOf(bytes, e, budget);
+    budget -= data.length;
+    return decoder.decode(data);
   };
   const workbook = await text("xl/workbook.xml");
   if (!workbook) throw new Error("not an .xlsx file: no workbook found (an old .xls file must be saved as .xlsx first)");

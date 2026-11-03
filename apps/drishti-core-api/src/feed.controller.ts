@@ -135,7 +135,7 @@ export class FeedController {
     if (to <= from) throw new BadRequestException("to must be after from");
     if (to - from > MAX_SPAN_MS) throw new BadRequestException("at most 2 days at a time");
     const rows = (await this.db.sql`
-      SELECT extract(epoch FROM time)::float8 * 1000 AS time, price, volume, bid, ask, bid_qty AS "bidQty", ask_qty AS "askQty", depth
+      SELECT extract(epoch FROM time)::float8 * 1000 AS time, price, volume, bid, ask, bid_qty AS "bidQty", ask_qty AS "askQty", depth, ltq
       FROM feed_quotes WHERE key = ${key} AND time >= ${new Date(from).toISOString()} AND time < ${new Date(to).toISOString()} ORDER BY time LIMIT ${FLOW_ROWS}`.catch(unavailable)) as FlowRow[];
     return { key, tf: tfParam ?? "5m", estimated: true, rows: rows.length, truncated: rows.length >= FLOW_ROWS, buckets: estimateFlow(rows, tfSeconds, 19_800) };
   }

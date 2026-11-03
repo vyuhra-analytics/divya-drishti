@@ -64,3 +64,26 @@ describe("estimateFlow: candles", () => {
     expect(one([])).toEqual([]);
   });
 });
+
+describe("estimateFlow: the measured last trade", () => {
+  it("counts the last trade's size as exact and sides it by the quote before it", () => {
+    const [b] = one([row(0, { volume: 100 }), row(1, { price: 101, volume: 104, ltq: 4 })]);
+    expect(b).toMatchObject({ buy: 4, sell: 0, exact: 4, unclassified: 0, volume: 4 });
+  });
+
+  it("gives the earlier trades of the same second to the side the price moved, and leaves them unclassified when it did not move", () => {
+    const [moved] = one([row(0, { volume: 100 }), row(1, { price: 101, volume: 110, ltq: 3 })]);
+    expect(moved).toMatchObject({ buy: 10, exact: 3 }); // 3 measured + 7 inferred from the move up
+    const [flat] = one([row(0, { volume: 100, price: 101 }), row(1, { price: 101, volume: 110, ltq: 3 })]);
+    expect(flat).toMatchObject({ buy: 3, exact: 3, unclassified: 7, volume: 10 });
+  });
+
+  it("a last trade larger than the increase is capped, and rows without ltq behave as before", () => {
+    const [capped] = one([row(0, { volume: 100 }), row(1, { price: 99, volume: 102, ltq: 50 })]);
+    expect(capped).toMatchObject({ sell: 2, exact: 2 });
+    const [old] = one([row(0, { volume: 100 }), row(1, { price: 101, volume: 110 })]);
+    expect(old).toMatchObject({ buy: 10, exact: 0 });
+    const [text] = one([row(0, { volume: 100 }), row(1, { price: 101, volume: 104, ltq: "4" as unknown as number })]);
+    expect(text.exact).toBe(4); // a numeric column can arrive as text
+  });
+});

@@ -9,7 +9,7 @@ import { ReportDayTrade } from "./ReportDayTrade";
 import { StrikeBlock } from "./StrikeBlock";
 import { usePublishLevels } from "./strategyLevels";
 import { loadRecord } from "./reportDayStore";
-import { useNow } from "./market";
+import { useNow, useSessions } from "./market";
 import { useStore } from "./store";
 import type { Widget } from "./workspace";
 import { Button } from "./ui";
@@ -90,7 +90,9 @@ export function UsibWidget(_: { widget: Widget }) {
 
   // crude options: the nearest expiry; NATGASMINI options: the next one (owner decision)
   const [expiry, setExpiry] = useState("");
-  const { chain } = useChain(underlying, expiry, "auto", 8, stage !== "after");
+  // kept current for the whole MCX session, not only the entry window: the strike block and the open trade still use it after the window closes
+  const mcxOpen = useSessions().MCX.open;
+  const { chain } = useChain(underlying, expiry, "auto", 8, stage !== "after" || mcxOpen);
   useEffect(() => setExpiry(""), [underlying]);
   useEffect(() => {
     // the nearest expiry, unless it is within 3 days of expiring (then the next): the same for crude and gas

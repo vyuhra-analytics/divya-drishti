@@ -70,7 +70,8 @@ test("lag is the time from the exchange trade to our receipt, and unknown when t
   expect(optionLagMs({ ...q, recvAt: q.time - 500 })).toBe(0);
 });
 
-test("only Upstox MCX derivative keys pass the key check", () => {
+test("only Upstox MCX and NSE derivative keys pass the key check", () => {
   expect(OPTION_KEY.test("MCX_FO|582939")).toBe(true);
-  for (const bad of ["NSE_FO|12345", "MCX_FO|", "MCX_FO|12", "MCX_FO|582939 ", "MCX_FO|582939,MCX_FO|1", "x", "MCX_FO|58293912345"]) expect(OPTION_KEY.test(bad)).toBe(false);
+  expect(OPTION_KEY.test("NSE_FO|53872")).toBe(true); // Nifty options
+  for (const bad of ["NSE_EQ|12345", "NSE_FO|", "NSE_FO|53872,NSE_FO|1", "MCX_FO|", "MCX_FO|12", "MCX_FO|582939 ", "MCX_FO|582939,MCX_FO|1", "x", "MCX_FO|58293912345"]) expect(OPTION_KEY.test(bad)).toBe(false);
 });

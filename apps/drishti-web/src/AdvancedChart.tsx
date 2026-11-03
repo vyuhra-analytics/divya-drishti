@@ -7,9 +7,12 @@ import { ADV_INTERVALS, ourFeed, resolveSymbol, timeframeOf } from "./advFeed";
 import { advStorage } from "./advStorage";
 import { registerFlowStudies } from "./advFlow";
 import { registerKillzones } from "./advKillzones";
+import { registerFvg } from "./advFvg";
+import { registerPivots } from "./advPivots";
 import { registerSessionBreaks } from "./advSessionBreaks";
 import { ensureStrategyLevels, registerStrategyLevels } from "./advStrategyLevels";
 import { ensureChartDefaults } from "./advDefaults";
+import { startAxisTags } from "./advAxisTags";
 import { apiUrl, formatStamp, useClock, useSettings } from "./settings";
 import { useWidgetSymbol, useWorkspace, type Widget } from "./workspace";
 
@@ -77,6 +80,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
   useEffect(() => {
     let cancelled = false;
     let created: OaWidget | null = null;
+    let stopTags: (() => void) | undefined;
     Promise.all([import("openalgo-charts/widget"), import("openalgo-charts/indicators"), import("openalgo-charts/draw"), import("openalgo-charts/transform")])
       .then(async ([{ createWidget }, indicators]) => {
         if (cancelled || !host.current) return;
@@ -86,6 +90,8 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
           registerFlowStudies(lib.registerIndicator, indicators.createTier2Indicator, lib.hasIndicator);
           registerKillzones(lib.registerIndicator, lib.hasIndicator);
           registerSessionBreaks(lib.registerIndicator, lib.hasIndicator);
+          registerFvg(lib.registerIndicator, lib.hasIndicator);
+          registerPivots(lib.registerIndicator, lib.hasIndicator);
           registerStrategyLevels(lib.registerIndicator, lib.hasIndicator);
         } catch (e) {
           console.warn("order flow studies unavailable:", (e as Error).message);
@@ -124,6 +130,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
         });
         ensureChartDefaults(created, widget.id, { volume: instrument(widget.symbol)?.topic !== "index" }); // Volume pane (candle-direction colours, not for an index: it has no volume) and the bar-close countdown, once per chart
         if (/^(reportday|usib)-/.test(widget.id)) ensureStrategyLevels(created); // the strategy desks draw their levels on their chart
+        stopTags = startAxisTags(created.chart as never); // the names of the study levels, on the price axis
         settleUntil.current = Date.now() + SETTLE_MS;
         if (import.meta.env.DEV) ((window as unknown as { __adv?: Record<string, OaWidget> }).__adv ??= {})[widget.id] = created; // dev-only handle for debugging in the console
       })
@@ -133,6 +140,7 @@ export function AdvancedChartWidget({ widget }: { widget: Widget }) {
       replay.current?.stop();
       replay.current = null;
       oa.current = null;
+      stopTags?.();
       created?.destroy();
     };
   }, [widget.id]); // eslint-disable-line react-hooks/exhaustive-deps -- see `first`

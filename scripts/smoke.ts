@@ -1,3 +1,5 @@
+import "./authFetch";
+import { internalHeaders } from "../packages/shared/src/authNode";
 // Live smoke test against the running stack: `bun run smoke` (start `bun run dev` first). Hits every API route with a good request and a
 // bad one, checks the stream's health and WebSocket, and the security defaults (foreign origins refused). Read-only: it creates and
 // removes one never-firing server alert and sends nothing to Telegram.
@@ -247,7 +249,7 @@ await check("USD/INR: a plausible live rate from the stream, history from the AP
 });
 await check("stream WebSocket: a live quote and a heartbeat arrive", async () => {
   const got = await new Promise<{ quote?: any; hb?: boolean }>((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN } } as any);
+    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN, ...internalHeaders("ui") } } as any);
     const seen: { quote?: any; hb?: boolean } = {};
     const t = setTimeout(() => (ws.close(), resolve(seen)), 8000);
     ws.onopen = () => ws.send(JSON.stringify({ subscribe: ["MCX:CRUDEOIL", "alerts"] }));
@@ -270,7 +272,7 @@ await check("live option feed: a watched contract streams its premium, depth and
   need(good.length === 2, "the chain carries no Upstox keys");
   const bad = ["NSE_FO|12345", "MCX_FO|1", "x; drop table", "MCX_FO|99999999"];
   const got = await new Promise<Record<string, any>>((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN } } as any);
+    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN, ...internalHeaders("ui") } } as any);
     const seen: Record<string, any> = {};
     const t = setTimeout(() => (ws.close(), resolve(seen)), 9000);
     ws.onopen = () => (ws.send(JSON.stringify({ subscribe: ["options"] })), ws.send(JSON.stringify({ watch: [...good, ...bad] })));
@@ -297,7 +299,7 @@ await check("live option feed: a watched contract streams its premium, depth and
 });
 await check("refuses: a foreign website opening the WebSocket", async () => {
   const code = await new Promise<string>((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: "https://evil.example" } } as any);
+    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: "https://evil.example", ...internalHeaders("ui") } } as any);
     ws.onopen = () => (ws.close(), resolve("connected"));
     ws.onerror = () => resolve("refused");
     ws.onclose = () => resolve("refused");
@@ -307,7 +309,7 @@ await check("refuses: a foreign website opening the WebSocket", async () => {
 });
 await check("ignores: unknown and internal topic names (no data, connection survives)", async () => {
   const seen = await new Promise<{ quotes: number; open: boolean }>((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN } } as any);
+    const ws = new WebSocket(`ws://127.0.0.1:3002/ws`, { headers: { Origin: WEB_ORIGIN, ...internalHeaders("ui") } } as any);
     let quotes = 0;
     ws.onopen = () => ws.send(JSON.stringify({ subscribe: ["../etc/passwd", "quotes:MCX:CRUDEOIL", "hb2", 42, { x: 1 }] })); // the internal topic name is not a valid request either
     ws.onmessage = (e) => {
@@ -335,7 +337,7 @@ await check("paper API: account state, agent caps, refusals, cleanup (throwaway 
   try {
     const st = await paper("/accounts/smoke");
     need(st.status === 200 && st.json.state.limits.maxLots === 100, "state missing the UI limits");
-    const agentState = await paper("/accounts/smoke", "GET", undefined, { "x-drishti-actor": "mcp" });
+    const agentState = await paper("/accounts/smoke", "GET", undefined, internalHeaders("mcp"));
     need(agentState.json.state.limits.maxLots === 2, "the agent does not get its tighter caps");
     for (const [name, order, status] of [
       ["bad symbol", { symbol: "DOGE", side: "buy", lots: 1 }, 400],
@@ -345,7 +347,7 @@ await check("paper API: account state, agent caps, refusals, cleanup (throwaway 
       const r = await paper("/accounts/smoke/orders", "POST", order);
       need(r.status === status, `${name} → HTTP ${r.status}, expected ${status}`);
     }
-    const big = await paper("/accounts/smoke/orders", "POST", { symbol: "MCX:CRUDEOIL", side: "buy", lots: 3 }, { "x-drishti-actor": "mcp" });
+    const big = await paper("/accounts/smoke/orders", "POST", { symbol: "MCX:CRUDEOIL", side: "buy", lots: 3 }, internalHeaders("mcp"));
     need(big.status === 422 && /at most 2 lots/.test(big.json.error), `agent 3 lots → HTTP ${big.status} ${big.json.error}`);
     need((await paper("/accounts/nope")).status === 404, "unknown account is not a 404");
     need((await paper("/accounts/main", "DELETE")).status === 409, "the main account can be deleted");
@@ -359,6 +361,28 @@ await check("refuses: a foreign website using the paper API", async () => {
   need(r.status === 403, `a foreign origin got HTTP ${r.status}`);
   const mine = await fetch(`${STREAM}/paper/accounts`, { headers: { Origin: WEB_ORIGIN } });
   need(mine.status === 200 && mine.headers.get("access-control-allow-origin") === WEB_ORIGIN, "our own origin is not allowed");
+});
+
+await check("access control: no token is a 401, a foreign host (DNS rebinding) or origin is a 403, an upload must be application/octet-stream, the agent token is its own", async () => {
+  const bare = (url: string, init: RequestInit = {}) => {
+    const h = new Headers(init.headers);
+    h.set("x-drishti-token", ""); // the patched fetch only fills a missing one, so an empty one stays empty
+    return fetch(url, { ...init, headers: h });
+  };
+  for (const [name, base, path] of [["API", API, "/instruments"], ["stream", STREAM, "/paper/accounts"], ["stream health", STREAM, "/health"]] as const) {
+    const r = await bare(`${base}${path}`);
+    need(r.status === 401, `${name}: a request without the token got HTTP ${r.status}`);
+    const wrong = await fetch(`${base}${path}`, { headers: { "x-drishti-token": "x".repeat(64) } });
+    need(wrong.status === 401, `${name}: a wrong token got HTTP ${wrong.status}`);
+    const rebound = await fetch(`${base}${path}`, { headers: { Host: "attacker.example" } });
+    need(rebound.status === 403, `${name}: a foreign Host header got HTTP ${rebound.status}`);
+    const evil = await fetch(`${base}${path}`, { headers: { Origin: "https://evil.example" } });
+    need(evil.status === 403, `${name}: a foreign origin with the token got HTTP ${evil.status}`);
+  }
+  const plain = await fetch(`${API}/family/import?name=x.xlsx`, { method: "POST", headers: { "content-type": "text/plain" }, body: "not a file" });
+  need(plain.status === 415, `an upload as text/plain got HTTP ${plain.status}`);
+  const agent = await fetch(`${STREAM}/paper/accounts`, { headers: internalHeaders("mcp") });
+  need(agent.status === 200, `the agent token was refused (HTTP ${agent.status})`);
 });
 
 await check("instruments API: list, bad input is a 400, built-ins cannot be removed, a foreign website is refused (nothing added)", async () => {
@@ -387,10 +411,10 @@ await check("analysis routes: bad requests are a 400, the status covers every in
 await check("agent briefings: bad requests are refused, a foreign website cannot submit or announce (nothing stored)", async () => {
   need((await get("/briefing/context?symbol=MCX:GOLD")).status === 400, "unknown symbol was not a 400");
   need((await get("/briefing/context?symbol=MCX:CRUDEOIL&tf=2h")).status === 400, "unknown timeframe was not a 400");
-  const post = (body: string, type: string) => get("/briefing/submit", { method: "POST", headers: { "Content-Type": type, Origin: "https://evil.example" }, body });
+  const post = (body: string, type: string, origin = WEB_ORIGIN) => get("/briefing/submit", { method: "POST", headers: { "Content-Type": type, Origin: origin }, body });
   const valid = JSON.stringify({ symbol: "MCX:CRUDEOIL", context_id: "ctx-x", bias: "bullish", confidence: "low", summary: "x", bull: [], bear: [] });
   need((await post("{}", "application/json")).status === 400, "an empty submission was not a 400");
-  need((await post(valid, "application/json")).status !== 201, "a foreign website could submit a briefing");
+  need((await post(valid, "application/json", "https://evil.example")).status === 403, "a foreign website could submit a briefing (the API now refuses its origin outright)");
   need((await post(valid, "text/plain")).status === 400, "a text/plain (no-preflight) submission was accepted");
   const unknown = await get("/briefing/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: valid });
   need(unknown.status === 410, `an unknown context was HTTP ${unknown.status}, not 410`);

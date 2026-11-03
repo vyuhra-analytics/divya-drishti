@@ -1,6 +1,7 @@
 // Record Upstox's own charge calculation for six sample legs (option buy and sell, small and large premium, future buy and sell) as
 // packages/shared/fixtures/upstox-charges.json: `bun run fixtures:upstox-charges` (needs the dev stack for the front month and
 // UPSTOX_ACCESS_TOKEN in .env). The contract test (upstoxCharges.test.ts) replays it and fails if our cost table drifts from Upstox.
+import "./authFetch";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpstoxCharges, upstoxChargesUrl } from "../packages/shared/src/index";

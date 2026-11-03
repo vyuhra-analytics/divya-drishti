@@ -43,7 +43,7 @@ export interface OptionQuote {
 }
 
 /** An Upstox MCX derivative instrument key: the only keys the stream will subscribe to for a client. */
-export const OPTION_KEY = /^MCX_FO\|\d{3,8}$/;
+export const OPTION_KEY = /^(MCX_FO|NSE_FO)\|\d{3,8}$/;
 
 const num = (v: unknown): number | undefined => {
   const n = v === undefined || v === null ? NaN : Number(v);

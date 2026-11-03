@@ -1,6 +1,8 @@
 // End-to-end tests in a real browser against the running dev stack: `bun run e2e` (start `bun run dev` first).
 // A small runner, not `bun test`: that command preloads a fake DOM for the component tests, which a real browser does not want.
 // Each test gets a fresh browser context (empty localStorage). Screenshots of every panel are saved to e2e/screenshots/ so a human can look.
+import "../scripts/authFetch";
+import { internalHeaders } from "../packages/shared/src/authNode";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -131,7 +133,7 @@ test("demo feed: the SIMULATED PRICES banner and a DEMO badge on every chart, qu
   try {
     for (let i = 0; i < 30 && !(await up("http://127.0.0.1:3012/health")); i++) await Bun.sleep(500);
     assert(await up("http://127.0.0.1:3012/health"), "the demo stream did not start");
-    await ctx.addInitScript(() => localStorage.setItem("drishti-settings", JSON.stringify({ state: { streamUrl: "ws://127.0.0.1:3012/ws" }, version: 0 })));
+    await ctx.addInitScript((tok: string) => localStorage.setItem("drishti-settings", JSON.stringify({ state: { streamUrl: "ws://127.0.0.1:3012/ws", accessToken: tok }, version: 0 })), internalHeaders("ui")["x-drishti-token"] ?? "");
     const page = await ctx.newPage();
     await page.goto(WEB);
     await page.locator("h1").first().waitFor({ timeout: 20_000 });

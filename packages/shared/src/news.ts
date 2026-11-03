@@ -134,12 +134,24 @@ export function tagNews(title: string, feedTags: NewsTag[] = []): NewsTag[] {
   return [...tags];
 }
 
+/**
+ * Text from the internet that will be shown to an AI agent (headlines reach briefings and MCP tools). Removes what hides instructions from a human reader while a model
+ * still reads them: control characters, zero-width and bidirectional-override characters, and the invisible "tag" block (U+E0000-E007F), collapses whitespace, and caps the length.
+ */
+export function cleanUntrusted(text: string, max = 300): string {
+  return text
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤⁦-⁩﻿]|[\u{e0000}-\u{e007f}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
 /** RSS 2.0 → items. Skips entries without a usable title, safe link or date. */
 export function parseRss(xml: string, feedName: string, feedTags: NewsTag[] = []): NewsItem[] {
   const out: NewsItem[] = [];
   for (const item of xml.match(/<item[\s>][\s\S]*?<\/item>/g) ?? []) {
-    const publisher = decode(field(item, "source") ?? "") || feedName;
-    let title = decode(field(item, "title") ?? "");
+    const publisher = cleanUntrusted(decode(field(item, "source") ?? ""), 80) || feedName;
+    let title = cleanUntrusted(decode(field(item, "title") ?? ""));
     // Google News appends " - Publisher" to every title
     if (publisher !== feedName && title.endsWith(` - ${publisher}`)) title = title.slice(0, -(publisher.length + 3));
     const url = decode(field(item, "link") ?? "");

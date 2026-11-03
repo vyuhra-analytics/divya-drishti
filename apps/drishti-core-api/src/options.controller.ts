@@ -13,6 +13,7 @@ import {
   maxPain,
   mcxSession,
   mergeChains,
+  parseNseContracts,
   parseTvOptions,
   pcr,
   pickStrikes,
@@ -26,7 +27,9 @@ import {
 import { Db } from "./db";
 import { OiStore } from "./oi.store";
 
-const UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"];
+const NSE_UNDERLYINGS = ["NIFTY"]; // NSE index options: Upstox only (TradingView's scanner code here is MCX-specific), live premiums over the same feed
+const NSE_UNDERLYING_KEYS: Record<string, string> = { NIFTY: "NSE_INDEX|Nifty 50" };
+const UNDERLYINGS = ["CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI", ...NSE_UNDERLYINGS];
 const SOURCES = ["auto", "combined", "upstox", "tradingview"] as const;
 type Source = (typeof SOURCES)[number];
 const MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/MCX.json.gz";
@@ -48,6 +51,7 @@ const MASTER_TTL_MS = 6 * 3600_000;
 const EXPIRY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 let master: { at: number; contracts: OptionContract[] } | null = null;
+const nseMaster = new LruCache<{ at: number; contracts: OptionContract[] }>(4);
 // Keys are built from caller input, so every cache is capped (4 underlyings × 3 feeds × a few expiries is the real working set).
 const chains = new LruCache<{ at: number; chain: Chain }>(64);
 // each feed is cached on its own clock so a combined chain refreshes TradingView every second but asks Upstox every 3 s
@@ -61,6 +65,18 @@ export async function loadContracts(): Promise<OptionContract[]> {
   const rows: any[] = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await res.arrayBuffer()))));
   const contracts = rows.filter((r) => (r.instrument_type === "CE" || r.instrument_type === "PE") && UNDERLYINGS.includes(r.underlying_symbol)) as OptionContract[];
   master = { at: Date.now(), contracts };
+  return contracts;
+}
+
+/** The unexpired option contracts of an NSE index underlying from Upstox's option-contract API (about 1,700 for Nifty: weekly and monthly expiries), cached 6 hours. */
+async function loadNseContracts(underlying: string, headers: Record<string, string>): Promise<OptionContract[]> {
+  const hit = nseMaster.get(underlying);
+  if (hit && Date.now() - hit.at < MASTER_TTL_MS) return hit.contracts;
+  const res = await fetch(`https://api.upstox.com/v2/option/contract?instrument_key=${encodeURIComponent(NSE_UNDERLYING_KEYS[underlying])}`, { headers, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new ServiceUnavailableException(`Upstox option contracts ${res.status}`);
+  const contracts = parseNseContracts(await res.json());
+  if (!contracts.length) throw new ServiceUnavailableException(`Upstox lists no ${underlying} option contracts`);
+  nseMaster.set(underlying, { at: Date.now(), contracts });
   return contracts;
 }
 
@@ -137,7 +153,7 @@ export class OptionsController implements OnModuleInit, OnModuleDestroy {
     if (expiryParam !== undefined && !EXPIRY_FORMAT.test(expiryParam)) throw new BadRequestException("expiry must be YYYY-MM-DD");
     const each = strikesParam === undefined ? STRIKES_EACH_SIDE : Number(strikesParam);
     if (!Number.isInteger(each) || each < 4 || each > MAX_STRIKES_EACH_SIDE) throw new BadRequestException(`strikes must be a whole number from 4 to ${MAX_STRIKES_EACH_SIDE}`);
-    const source = sourceParam as Source;
+    const source = NSE_UNDERLYINGS.includes(underlying) ? "upstox" : (sourceParam as Source); // an NSE index has only the Upstox feed here
 
     const key = `${source}|${underlying}|${expiryParam ?? ""}|${each}`;
     const hit = chains.get(key);
@@ -224,13 +240,13 @@ export class OptionsController implements OnModuleInit, OnModuleDestroy {
       return (await res.json()) as any;
     };
 
-    const contracts = await loadContracts();
+    const contracts = NSE_UNDERLYINGS.includes(underlying) ? await loadNseContracts(underlying, headers) : await loadContracts();
     const expiries = expiriesOf(contracts, underlying, Date.now());
     const expiry = expiryParam && expiries.includes(expiryParam) ? expiryParam : expiries[0];
     if (!expiry) throw new ServiceUnavailableException("No option expiries found");
     const ofExpiry = contracts.filter((c) => c.underlying_symbol === underlying && expiryDate(c.expiry) === expiry);
 
-    // spot = the future these options settle against
+    // spot = the future these options settle against (for an index option, the index itself)
     const futureKey = ofExpiry[0].underlying_key;
     const spotQuote = byToken<UpstoxQuote>((await get(`https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodeURIComponent(futureKey)}`)).data);
     const spot = spotQuote.get(futureKey)?.last_price;

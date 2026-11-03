@@ -16,7 +16,7 @@ const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1
 const WINDOW_S = 47 * 3600;
 const LIVE_POLL_MS = 10_000;
 
-/** Buy-side bars above the zero line and sell-side bars below it: a histogram has one colour, so the two halves are two plots. */
+/** One bar per candle: the net delta (buy - sell), green above the zero line when buyers were ahead, red below it when sellers were; a histogram has one colour, so the two halves are two plots. */
 export const deltaPoints = (buckets: readonly FlowBucket[]): Tier2Point[] =>
   buckets.map((b) => ({ time: b.time, values: { up: b.delta > 0 ? b.delta : 0, down: b.delta < 0 ? b.delta : 0 } }));
 
@@ -63,8 +63,8 @@ export const flowStudies = (): Tier2Descriptor[] => [
     DELTA_ID,
     "Delta (estimated)",
     [
-      { key: "up", type: "histogram", title: "Buy volume", style: { color: "#26a69a" } as never },
-      { key: "down", type: "histogram", title: "Sell volume", style: { color: "#ef5350" } as never },
+      { key: "up", type: "histogram", title: "Delta above zero (buyers ahead)", style: { color: "#26a69a" } as never },
+      { key: "down", type: "histogram", title: "Delta below zero (sellers ahead)", style: { color: "#ef5350" } as never },
     ],
     deltaPoints,
   ),

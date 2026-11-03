@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "bun@1.4.3",
   "workspaces": ["apps/*", "packages/*"],
+  "overrides": { "multer": "^2.5.0" },
   "scripts": {
     "dev": "turbo run dev --filter=!drishti-desktop",
     "desktop": "bun run --cwd apps/drishti-desktop dev",
@@ -12,6 +13,8 @@
     "infra:up": "docker compose up -d --wait && bun --env-file=.env scripts/migrate.ts",
     "infra:down": "docker compose down",
     "db:migrate": "bun scripts/migrate.ts",
+    "family:seal": "bun --env-file=.env scripts/family-seal.ts",
+    "db:harden": "bun --env-file=.env scripts/db-harden.ts",
     "db:clean": "bun scripts/db-clean.ts",
     "fixtures:refresh": "bun --env-file=.env scripts/fixtures.ts",
     "gdelt:backfill": "bun --env-file=.env scripts/gdelt-backfill.ts",

@@ -1,3 +1,4 @@
+import { internalHeaders } from "../../../packages/shared/src/authNode";
 import { userAgentFor } from "@drishti/shared";
 import { mergeBars, normalizeBars, parseUpstoxCandles, validateBars, parseYahooCandles, TIMEFRAMES, type Bar, type Instrument, type MasterRow, type Timeframe } from "@drishti/shared";
 import type { RedisClient } from "bun";
@@ -52,7 +53,7 @@ const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
 export async function loadFronts(redis: RedisClient): Promise<Record<string, MasterRow> | null> {
   const cached = await redis.get("fronts").catch(() => null);
   if (cached) return JSON.parse(cached);
-  const fromStream = await fetch(`${STREAM}/fronts`, { signal: AbortSignal.timeout(3000) })
+  const fromStream = await fetch(`${STREAM}/fronts`, { headers: internalHeaders("ui"), signal: AbortSignal.timeout(3000) })
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null);
   return fromStream && Object.keys(fromStream).length ? fromStream : null;

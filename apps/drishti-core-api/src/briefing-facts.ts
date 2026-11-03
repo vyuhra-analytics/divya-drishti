@@ -1,3 +1,4 @@
+import { internalHeaders } from "../../../packages/shared/src/authNode";
 import { agreement, buildContext, chainProvenance, buildRecap, completedBars, freshness, fxSession, instrument, mcxSession, nseSession, nymexSession, recapExtras, SYMBOLS, TIMEFRAMES, TOPIC_TAGS, type Bar, type CotRow, type CurveSummary, type EiaSummary, type BriefingContext, type CalEvent, type Chain, type DayOverride, type NewsItem, type Quote, type Timeframe } from "@drishti/shared";
 
 export interface StreamHealth {
@@ -12,8 +13,8 @@ const STREAM = `http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}`;
 
 /** The real sources: this API's own routes over loopback, and the stream's health. */
 export const liveSources: Sources = {
-  api: (path) => fetch(`http://127.0.0.1:${API_PORT}${path}`, { signal: AbortSignal.timeout(15_000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
-  health: () => fetch(`${STREAM}/health`, { signal: AbortSignal.timeout(4000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
+  api: (path) => fetch(`http://127.0.0.1:${API_PORT}${path}`, { headers: internalHeaders("ui"), signal: AbortSignal.timeout(15_000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
+  health: () => fetch(`${STREAM}/health`, { headers: internalHeaders("ui"), signal: AbortSignal.timeout(4000) }).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) as never,
   now: Date.now,
 };
 

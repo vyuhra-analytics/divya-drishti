@@ -144,16 +144,15 @@ export const PRESETS: Preset[] = [
   {
     key: "morning",
     name: "Morning",
-    hint: "The NSE morning: the Nifty 50 five-minute chart, its quote and the watchlist beside it, and the India news and the day's calendar under them",
+    hint: "The NSE morning: the Nifty 50 five-minute chart, its quote and the India news beside it, and the Nifty options chain under them",
     build: () =>
       snapshot(
         "morning",
         [
-          ["chart-1", "advchart", "amber", "NSE:NIFTY", "5m", 0, 0, 7, 17],
-          ["quote-1", "quote", "amber", "NSE:NIFTY", "5m", 7, 0, 5, 9],
-          ["watchlist-1", "watchlist", null, "NSE:NIFTY", "5m", 7, 9, 5, 8],
-          ["news-1", "news", "amber", "NSE:NIFTY", "5m", 0, 17, 5, 11],
-          ["calendar-1", "calendar", null, "NSE:NIFTY", "5m", 5, 17, 7, 11],
+          ["chart-1", "advchart", "amber", "NSE:NIFTY", "5m", 0, 0, 6, 12],
+          ["quote-1", "quote", "amber", "NSE:NIFTY", "5m", 6, 0, 3, 12],
+          ["news-1", "news", "amber", "NSE:NIFTY", "5m", 9, 0, 3, 12],
+          ["optionchain-1", "optionchain", "amber", "NSE:NIFTY", "5m", 0, 12, 12, 16],
         ],
         { amber: "NSE:NIFTY" }, // this desk's amber link group is Nifty, not crude: every linked panel on it follows the index
       ),

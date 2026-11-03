@@ -14,7 +14,11 @@ import {
   type MarketStatus,
   optionLagMs,
   withStatus,
+  allowedHosts,
   allowedOrigins,
+  guard,
+  tokenKind,
+  TOKEN_HEADER,
   changedFronts,
   REDIS_OPTIONS,
   INSTRUMENTS,
@@ -49,6 +53,7 @@ import { startTradingView } from "./providers/tradingview";
 import { startYahoo } from "./providers/yahoo";
 import { demoStats, startDemo } from "./providers/demo";
 import { startUpstox, type UpstoxTarget } from "./providers/upstox/upstox";
+import { internalHeaders, loadTokens } from "../../../packages/shared/src/authNode";
 import { startFeedRecorder } from "./feedRecorder";
 import { startMinuteLog, startUpstoxCapture } from "./upstoxCapture";
 import { archiveStats, currentNews, newsStats, startNews } from "./news";
@@ -57,6 +62,11 @@ const PORT = Number(process.env.STREAM_PORT ?? 3002);
 // Localhost only by default (see drishti-core-api main.ts); HOST=0.0.0.0 to expose deliberately.
 const HOST = process.env.HOST ?? "127.0.0.1";
 const ORIGINS = allowedOrigins(process.env.WEB_ORIGINS);
+const HOSTS = allowedHosts(process.env.ALLOWED_HOSTS);
+if (!["127.0.0.1", "localhost", "::1"].includes(HOST)) console.warn(`HOST=${HOST}: the stream is reachable from other machines. The token still protects it, but add ALLOWED_HOSTS for the names you use and keep the token secret.`);
+const TOKENS = loadTokens(); // null only with DRISHTI_AUTH=off
+if (!TOKENS) console.warn("DRISHTI_AUTH=off: the stream answers any local caller without a token. Use this only to debug.");
+const API_HEADERS = internalHeaders("ui");
 const EXTRA_TOPICS = new Set<string>(["news", "alerts", "paper", "briefing", "options"]);
 const isTopic = (t: string) => EXTRA_TOPICS.has(t) || SYMBOLS.includes(t); // SYMBOLS grows when an instrument is added in Settings
 const HEARTBEAT_MS = 15_000; // clients treat ~3 missed heartbeats as a dead socket and reconnect
@@ -106,7 +116,7 @@ let buffer: Tick[] = [];
 // ---- live option quotes: clients name the contracts they show (`watch`), the Upstox feed carries them, and every tick is published on topic "options"
 let optionKeys = new Set<string>(); // every unexpired option on our MCX underlyings, from the public master (empty until it loads: any well-formed key is accepted then)
 const optionLatest = new Map<string, OptionQuote>(); // the newest priced quote of every option contract the stream watches: paper option trading fills and marks on it
-const optionWatch = new OptionWatch((k) => optionKeys.size === 0 || optionKeys.has(k));
+const optionWatch = new OptionWatch((k) => k.startsWith("NSE_FO|") || optionKeys.size === 0 || optionKeys.has(k)); // NSE (Nifty) options: any well-formed key, the 40-contract cap bounds it
 const optionLag = new LagWindow();
 const lastTrade = new Map<string, number>(); // per contract: the exchange trade time of the previous message, so lag is measured only on a NEW trade (a quiet strike repeats its old trade time)
 const optionStats = { messages: 0, lastAt: null as number | null };
@@ -232,14 +242,14 @@ function upstoxTargets() {
 // ---- server-side paper trading (simulated): the engine lives here because the live quotes do ----
 let mcxDay: DayOverride | undefined; // today's official MCX window from Upstox, via the API (holidays, special sessions); the weekday rule until it arrives
 const refreshMcxDay = () =>
-  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/sessions`, { signal: AbortSignal.timeout(5000) })
+  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/sessions`, { headers: API_HEADERS, signal: AbortSignal.timeout(5000) })
     .then(async (r) => void (mcxDay = r.ok ? ((await r.json()) as { mcx: DayOverride | null }).mcx ?? undefined : undefined))
     .catch(() => undefined);
 void refreshMcxDay();
 setInterval(() => void refreshMcxDay(), 30 * 60_000);
 let mcxStatus: MarketStatus | undefined; // the exchange's own status from Upstox, via the API (halts, early closes); the rules decide when it is unknown or old
 const refreshMcxStatus = () =>
-  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/status`, { signal: AbortSignal.timeout(5000) })
+  fetch(`http://127.0.0.1:${process.env.API_PORT ?? 3001}/market/status`, { headers: API_HEADERS, signal: AbortSignal.timeout(5000) })
     .then(async (r) => void (mcxStatus = r.ok ? ((await r.json()) as { mcx: MarketStatus | null }).mcx ?? undefined : undefined))
     .then(() => upstoxCapture?.logStatus("MCX", mcxStatus))
     .catch(() => void (mcxStatus = undefined));
@@ -334,6 +344,16 @@ void loadCustomInstruments().catch((e) => console.warn(`no added instruments loa
 setInterval(() => void loadCustomInstruments().catch(() => undefined), 60_000);
 
 const app = new Elysia()
+  // access control, before any route (and before the WebSocket upgrade): our own host names, an allowed origin or none, and the token. A browser cannot set headers on a
+  // WebSocket, so that one path also takes the token as a query parameter (the web app's dev proxy adds the header instead and the page never holds the secret).
+  .onRequest(({ request }) => {
+    const url = new URL(request.url);
+    const verdict = guard(
+      { method: request.method, path: url.pathname, host: request.headers.get("host"), origin: request.headers.get("origin"), token: request.headers.get(TOKEN_HEADER) ?? (url.pathname === "/ws" ? url.searchParams.get("token") : null) },
+      { hosts: HOSTS, origins: ORIGINS, tokens: TOKENS },
+    );
+    if (!verdict.ok) return new Response(JSON.stringify({ error: verdict.message }), { status: verdict.status, headers: { "content-type": "application/json" } });
+  })
   .use(
     instrumentRoutes({
       origins: ORIGINS,
@@ -360,7 +380,7 @@ const app = new Elysia()
     app.server?.publish("briefing", JSON.stringify({ type: "briefing", id: b.id, symbol: b.symbol, bias: b.bias, verified: b.verified, total: b.total, wrong: b.wrong, at: Date.now() }));
     return { ok: true };
   })
-  .use(paperRoutes({ engine: paperEngine, store: paperStore, quote: (s) => latest.get(s), origins: ORIGINS, limiter: paperLimiter, publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })) }))
+  .use(paperRoutes({ engine: paperEngine, store: paperStore, quote: (s) => latest.get(s), origins: ORIGINS, limiter: paperLimiter, actor: (req) => (TOKENS ? (tokenKind(req.headers.get(TOKEN_HEADER), TOKENS) === "mcp" ? "mcp" : "ui") : req.headers.get("x-drishti-actor") === "mcp" ? "mcp" : "ui"), publish: (e) => void app.server?.publish("paper", JSON.stringify({ type: "paper", ...e, at: Date.now() })) }))
   // traded MCX contracts (instrument keys) for drishti-core-api's Upstox history when Redis isn't available
   .get("/fronts", () => Object.fromEntries(fronts))
   // preflight for the JSON POST below

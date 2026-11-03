@@ -1,3 +1,4 @@
+import { loadTokens } from "../../../packages/shared/src/authNode";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -10,6 +11,8 @@ export interface McpConfig {
   write: boolean;
   /** may agents submit a written briefing to the app's Briefing panel? Off unless MCP_BRIEFING_WRITE=1 */
   briefingWrite: boolean;
+  /** the agent access token (`mcp`): the services decide who is calling from it, so the agent caps cannot be dodged by leaving it out. Empty only with access control off. */
+  token?: string;
   /** the paper account used when a tool call does not name one */
   account: string;
   fetch?: typeof fetch;
@@ -59,7 +62,7 @@ export function createServer(cfg: McpConfig) {
   async function call(base: string, path: string, method = "GET", body?: unknown, actor = false) {
     const res = await f(`${base}${path}`, {
       method,
-      headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...(actor ? { "x-drishti-actor": "mcp" } : {}) },
+      headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...(cfg.token ? { "x-drishti-token": cfg.token } : {}), ...(actor ? { "x-drishti-actor": "mcp" } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(20_000),
     }).catch(() => null);
@@ -507,5 +510,6 @@ export function configFromEnv(env: Record<string, string | undefined> = process.
     write: env.MCP_PAPER_WRITE === "1",
     briefingWrite: env.MCP_BRIEFING_WRITE === "1",
     account: env.MCP_PAPER_ACCOUNT?.trim() || "main",
+    token: loadTokens(env)?.mcp,
   };
 }

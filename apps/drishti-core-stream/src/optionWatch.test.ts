@@ -23,9 +23,9 @@ test("a valid contract is watched, repeated requests extend it and do not notify
   expect(changes).toBe(3);
 });
 
-test("only Upstox MCX derivative keys we know are accepted; the rest is refused before it costs a subscription", () => {
+test("only Upstox MCX and NSE derivative keys we know are accepted; the rest is refused before it costs a subscription", () => {
   const w = new OptionWatch((k) => k === key(1), () => 0);
-  expect(w.request([key(1), key(2), "NSE_FO|12345", "MCX_FO|1", "x; drop", 5, null, { a: 1 }])).toEqual({ accepted: 1, refused: 7 });
+  expect(w.request([key(1), key(2), "NSE_FO|12345", "MCX_FO|1", "x; drop", 5, null, { a: 1 }])).toEqual({ accepted: 1, refused: 7 }); // NSE_FO|12345 is well formed but not "known" by this rule
   expect(w.wanted()).toEqual([key(1)]);
   expect(w.request("not a list")).toEqual({ accepted: 0, refused: 0 });
   expect(w.request(undefined)).toEqual({ accepted: 0, refused: 0 });
@@ -33,8 +33,8 @@ test("only Upstox MCX derivative keys we know are accepted; the rest is refused 
 
 test("with the contract list not yet loaded (every key counts as known) a malformed key is still refused by the format check", () => {
   const w = new OptionWatch(all, () => 0);
-  expect(w.request(["NSE_FO|12345", "x; drop", "MCX_FO|1", `MCX_FO|${123456},MCX_FO|1`, key(5)])).toEqual({ accepted: 1, refused: 4 });
-  expect(w.wanted()).toEqual([key(5)]);
+  expect(w.request(["NSE_FO|12345", "x; drop", "MCX_FO|1", `MCX_FO|${123456},MCX_FO|1`, key(5), "NSE_FO|1", "NSE_EQ|123"])).toEqual({ accepted: 2, refused: 5 }); // an NSE_FO key is well formed: Nifty options are watched too
+  expect(w.wanted()).toEqual(["NSE_FO|12345", key(5)]);
 });
 
 test("one request takes at most 24 keys and the whole watch list at most 40", () => {

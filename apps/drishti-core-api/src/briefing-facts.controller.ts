@@ -1,3 +1,4 @@
+import { internalHeaders } from "../../../packages/shared/src/authNode";
 import { BadRequestException, Controller, Get, GoneException, HttpException, Post, Body, Query, ServiceUnavailableException } from "@nestjs/common";
 import { AGENT_BRIEFING_INSTRUCTIONS, BRIEFING_SYSTEM, checkBriefing, citableFields, instrument, LruCache, parseSubmission, RateLimiter, TIMEFRAMES, type BriefingContext, type BriefingResult, type GroundingReport } from "@drishti/shared";
 import { Db } from "./db";
@@ -32,7 +33,7 @@ export class BriefingFactsController {
   sources: Sources = liveSources;
   /** tells the stream so open browsers show a notice; tests replace it */
   announce: (b: { id: string; symbol: string; bias: string; verified: number; total: number; wrong: number }) => Promise<void> = (b) =>
-    fetch(`${STREAM}/briefings/announce`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), signal: AbortSignal.timeout(3000) }).then(() => undefined, () => undefined);
+    fetch(`${STREAM}/briefings/announce`, { method: "POST", headers: { "Content-Type": "application/json", ...internalHeaders("ui") }, body: JSON.stringify(b), signal: AbortSignal.timeout(3000) }).then(() => undefined, () => undefined);
 
   @Get("context")
   async context(@Query("symbol") symbol?: string, @Query("tf") tfParam?: string) {

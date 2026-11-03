@@ -2,7 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import type { FlowBucket } from "@drishti/shared";
 import { BOOK_ID, bookPoints, DELTA_ID, deltaPoints, flowStudies, loadFlow, registerFlowStudies } from "./advFlow";
 
-const bucket = (time: number, delta: number, imbalance?: number): FlowBucket => ({ time, buy: Math.max(delta, 0), sell: Math.max(-delta, 0), unclassified: 0, volume: Math.abs(delta), delta, cumDelta: 0, imbalance, msgs: 100 });
+const bucket = (time: number, delta: number, imbalance?: number): FlowBucket => ({ time, buy: Math.max(delta, 0), sell: Math.max(-delta, 0), unclassified: 0, exact: 0, volume: Math.abs(delta), delta, cumDelta: 0, imbalance, msgs: 100 });
 
 afterEach(() => {
   globalThis.fetch = fetch;

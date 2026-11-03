@@ -15,9 +15,11 @@ export function paperRoutes(opts: {
   origins: string[];
   limiter: RateLimiter;
   publish(e: { account: string; event: "updated"; actor: string; text: string }): void;
+  /** who is calling, decided by the server from the access token; without it the legacy `x-drishti-actor` header is read (tests, and access control switched off) */
+  actor?(req: Request): Actor;
 }) {
   const { engine, store } = opts;
-  const actorOf = (req: Request): Actor => (req.headers.get("x-drishti-actor") === "mcp" ? "mcp" : "ui");
+  const actorOf = (req: Request): Actor => opts.actor?.(req) ?? (req.headers.get("x-drishti-actor") === "mcp" ? "mcp" : "ui");
   const reply = (set: { status?: number | string }, r: Result<any>) => {
     if (r.ok) {
       const { ok: _ok, ...rest } = r;
@@ -48,7 +50,7 @@ export function paperRoutes(opts: {
       if (origin && isAllowedOrigin(origin, opts.origins)) {
         set.headers["access-control-allow-origin"] = origin;
         set.headers["access-control-allow-methods"] = "GET,POST,PATCH,PUT,DELETE";
-        set.headers["access-control-allow-headers"] = "content-type,x-drishti-actor";
+        set.headers["access-control-allow-headers"] = "content-type,x-drishti-actor,x-drishti-token";
       }
       set.status = 204;
     })

@@ -1,3 +1,4 @@
+import { internalHeaders } from "../../../packages/shared/src/authNode";
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { INSTRUMENTS, parseCustomInstrument, setCustomInstruments, type Instrument } from "@drishti/shared";
 
@@ -23,7 +24,7 @@ export class InstrumentSync implements OnModuleInit, OnModuleDestroy {
 
   async sync() {
     try {
-      const res = await fetch(`http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}/instruments`, { signal: AbortSignal.timeout(4000) });
+      const res = await fetch(`http://127.0.0.1:${process.env.STREAM_PORT ?? 3002}/instruments`, { headers: internalHeaders("ui"), signal: AbortSignal.timeout(4000) });
       if (!res.ok) return;
       const { instruments } = (await res.json()) as { instruments: (Instrument & { custom?: boolean })[] };
       const accepted: Instrument[] = [];

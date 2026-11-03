@@ -3,6 +3,7 @@
 //   bun run scripts/po3-count.ts [--symbol=NYMEX:CL] [--tf=5m] [--api=http://127.0.0.1:3001]
 // MCX has no Asian range (it trades the last half hour of that window), so the symbol should be a NYMEX one. Yahoo serves about 60 days of 5m bars, so the
 // counts are small: they say how often the setup appears, not whether it works.
+import "./authFetch";
 import { po3Outcome, po3Stats, po3Sweeps } from "../packages/shared/src";
 
 const arg = (n: string, d: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=")[1] ?? d;

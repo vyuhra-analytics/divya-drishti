@@ -148,7 +148,7 @@ test("each desk holds what its question needs", () => {
   expect(types("macro")).toEqual(expect.arrayContaining(["chokepoints", "curve", "tv", "news"]));
   expect(types("reportday")).toEqual(expect.arrayContaining(["advchart", "reportday"]));
   expect(types("usib")).toEqual(expect.arrayContaining(["advchart", "usib"]));
-  expect(types("morning")).toEqual(expect.arrayContaining(["advchart", "quote", "watchlist", "news", "calendar"]));
+  expect(types("morning")).toEqual(expect.arrayContaining(["advchart", "quote", "news", "optionchain"]));
 });
 
 test("the Morning desk follows the Nifty 50 index, not crude", () => {

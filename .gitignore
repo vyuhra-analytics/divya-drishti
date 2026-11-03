@@ -2,6 +2,10 @@ node_modules/
 dist/
 .turbo/
 .env
+# access tokens the services create on first start (see packages/shared/src/authNode.ts)
+.drishti-tokens.json
+.drishti-family.key
+.drishti-app-db-url
 *.log
 apps/drishti-desktop/src-tauri/target/
 apps/drishti-desktop/src-tauri/gen/

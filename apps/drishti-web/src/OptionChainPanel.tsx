@@ -52,7 +52,8 @@ const FEED_NOTE: Record<string, string> = {
 export function OptionChainWidget({ widget }: { widget: Widget }) {
   const symbol = useWidgetSymbol(widget);
   const inst = instrument(symbol);
-  const underlying = inst?.upstox ?? "CRUDEOIL";
+  const nse = inst?.exchange === "NSE"; // Nifty options: Upstox only, and no recorded snapshots to look back at
+  const underlying = inst?.upstox ?? (nse ? inst!.symbol.split(":")[1] : "CRUDEOIL");
   const locale = useSettings((s) => s.locale);
   const [expiry, setExpiry] = useState("");
   const [feed, setFeed] = useState<ChainFeed>("auto");
@@ -63,7 +64,7 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
   const [asOf, setAsOf] = useState<number | null>(null);
   const clock = useClock();
   const fresh = useFreshness(symbol);
-  const { chain: polled, error: liveError, reload } = useChain(underlying, expiry, feed, strikes, asOf === null);
+  const { chain: polled, error: liveError, reload } = useChain(underlying, expiry, nse ? "upstox" : feed, strikes, asOf === null);
   const { chain: liveChain, live } = useLiveChain(polled);
   const recorded = useRecordedChain(underlying, expiry, asOf, strikes);
   const chain = asOf === null ? liveChain : recorded.chain;
@@ -230,14 +231,14 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
             Spot <b>{spot === undefined ? "—" : price(spot)}</b>
           </span>
         </span>
-        {asOf === null && (
+        {asOf === null && !nse && (
           <Select aria-label="Options feed" value={feed} onChange={(e) => setFeed(e.target.value as ChainFeed)} title="Where the chain comes from">
             <option value="auto">Feed: TradingView + Upstox</option>
             <option value="upstox">Upstox</option>
             <option value="tradingview">TradingView</option>
           </Select>
         )}
-        <span className="ocx-history" title="Look at the chain as we recorded it: a snapshot of every contract is kept every 15 minutes while MCX is open">
+        {!nse && <span className="ocx-history" title="Look at the chain as we recorded it: a snapshot of every contract is kept every 15 minutes while MCX is open">
           <Input
             type="datetime-local"
             aria-label="Show the chain as recorded at"
@@ -260,7 +261,7 @@ export function OptionChainWidget({ widget }: { widget: Widget }) {
               </Button>
             </>
           )}
-        </span>
+        </span>}
         {asOf !== null && chain.asOf && (
           <span className="badge src-recorded" title="Read back from our stored snapshots, not a live feed">
             RECORDED {clock.stamp(chain.asOf)}

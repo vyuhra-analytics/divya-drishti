@@ -94,6 +94,8 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
   const status = useStore((s) => s.status);
   const [api, setApi] = useState(savedApi);
   const [stream, setStream] = useState(savedStream);
+  const savedToken = useSettings((s) => s.accessToken);
+  const [accessToken, setAccessToken] = useState(savedToken);
   const apiErr = validateUrl(api, ["http:", "https:"]);
   const streamErr = validateUrl(stream, ["ws:", "wss:"]);
 
@@ -107,13 +109,16 @@ function Connection({ savedApi, savedStream }: { savedApi: string; savedStream: 
         <Input value={stream} placeholder="ws://localhost:3002/ws" onChange={(e) => setStream(e.target.value)} />
       </Field>
       {streamErr && <p className="field-error wide">{streamErr}</p>}
+      <Field label="Access token" hint="only for a build that talks to the services directly; the dev proxy adds it itself. Find it in .drishti-tokens.json (the ui value)">
+        <Input type="password" autoComplete="off" value={accessToken} placeholder="empty = not needed" onChange={(e) => setAccessToken(e.target.value)} />
+      </Field>
       <div className="field wide">
         <span className={`status ${status}`}>● {status}</span>
         <Button
           variant="default"
           disabled={!!apiErr || !!streamErr}
           onClick={() => {
-            set({ apiUrl: api.trim(), streamUrl: stream.trim() });
+            set({ apiUrl: api.trim(), streamUrl: stream.trim(), accessToken: accessToken.trim() });
             reconnect();
           }}
         >

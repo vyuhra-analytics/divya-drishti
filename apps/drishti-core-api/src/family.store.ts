@@ -1,4 +1,5 @@
-import type { FamilyAccount, FamilyMember, ImportRecord } from "@drishti/shared";
+import { isSealed, seal, unseal, type FamilyAccount, type FamilyMember, type ImportRecord } from "@drishti/shared";
+import { loadFamilyKey } from "../../../packages/shared/src/authNode";
 import type { Db } from "./db";
 import type { FamilyStore } from "./family.service";
 
@@ -17,10 +18,15 @@ export class PgFamilyStore implements FamilyStore {
   }
   async imports() {
     const rows = (await this.sql`SELECT id, account_id, kind, segment, to_char(period_from, 'YYYY-MM-DD') AS period_from, to_char(period_to, 'YYYY-MM-DD') AS period_to, file_name, imported_at, payload FROM family_imports ORDER BY id`) as any[];
-    return rows.map((r) => {
-      const p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload;
+    return Promise.all(rows.map(async (r) => {
+      let p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload;
+      if (isSealed(p)) {
+        const key = loadFamilyKey();
+        if (!key) throw new Error("the family records are sealed but no key is available (FAMILY_KEY or .drishti-family.key)");
+        p = await unseal(p, key);
+      }
       return { id: r.id, accountId: r.account_id, kind: r.kind, segment: r.segment, periodFrom: r.period_from, periodTo: r.period_to, fileName: r.file_name, importedAt: new Date(r.imported_at).toISOString(), summary: p.summary, lines: p.lines ?? [], charges: p.charges ?? [], fills: p.fills ?? [], problems: p.problems ?? [] } as ImportRecord;
-    });
+    }));
   }
   async addMember(m: Omit<FamilyMember, "id">) {
     const [r] = (await this.sql`INSERT INTO family_members (nickname, relation, hidden, note) VALUES (${m.nickname}, ${m.relation}, ${m.hidden}, ${m.note}) RETURNING id, nickname, relation, hidden, note`) as FamilyMember[];
@@ -51,7 +57,9 @@ export class PgFamilyStore implements FamilyStore {
     await this.sql`DELETE FROM family_accounts WHERE id = ${id}`;
   }
   async addImport(r: Omit<ImportRecord, "id" | "importedAt"> & { fileHash: string }) {
-    const payload = JSON.stringify({ summary: r.summary, lines: r.lines, charges: r.charges, fills: r.fills, problems: r.problems });
+    const content = { summary: r.summary, lines: r.lines, charges: r.charges, fills: r.fills, problems: r.problems };
+    const key = loadFamilyKey(); // sealing is on once a key exists; before that the content is stored as it always was
+    const payload = JSON.stringify(key ? await seal(content, key) : content);
     const [row] = (await this.sql`INSERT INTO family_imports (account_id, kind, segment, period_from, period_to, file_name, file_hash, payload)
       VALUES (${r.accountId}, ${r.kind}, ${r.segment}, ${r.periodFrom}, ${r.periodTo}, ${r.fileName}, ${r.fileHash}, ${payload}::text::jsonb) RETURNING id, imported_at`) as { id: number; imported_at: string }[];
     const { fileHash: _h, ...rest } = r;

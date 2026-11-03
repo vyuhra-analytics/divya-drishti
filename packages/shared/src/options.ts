@@ -118,6 +118,25 @@ export function applyOiBaseline(chain: Chain, base: Map<string, OiBaseline>): Ch
 
 export const expiryDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
+/**
+ * Upstox's option-contract list for one underlying (`GET /v2/option/contract?instrument_key=NSE_INDEX|Nifty 50`) as our `OptionContract`s. Its `expiry` is a date
+ * (YYYY-MM-DD), which becomes that date's UTC midnight so `expiryDate` gives it back and the contract stays listed through its expiry day. Anything that
+ * is not a call or put with a key and a strike is left out.
+ */
+export function parseNseContracts(json: unknown): OptionContract[] {
+  const rows = (json as { data?: unknown })?.data;
+  if (!Array.isArray(rows)) return [];
+  const out: OptionContract[] = [];
+  for (const r of rows as (Record<string, unknown> | null)[]) {
+    if (!r || typeof r !== "object") continue;
+    const type = r.instrument_type;
+    const day = typeof r.expiry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.expiry) ? Date.parse(`${r.expiry}T00:00:00Z`) : NaN;
+    if ((type !== "CE" && type !== "PE") || typeof r.instrument_key !== "string" || typeof r.underlying_key !== "string" || typeof r.underlying_symbol !== "string" || typeof r.strike_price !== "number" || !Number.isFinite(day)) continue;
+    out.push({ instrument_key: r.instrument_key, trading_symbol: String(r.trading_symbol ?? ""), instrument_type: type, underlying_symbol: r.underlying_symbol, underlying_key: r.underlying_key, strike_price: r.strike_price, expiry: day, ...(typeof r.lot_size === "number" ? { lot_size: r.lot_size } : {}) });
+  }
+  return out;
+}
+
 /** Distinct expiries (YYYY-MM-DD) of the underlying that haven't passed, soonest first. */
 export function expiriesOf(contracts: OptionContract[], underlying: string, now: number): string[] {
   const ms = [...new Set(contracts.filter((c) => c.underlying_symbol === underlying && c.expiry + 86_400_000 > now).map((c) => c.expiry))];

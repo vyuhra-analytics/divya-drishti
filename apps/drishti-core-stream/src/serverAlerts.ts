@@ -1,4 +1,5 @@
 import type { SQL } from "bun";
+import { internalHeaders } from "../../../packages/shared/src/authNode";
 import { buildNotifyConfig, deliver, RateLimiter, scrub, ServerAlertEngine, type Alert, type CalEvent, type NewsItem } from "@drishti/shared";
 
 const REFRESH_MS = 10_000; // pick up added, deleted and re-armed alerts
@@ -42,7 +43,7 @@ export function startServerAlerts(sql: SQL, publish: (json: string) => void, quo
     events: async () => {
       if (Date.now() - events.at < 10 * 60_000) return events.list;
       try {
-        const res = await fetch(`${API}/calendar?days=2`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(`${API}/calendar?days=2`, { headers: internalHeaders("ui"), signal: AbortSignal.timeout(8000) });
         if (res.ok) events = { at: Date.now(), list: (await res.json()) as CalEvent[] };
       } catch {
         /* API not up yet: release alerts wait */

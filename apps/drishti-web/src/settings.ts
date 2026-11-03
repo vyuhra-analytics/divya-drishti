@@ -38,6 +38,8 @@ export interface Settings {
   // connection ("" = use env / dev proxy default)
   apiUrl: string;
   streamUrl: string;
+  /** the access token for a build that talks to the services directly (the dev proxy adds it itself); see access.ts */
+  accessToken: string;
 }
 
 export const DEFAULTS: Settings = {
@@ -60,6 +62,7 @@ export const DEFAULTS: Settings = {
   tvChannels: [],
   apiUrl: "",
   streamUrl: "",
+  accessToken: "",
 };
 
 interface SettingsState extends Settings {
