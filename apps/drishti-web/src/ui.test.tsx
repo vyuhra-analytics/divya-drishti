@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { NewsItem } from "@drishti/shared";
 import { PanelBoundary } from "./PanelBoundary";
 import { NewsWidget } from "./NewsWidget";
@@ -428,4 +428,29 @@ test("the Quote panel draws the order book from the depth levels and shows the l
   useStore.setState({ quotes: { CRUDEOIL: { symbol: "CRUDEOIL", price: 9123, prevClose: 9000, time: Date.now(), delayedBy: 0, source: "upstox", bid: 9122, ask: 9124 } as never } });
   render(<QuoteWidget widget={widget("quote")} />);
   expect(screen.queryByRole("table", { name: "Order book depth" })).toBeNull();
+});
+
+test("MarketStateWidget reads the live quote against the bars, shows disagreement as mixed and warns before a release", async () => {
+  const nowSec = Math.floor(Date.now() / 300_000) * 300;
+  const bars = Array.from({ length: 60 }, (_, i) => {
+    const c = 9500 + (i % 2 ? 2 : -2);
+    return { time: nowSec - (61 - i) * 300, open: c, high: c + 5, low: c - 5, close: c, volume: 50 };
+  });
+  const event = { id: "e1", title: "EIA crude inventories", at: Date.now() + 10 * 60_000, kind: "release", impact: "high", relevance: ["crude"] };
+  useStore.setState({ quotes: { "MCX:CRUDEOIL": { symbol: "MCX:CRUDEOIL", price: 9520, time: Date.now(), source: "upstox", delayedBy: 0, atp: 9500, high: 9525, low: 9480, bidQty: 100, askQty: 500 } as never } });
+  globalThis.fetch = mock(async (url: string) => {
+    const u = String(url);
+    return { ok: !u.includes("/options"), status: u.includes("/options") ? 503 : 200, json: async () => (u.includes("/bars") ? bars : u.includes("/calendar") ? [event] : {}) };
+  }) as never;
+  const { MarketStateWidget } = require("./MarketStatePanel") as typeof import("./MarketStatePanel");
+  render(<MarketStateWidget widget={{ ...widget("marketstate"), symbol: "MCX:CRUDEOIL" }} />);
+  await waitFor(() => expect(screen.getByText("Against VWAP")).toBeTruthy());
+  const row = (label: string) => screen.getByText(label).closest("tr")!;
+  expect(row("Against VWAP").className).toContain("mstate-up"); // 20 points over the exchange's average price, beyond 0.1 ATR
+  expect(row("Book (top levels)").className).toContain("mstate-down"); // five times more resting size on the ask
+  expect(document.querySelector(".mstate-sum")!.textContent).toContain("disagree");
+  await waitFor(() => expect(screen.getByText("EIA crude inventories")).toBeTruthy());
+  expect(row("EIA crude inventories").className).toContain("mstate-warn");
+  expect(document.querySelector(".mstate-sum")!.textContent).toContain("stand aside");
+  expect(document.body.textContent).toContain("not a forecast");
 });

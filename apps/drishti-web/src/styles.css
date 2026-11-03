@@ -967,3 +967,24 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .drv-unit .drv-delay { display: block; margin-left: 0; }
 .drv-legs { font-size: 11px; }
 .drv-legs th, .drv-legs td { padding: 3px 3px; }
+
+/* Market state panel: one row per reading, a mark for which way it leans */
+.mstate { height: 100%; overflow: auto; padding: 8px 12px 10px; font-size: 12px; line-height: 1.4; }
+.mstate-stale { opacity: 0.6; }
+.mstate-sum { margin: 0 0 6px; padding: 6px 8px; border-left: 3px solid var(--muted); background: color-mix(in srgb, var(--muted) 10%, transparent); }
+.mstate-sum.aligned-up { border-left-color: var(--up); }
+.mstate-sum.aligned-down { border-left-color: var(--down); }
+.mstate-sum.mixed { border-left-color: var(--accent-fill); }
+.mstate-caveat { margin: 0 0 6px; color: var(--warn, #d9a441); }
+.mstate-group h2 { margin: 8px 0 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.mstate-group table { width: 100%; border-collapse: collapse; }
+.mstate-group th { text-align: left; font-weight: 400; padding: 2px 4px; }
+.mstate-group td { padding: 2px 4px; }
+.mstate-mark { width: 1.2em; text-align: center; }
+.mstate-val { text-align: right; white-space: nowrap; }
+.mstate-up .mstate-mark, .mstate-up .mstate-val { color: var(--up); }
+.mstate-down .mstate-mark, .mstate-down .mstate-val { color: var(--down); }
+.mstate-neutral .mstate-mark { color: var(--muted); }
+.mstate-na { color: var(--muted); }
+.mstate-warn .mstate-val, .mstate-warn .mstate-mark { color: var(--warn, #d9a441); font-weight: 600; }
+.mstate-foot { margin: 8px 0 0; font-size: 11px; }
