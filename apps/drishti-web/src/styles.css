@@ -988,3 +988,24 @@ h1.brand { display: inline-flex; align-items: center; gap: 8px; }
 .mstate-na { color: var(--muted); }
 .mstate-warn .mstate-val, .mstate-warn .mstate-mark { color: var(--warn, #d9a441); font-weight: 600; }
 .mstate-foot { margin: 8px 0 0; font-size: 11px; }
+
+/* Trend setup panel: the checklist in order, one mark per step */
+.tsetup { height: 100%; overflow: auto; padding: 8px 12px 10px; font-size: 12px; line-height: 1.4; }
+.tsetup-verdict { margin: 0 0 6px; padding: 6px 8px; border-left: 3px solid var(--muted); background: color-mix(in srgb, var(--muted) 10%, transparent); font-weight: 600; }
+.tsetup-verdict.tsetup-ready { border-left-color: var(--up); }
+.tsetup-verdict.tsetup-no-trade { border-left-color: var(--down); }
+.tsetup-verdict.tsetup-wait { border-left-color: var(--accent-fill); }
+.tsetup-note { margin: 0 0 6px; color: var(--warn, #d9a441); }
+.tsetup-steps { list-style: none; margin: 0; padding: 0; }
+.tsetup-steps li { display: grid; grid-template-columns: 1.4em 1fr; gap: 4px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.tsetup-steps b { display: block; font-weight: 600; }
+.tsetup-detail { color: var(--muted); }
+.tsetup-mark { text-align: center; font-weight: 700; }
+.tsetup-pass .tsetup-mark { color: var(--up); }
+.tsetup-fail .tsetup-mark { color: var(--down); }
+.tsetup-wait .tsetup-mark { color: var(--accent); }
+.tsetup-na .tsetup-mark { color: var(--muted); }
+.tsetup-plan h2 { margin: 10px 0 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tsetup-plan p { margin: 2px 0; }
+.tsetup-traded { display: flex; gap: 6px; align-items: center; margin: 10px 0 0; }
+.tsetup-foot { margin: 8px 0 0; font-size: 11px; }

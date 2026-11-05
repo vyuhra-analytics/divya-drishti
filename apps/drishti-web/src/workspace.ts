@@ -5,7 +5,7 @@ import type { Timeframe } from "@drishti/shared";
 import { useSettings } from "./settings";
 import { cleanName, MAX_SAVED, PRESETS, type Snapshot } from "./presets";
 
-export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "marketstate" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain" | "optionhistory" | "reportday" | "usib" | "family" | "browser";
+export type WidgetType = "quote" | "watchlist" | "tv" | "news" | "calendar" | "alerts" | "advchart" | "briefing" | "cot" | "chokepoints" | "curve" | "eia" | "eiareport" | "drivers" | "marketstate" | "trendsetup" | "labels" | "recap" | "costs" | "backtest" | "paper" | "quality" | "optionchain" | "optionhistory" | "reportday" | "usib" | "family" | "browser";
 const GROUPS = ["amber", "blue", "green", "red"] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -70,6 +70,7 @@ export const SIZE: Record<WidgetType, { w: number; h: number }> = {
   browser: { w: 7, h: 20 },
   drivers: { w: 3, h: 14 },
   marketstate: { w: 3, h: 22 },
+  trendsetup: { w: 4, h: 22 },
   labels: { w: 5, h: 15 },
   recap: { w: 6, h: 12 },
   costs: { w: 6, h: 20 },

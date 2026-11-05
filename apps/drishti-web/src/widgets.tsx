@@ -12,6 +12,7 @@ import { CurveWidget } from "./CurvePanel";
 import { EiaWidget } from "./EiaPanel";
 import { DriversWidget } from "./DriversPanel";
 import { MarketStateWidget } from "./MarketStatePanel";
+import { TrendSetupWidget } from "./TrendSetupPanel";
 import { FamilyWidget } from "./FamilyPanel";
 import { LabelWidget } from "./LabelPanel";
 import { EiaReportWidget } from "./EiaReportPanel";
@@ -276,6 +277,7 @@ export const WIDGETS: Record<
   usib: { title: "USIB", component: UsibWidget, linked: false, showSymbol: false },
   family: { title: "Family", component: FamilyWidget, linked: false, showSymbol: false },
   browser: { title: "Browser", component: BrowserWidget, linked: false, showSymbol: false },
+  trendsetup: { title: "Trend setup", component: TrendSetupWidget, linked: true, showSymbol: true },
   marketstate: { title: "Market state", component: MarketStateWidget, linked: true, showSymbol: true },
   drivers: { title: "Drivers", component: DriversWidget, linked: true, showSymbol: true },
   labels: { title: "Label headlines", component: LabelWidget, linked: false, showSymbol: false },

@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "bun@1.4.3",
   "workspaces": ["apps/*", "packages/*"],
-  "overrides": { "multer": "^2.5.0" },
+  "overrides": {
+    "multer": "^2.5.0"
+  },
   "scripts": {
     "dev": "turbo run dev --filter=!drishti-desktop",
     "desktop": "bun run --cwd apps/drishti-desktop dev",
@@ -29,7 +31,7 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/bun": "^1.4.0",
     "playwright-core": "^1.64.1",
-    "turbo": "^2.5.0",
+    "turbo": "^2.11.10",
     "typescript": "^5.9.0"
   }
 }

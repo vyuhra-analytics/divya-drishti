@@ -454,3 +454,36 @@ test("MarketStateWidget reads the live quote against the bars, shows disagreemen
   expect(document.querySelector(".mstate-sum")!.textContent).toContain("stand aside");
   expect(document.body.textContent).toContain("not a forecast");
 });
+
+test("TrendSetupWidget walks the checklist in order and stops at the first failing step", async () => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const wave = (n: number, tf: number, drift: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const c = 9000 + drift * i + 30 * Math.sin(i / 2);
+      return { time: nowSec - (n + 1 - i) * tf, open: c, high: c + 10, low: c - 10, close: c, volume: 10 };
+    });
+  const q = (symbol: string, price: number, prevClose: number) => ({ symbol, price, prevClose, time: Date.now(), source: "upstox", delayedBy: 0 });
+  // NYMEX down 1% and the rupee flat: against a bullish MCX trend
+  useStore.setState({ quotes: { "MCX:CRUDEOIL": q("MCX:CRUDEOIL", 9600, 9500) as never, "NYMEX:CL": q("NYMEX:CL", 99, 100) as never, "FX:USDINR": q("FX:USDINR", 95, 95) as never } });
+  globalThis.fetch = mock(async (url: string) => {
+    const u = String(url);
+    const tf = /tf=([^&]+)/.exec(u)?.[1];
+    const body = u.includes("/bars") ? (tf === "1d" ? wave(80, 86_400, 5) : tf === "1h" ? wave(80, 3_600, 3) : wave(60, tf === "15m" ? 900 : 300, 2)) : u.includes("/calendar") ? [] : {};
+    return { ok: !u.includes("/options"), status: u.includes("/options") ? 503 : 200, json: async () => body };
+  }) as never;
+  const { TrendSetupWidget } = require("./TrendSetupPanel") as typeof import("./TrendSetupPanel");
+  render(<TrendSetupWidget widget={{ ...widget("trendsetup"), symbol: "MCX:CRUDEOIL" }} />);
+  await waitFor(() => expect(document.querySelector(".tsetup-steps li")!.className).toContain("tsetup-pass")); // the daily trend
+  const steps = [...document.querySelectorAll(".tsetup-steps li")].map((li) => li.querySelector("b")!.textContent);
+  expect(steps).toEqual(["Daily trend", "60-minute trend and levels", "NYMEX, USD/INR and basis", "Event filter", "15-minute trigger", "Strike"]);
+  const confirm = screen.getByText("NYMEX, USD/INR and basis").closest("li")!;
+  expect(confirm.className).toContain("tsetup-fail");
+  expect(document.querySelector(".tsetup-verdict")!.textContent).toContain("No trade");
+  expect(document.body.textContent).toContain("not a forecast");
+});
+
+test("TrendSetupWidget explains itself on a symbol that is not an MCX future", () => {
+  const { TrendSetupWidget } = require("./TrendSetupPanel") as typeof import("./TrendSetupPanel");
+  render(<TrendSetupWidget widget={{ ...widget("trendsetup"), symbol: "NYMEX:CL" }} />);
+  expect(screen.getByText(/reads an MCX energy future/)).toBeTruthy();
+});
