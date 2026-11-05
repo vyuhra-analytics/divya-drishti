@@ -37,7 +37,7 @@ export interface LoggedSignal {
 export interface SignalRecord {
   /** the same evening and market always give the same key, so a second evaluation is recognised and dropped */
   key: string;
-  strategy: "report-day" | "usib";
+  strategy: "report-day" | "usib" | "trend-setup";
   symbol: string;
   /** the print (report day) or the US cash open (USIB), epoch ms */
   at: number;
@@ -53,6 +53,8 @@ export interface SignalRecord {
   /** the option to buy for the signal (a call for a long, a put for a short) with its premium levels, or why there was none */
   option?: OptionLegSignal;
   optionNote?: string;
+  /** trend setup: the checklist as it stood when it turned ready, and the strike it picked */
+  setup?: { summary: string; steps: { id: string; label: string; status: string; detail: string }[]; underlying?: string; expiry?: string; strike?: { strike: number; type: "CE" | "PE"; key?: string; premium: number; delta: number; spreadPct?: number; iv?: number; cost: number; rupeeR?: number; stop?: number; tp1?: number; tp2?: number }; invalidation?: string };
   /** the cut-off for entries, epoch seconds */
   cutoffAt?: number;
   /** what the rules could not use after the fact, in words (e.g. USIB's TP2 chain levels) */

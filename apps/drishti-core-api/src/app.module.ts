@@ -28,11 +28,12 @@ import { CurveController } from "./curve.controller";
 import { EiaController } from "./eia.controller";
 import { SignalLogController } from "./signal-log.controller";
 import { SignalLogService } from "./signal-log.service";
+import { TrendSetupService } from "./trend-setup.service";
 import { CanaryController, CanaryService } from "./canary.controller";
 import { ServerAlertsController } from "./server-alerts.controller";
 import { PositionsController } from "./positions.controller";
 import { InstrumentSync } from "./instruments.sync";
 import { AnalysisController } from "./analysis.controller";
 
-@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, FeedController, CalendarController, EiaReportController, EiaReplayController, TimeProfileController, EiaArticleController, FamilyController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, SignalLogController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService, EiaHistoryService, EiaArticleService, ForecastService, SignalLogService] })
+@Module({ controllers: [MarketController, UpstoxController, NewsController, SessionsController, OptionsController, CostsController, OptionCandlesController, FeedController, CalendarController, EiaReportController, EiaReplayController, TimeProfileController, EiaArticleController, FamilyController, LabelsController, BriefingController, BriefingFactsController, AnalysisController, PositionsController, CotController, ChokepointsController, CurveController, EiaController, SignalLogController, CanaryController, ServerAlertsController], providers: [Db, CanaryService, InstrumentSync, CalendarService, EiaReportService, EiaHistoryService, EiaArticleService, ForecastService, SignalLogService, TrendSetupService] })
 export class AppModule {}

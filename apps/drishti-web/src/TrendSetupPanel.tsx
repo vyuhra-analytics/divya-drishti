@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { completedBars, computeDrivers, DRIVER_PAIRS, evaluateSetup, FX_SYMBOL, instrument, premiumSeries, premiumStats, SETUP_RULES, tradingExpiry, type Bar, type CalEvent, type Quote, type StepStatus } from "@drishti/shared";
+import { completedBars, computeDrivers, DRIVER_PAIRS, evaluateSetup, FX_SYMBOL, instrument, premiumSeries, premiumStats, SETUP_RULES, setupKey, tradingExpiry, type Bar, type CalEvent, type Quote, type StepStatus } from "@drishti/shared";
 import { useChain } from "./chainClient";
 import { useNow, useSessions } from "./market";
 import { apiUrl } from "./settings";
@@ -97,6 +97,28 @@ export function TrendSetupWidget({ widget }: { widget: Widget }) {
     if (want && want !== chain!.expiry) setExpiry(want);
   }, [underlying, expiry, chain?.expiry, chain?.expiries.length]);
 
+  // the server's scanner (runs with the browser closed): today's logged signal for this market, if any
+  const [logged, setLogged] = useState<{ at: number; side?: string } | null>(null);
+  useEffect(() => {
+    setLogged(null);
+    if (!mcx) return;
+    const ctrl = new AbortController();
+    const load = () =>
+      fetch(`${apiUrl()}/signals?strategy=trend-setup&limit=10`, { signal: ctrl.signal })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows: { record: { key: string; at: number; signal?: { side: string } } }[]) => {
+          const today = Array.isArray(rows) ? rows.find((r) => r.record.key === setupKey(symbol, Date.now())) : undefined;
+          setLogged(today ? { at: today.record.at, side: today.record.signal?.side } : null);
+        })
+        .catch(() => undefined);
+    void load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      ctrl.abort();
+      clearInterval(id);
+    };
+  }, [symbol, mcx]);
+
   const [traded, setTraded] = useState(() => readTraded(symbol));
   useEffect(() => setTraded(readTraded(symbol)), [symbol]);
   const markTraded = (v: boolean) => {
@@ -142,6 +164,9 @@ export function TrendSetupWidget({ widget }: { widget: Widget }) {
   return (
     <div className="tsetup" tabIndex={0} role="region" aria-label="Trend setup">
       <p className={`tsetup-verdict tsetup-${result.verdict}`}>{result.summary}</p>
+      <p className="tsetup-note">
+        {logged ? `Server scanner: READY (${logged.side ?? "?"}) logged at ${new Date(logged.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} and sent to your alert channels.` : "Server scanner: checks every minute while MCX is open, with this screen closed too; nothing logged today."}
+      </p>
       {!sessions.MCX.open && <p className="tsetup-note">MCX is closed: the checklist reads the last bars, not a live market.</p>}
       {errors.length > 0 && <p className="tsetup-note">Bars unavailable ({errors.join("; ")}).</p>}
       <ol className="tsetup-steps">

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Bar } from "./index";
 import type { Chain } from "./options";
-import { confirmWithGlobal, eventFilter, evaluateSetup, levelsAround, pickStrike, SETUP_RULES, structureOf, swings, trendOf, trigger15 } from "./trendSetup";
+import { confirmWithGlobal, eventFilter, evaluateSetup, setupKey, setupMessage, setupRecord, levelsAround, pickStrike, SETUP_RULES, structureOf, swings, trendOf, trigger15 } from "./trendSetup";
 
 /** a zig-zag series: drift per bar plus a wave, so swing highs and lows form */
 function wave(n: number, drift: number, start = 100, tf = 900, t0 = 1_700_000_000): Bar[] {
@@ -146,4 +146,17 @@ test("the whole checklist: a clean trend, agreeing NYMEX, no release, a trigger 
   expect(chop.verdict).toBe("no-trade");
   expect(chop.steps[0].detail).toContain("No trade");
   expect(SETUP_RULES.deltaMin).toBe(0.4);
+});
+
+test("a ready checklist becomes one signal-log record per market per India day, and an alert text with both plans", () => {
+  const res = evaluateSetup({ daily: wave(80, 0.5, 90, 86_400), hourly: wave(80, 0.3, 95, 3_600), m15: pullbackThenResume(), confirm: { nymexPct: 0.5, fxPct: 0.1 }, events: [], chain: chain(), now: 1_800_000_000_000 });
+  const ready = { ...res, verdict: "ready" as const, side: "long" as const, trigger: { status: "pass" as const, detail: "", barTime: 1_799_999_100, entry: 100, stop: 96, rPoints: 4, tp1: 104, tp2: 108 }, strike: { strike: 100, type: "CE" as const, premium: 170, delta: 0.52, cost: 17_000, rupeeR: 208, stop: 167.9, tp1: 172.1, tp2: 174.2 }, invalidation: "Call thesis fails below 96.0" };
+  const at = Date.parse("2026-11-05T18:00:00Z"); // 23:30 IST on the 5th
+  const rec = setupRecord("MCX:CRUDEOIL", ready, at, "CRUDEOIL", "2026-11-17");
+  expect(rec).toMatchObject({ key: "trend-setup:MCX:CRUDEOIL:2026-11-05", strategy: "trend-setup", status: "signal", signal: { side: "long", entry: 100, stop: 96, closedAt: 1_800_000_000 } });
+  expect(setupKey("MCX:CRUDEOIL", at + 60 * 60_000)).toBe("trend-setup:MCX:CRUDEOIL:2026-11-06"); // past India midnight: a new day
+  const text = setupMessage(rec);
+  expect(text).toContain("READY on MCX:CRUDEOIL (long)");
+  expect(text).toContain("CRUDEOIL 100 CE 2026-11-17 at 170.0");
+  expect(text).toContain("not advice");
 });

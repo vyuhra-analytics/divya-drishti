@@ -7,6 +7,7 @@ import type { Chain, ChainRow, OptionLeg } from "./options";
 import { ema } from "./indicators";
 import { atr } from "./stats";
 import { DAY_RULES, type DaySide } from "./reportDay";
+import type { SignalRecord } from "./signalLog";
 
 export const SETUP_RULES = {
   /** the bias rule's averages; the long one is context only (MCX daily history from Upstox is too short for it) */
@@ -401,4 +402,45 @@ export function evaluateSetup(input: SetupInput, r = SETUP_RULES): SetupResult {
       : undefined;
   const summary = failed ? `No trade: ${failed.label.toLowerCase()}. ${failed.detail}` : verdict === "ready" ? `Ready: buy the ${st.pick!.type === "CE" ? "call" : "put"}, ${bias} bias with a 15-minute trigger.` : `Waiting: ${steps.find((s) => s.status === "wait")?.detail ?? "the trigger"}.`;
   return { steps, bias, side, verdict, summary, trend, hourly, levels, trigger: trig, strike: st.pick, invalidation };
+}
+
+/** The India date (YYYY-MM-DD) of an instant: the setup allows one trade a day, so the scanner logs at most one ready signal per market per India day. */
+const istDate = (ms: number) => new Date(ms + 19_800_000).toISOString().slice(0, 10);
+export const setupKey = (symbol: string, at: number) => `trend-setup:${symbol}:${istDate(at)}`;
+
+/** A ready checklist as a signal-log record (strategy `trend-setup`): the trigger's levels on the future and the strike it picked. */
+export function setupRecord(symbol: string, res: SetupResult, at: number, underlying?: string, expiry?: string): SignalRecord {
+  const t = res.trigger;
+  const s = res.strike;
+  return {
+    key: setupKey(symbol, at),
+    strategy: "trend-setup",
+    symbol,
+    at,
+    status: "signal",
+    candles: [],
+    notes: res.invalidation ? [res.invalidation] : [],
+    ...(res.side && t.barTime !== undefined ? { signal: { side: res.side, candleTime: t.barTime, closedAt: t.barTime + 900, entry: t.entry, rPoints: t.rPoints, stop: t.stop, tp1: t.tp1, tp2: t.tp2 } } : {}),
+    setup: {
+      summary: res.summary,
+      steps: res.steps.map((x) => ({ id: x.id, label: x.label, status: x.status, detail: x.detail })),
+      underlying,
+      expiry,
+      ...(s ? { strike: { strike: s.strike, type: s.type, key: s.key, premium: s.premium, delta: s.delta, spreadPct: s.spreadPct, iv: s.iv, cost: s.cost, rupeeR: s.rupeeR, stop: s.stop, tp1: s.tp1, tp2: s.tp2 } } : {}),
+      invalidation: res.invalidation,
+    },
+  };
+}
+
+/** The alert text for a ready setup: the plan in one message, labelled as a checklist and not advice. */
+export function setupMessage(rec: SignalRecord, decimals = 1): string {
+  const f = (n?: number, d = decimals) => (n === undefined ? "?" : n.toFixed(d));
+  const g = rec.signal;
+  const k = rec.setup?.strike;
+  const lines = [`Trend setup READY on ${rec.symbol} (${g?.side ?? "?"})`];
+  if (g) lines.push(`Future: entry ${f(g.entry)}, stop ${f(g.stop)}, TP1 ${f(g.tp1)} (then stop to entry), TP2 ${f(g.tp2)}, R ${f(g.rPoints)}`);
+  if (k) lines.push(`Option: ${rec.setup?.underlying ?? ""} ${k.strike} ${k.type}${rec.setup?.expiry ? ` ${rec.setup.expiry}` : ""} at ${f(k.premium)} (|delta| ${k.delta.toFixed(2)}), premium stop ${f(k.stop)}, TP1 ${f(k.tp1)}, TP2 ${f(k.tp2)}, 1R Rs ${f(k.rupeeR, 0)}`);
+  if (rec.setup?.invalidation) lines.push(rec.setup.invalidation);
+  lines.push("A checklist, not advice; not tested on history.");
+  return lines.join("\n");
 }
